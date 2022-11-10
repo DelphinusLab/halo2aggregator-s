@@ -6,7 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+blake2b_simd = "1"
 halo2_proofs = { git = "https://github.com/junyu0312/halo2.git", branch = "gpu", default-features = true, features = ["cuda"] }
+halo2ecc-s = { git = "https://github.com/lanbones/halo2ecc-s.git" }
 ark-std = { version = "0.3", features = ["print-trace"] }
 
 [features]

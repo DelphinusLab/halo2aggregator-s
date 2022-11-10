@@ -430,7 +430,20 @@ name = "halo2aggregator-s"
 version = "0.1.0"
 dependencies = [
  "ark-std",
+ "blake2b_simd",
  "halo2_proofs",
+ "halo2ecc-s",
+]
+
+[[package]]
+name = "halo2ecc-s"
+version = "0.1.0"
+source = "git+https://github.com/lanbones/halo2ecc-s.git#db0c390366e4afbff39b4044f5530777dc1fa8e5"
+dependencies = [
+ "halo2_proofs",
+ "num-bigint",
+ "num-integer",
+ "rayon",
 ]
 
 [[package]]
