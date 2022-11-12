@@ -13,7 +13,7 @@ pub struct PlonkCommonSetup {
 
 pub struct VerifierParams<C: CurveAffine> {
     pub key: String,
-    pub gates: Vec<Expression<Rc<AstScalar<C>>>>,
+    pub gates: Vec<Expression<C::ScalarExt>>,
     pub common: PlonkCommonSetup,
 
     pub(crate) lookup_evaluated: Vec<lookup::Evaluated<C>>,
@@ -24,7 +24,7 @@ pub struct VerifierParams<C: CurveAffine> {
     pub instance_queries: Vec<(usize, i32)>,
 
     pub advice_commitments: Vec<Rc<AstPoint<C>>>,
-    pub advice_evals: Vec<Vec<Rc<AstScalar<C>>>>,
+    pub advice_evals: Vec<Rc<AstScalar<C>>>,
     pub advice_queries: Vec<(usize, i32)>,
 
     pub fixed_commitments: Vec<Rc<AstPoint<C>>>,

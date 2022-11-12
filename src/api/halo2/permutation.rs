@@ -34,7 +34,7 @@ pub struct Evaluated<C: CurveAffine> {
 
 impl<C: CurveAffine> Evaluated<C> {
     pub(crate) fn build_from_transcript(
-        permutation_commitements: Vec<Rc<AstPoint<C>>>,
+        permutation_product_commitements: Vec<Rc<AstPoint<C>>>,
         key: &str,
         vk: &VerifyingKey<C>,
         transcript: &mut Rc<AstTranscript<C>>,
@@ -43,9 +43,9 @@ impl<C: CurveAffine> Evaluated<C> {
         advice_evals: &Vec<Rc<AstScalar<C>>>,
         fixed_evals: &Vec<Rc<AstScalar<C>>>,
     ) -> Self {
-        let n = permutation_commitements.len();
+        let n = permutation_product_commitements.len();
 
-        let permutation_evaluated_set = permutation_commitements
+        let permutation_evaluated_set = permutation_product_commitements
             .into_iter()
             .enumerate()
             .map(|(i, permutation_product_commitment)| {
