@@ -16,8 +16,8 @@ pub struct VerifierParams<C: CurveAffine> {
     pub gates: Vec<Expression<Rc<AstScalar<C>>>>,
     pub common: PlonkCommonSetup,
 
-    pub(crate) lookup_evaluated: Vec<Vec<lookup::Evaluated<C>>>,
-    pub permutation_evaluated: Vec<permutation::Evaluated<C>>,
+    pub(crate) lookup_evaluated: Vec<lookup::Evaluated<C>>,
+    pub permutation_evaluated: permutation::Evaluated<C>,
 
     pub instance_commitments: Vec<Rc<AstPoint<C>>>,
     pub instance_evals: Vec<Rc<AstScalar<C>>>,

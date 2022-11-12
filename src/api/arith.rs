@@ -33,12 +33,3 @@ macro_rules! pinstance {
         Rc::new(AstPoint::FromInstance($instance_idx))
     };
 }
-
-#[macro_export]
-macro_rules! ptranscript {
-    ($transcript: expr) => {{
-        let p = Rc::new(AstPoint::FromTranscript($transcript));
-        let t = Rc::new(AstTranscript::CommonPoint($transcript, p.clone()));
-        (p, t)
-    }};
-}
