@@ -1,4 +1,4 @@
-use super::query::EvaluationQuery;
+use super::super::query::EvaluationQuery;
 use crate::api::arith::AstPoint;
 use crate::api::arith::AstScalar;
 use crate::api::transcript::AstTranscript;

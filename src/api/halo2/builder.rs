@@ -1,6 +1,5 @@
-use super::lookup;
-use super::permutation;
-use super::verifier::PlonkCommonSetup;
+use super::protocols::lookup;
+use super::protocols::permutation;
 use super::verifier::VerifierParams;
 use crate::api::arith::*;
 use crate::api::transcript::AstTranscript;

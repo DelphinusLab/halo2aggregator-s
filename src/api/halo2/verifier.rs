@@ -1,19 +1,16 @@
-use super::lookup;
-use super::permutation;
+use super::protocols::lookup;
+use super::protocols::permutation;
+use super::query::CommitQuery;
 use super::query::EvaluationQuery;
 use super::query::EvaluationQuerySchemaRc;
 use crate::api::arith::AstPoint;
 use crate::api::arith::AstScalar;
+use crate::commit;
 use crate::scalar;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::plonk::Expression;
 use std::collections::BTreeMap;
 use std::rc::Rc;
-
-pub struct PlonkCommonSetup {
-    pub l: u32,
-    pub n: u32,
-}
 
 pub struct VerifierParams<C: CurveAffine> {
     pub key: String,
@@ -67,6 +64,11 @@ pub struct EvaluationProof<C: CurveAffine> {
     pub w: Rc<AstPoint<C>>,
 }
 
+pub struct MultiOpenProof<C: CurveAffine> {
+    pub w_x: EvaluationQuerySchemaRc<C>,
+    pub w_g: EvaluationQuerySchemaRc<C>,
+}
+
 impl<C: CurveAffine> VerifierParams<C> {
     fn get_all_queries(&self) -> Vec<EvaluationQuery<C>> {
         todo!()
@@ -99,5 +101,41 @@ impl<C: CurveAffine> VerifierParams<C> {
                 w: self.w[i].clone(),
             })
             .collect()
+    }
+
+    pub fn batch_multi_open_proofs(&self) -> MultiOpenProof<C> {
+        let proofs = self.get_point_schemas();
+
+        let mut w_x = None;
+        let mut w_g = None;
+
+        for (i, p) in proofs.into_iter().enumerate() {
+            let s = &p.s;
+            let w = Rc::new(CommitQuery {
+                key: format!("{}_w{}", self.key, i),
+                commitment: Some(p.w.clone()),
+                eval: None,
+            });
+
+            w_x = w_x.map_or(Some(commit!(w.clone())), |w_x| {
+                Some(scalar!(self.u.clone()) * w_x + commit!(w.clone()))
+            });
+
+            w_g = w_g.map_or(
+                Some(scalar!(p.point.clone()) * commit!(w.clone()) + s.clone()),
+                |w_g| {
+                    Some(
+                        scalar!(self.u.clone()) * w_g
+                            + scalar!(p.point.clone()) * commit!(w)
+                            + s.clone(),
+                    )
+                },
+            );
+        }
+
+        MultiOpenProof {
+            w_x: w_x.unwrap(),
+            w_g: w_g.unwrap(),
+        }
     }
 }
