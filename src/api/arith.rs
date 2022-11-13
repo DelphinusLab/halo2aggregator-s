@@ -3,22 +3,27 @@ use halo2_proofs::arithmetic::CurveAffine;
 use std::ops::Mul;
 use std::rc::Rc;
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum AstScalar<C: CurveAffine> {
     FromConst(C::ScalarExt),
     FromTranscript(Rc<AstTranscript<C>>),
     FromChallenge(Rc<AstTranscript<C>>),
     Add(Rc<Self>, Rc<Self>),
+    Sub(Rc<Self>, Rc<Self>),
     Mul(Rc<Self>, Rc<Self>),
     Div(Rc<Self>, Rc<Self>),
     Pow(Rc<Self>, u32),
 }
 
-impl<'a, C: CurveAffine> Mul<Rc<AstScalar<C>>> for &'a AstScalar<C> {
-    type Output = Rc<AstScalar<C>>;
+#[repr(transparent)]
+#[derive(Clone, Debug)]
+pub struct AstScalarRc<C: CurveAffine>(pub Rc<AstScalar<C>>);
 
-    fn mul(self, rhs: Rc<AstScalar<C>>) -> Self::Output {
-        Rc::new(AstScalar::Mul(Rc::new(self.clone()), rhs))
+impl<'a, C: CurveAffine> Mul<AstScalarRc<C>> for AstScalarRc<C> {
+    type Output = AstScalarRc<C>;
+
+    fn mul(self, rhs: AstScalarRc<C>) -> Self::Output {
+        AstScalarRc(Rc::new(AstScalar::Mul(self.0, rhs.0)))
     }
 }
 
@@ -30,30 +35,34 @@ pub enum AstPoint<C: CurveAffine> {
     Multiexp(Vec<(Rc<Self>, Rc<AstScalar<C>>)>),
 }
 
+#[repr(transparent)]
+#[derive(Clone, Debug)]
+pub struct AstPointRc<C: CurveAffine>(pub Rc<AstPoint<C>>);
+
 #[macro_export]
 macro_rules! sconst {
     ($scalar:expr) => {
-        Rc::new(AstScalar::FromConst($scalar))
+        AstScalarRc(Rc::new(AstScalar::FromConst($scalar)))
     };
 }
 
 #[macro_export]
 macro_rules! spow {
     ($scalar:expr, $n:expr) => {
-        Rc::new(AstScalar::Pow($scalar, $n))
+        AstScalarRc(Rc::new(AstScalar::Pow($scalar.0, $n)))
     };
 }
 
 #[macro_export]
 macro_rules! pinstance {
     ($instance_idx:expr) => {
-        Rc::new(AstPoint::FromInstance($instance_idx))
+        AstPointRc(Rc::new(AstPoint::FromInstance($instance_idx)))
     };
 }
 
 #[macro_export]
 macro_rules! pconst {
     ($instance_idx:expr) => {
-        Rc::new(AstPoint::FromConst($instance_idx))
+        AstPointRc(Rc::new(AstPoint::FromConst($instance_idx)))
     };
 }

@@ -1,6 +1,8 @@
 use super::super::query::EvaluationQuery;
 use crate::api::arith::AstPoint;
+use crate::api::arith::AstPointRc;
 use crate::api::arith::AstScalar;
+use crate::api::arith::AstScalarRc;
 use crate::api::halo2::verifier::VerifierParams;
 use crate::api::transcript::AstTranscript;
 use crate::api::transcript::AstTranscriptReader;
@@ -13,38 +15,38 @@ use std::rc::Rc;
 #[derive(Debug)]
 pub struct CommonEvaluated<C: CurveAffine> {
     pub key: String,
-    pub permutation_evals: Vec<Rc<AstScalar<C>>>,
-    pub permutation_commitments: Vec<Rc<AstPoint<C>>>,
+    pub permutation_evals: Vec<AstScalarRc<C>>,
+    pub permutation_commitments: Vec<AstPointRc<C>>,
 }
 
 #[derive(Debug)]
 pub struct EvaluatedSet<C: CurveAffine> {
-    pub(crate) permutation_product_commitment: Rc<AstPoint<C>>,
-    pub(crate) permutation_product_eval: Rc<AstScalar<C>>,
-    pub(crate) permutation_product_next_eval: Rc<AstScalar<C>>,
-    pub(crate) permutation_product_last_eval: Option<Rc<AstScalar<C>>>,
+    pub(crate) permutation_product_commitment: AstPointRc<C>,
+    pub(crate) permutation_product_eval: AstScalarRc<C>,
+    pub(crate) permutation_product_next_eval: AstScalarRc<C>,
+    pub(crate) permutation_product_last_eval: Option<AstScalarRc<C>>,
 }
 
 #[derive(Debug)]
 pub struct Evaluated<C: CurveAffine> {
     pub(crate) key: String,
     pub(crate) blinding_factors: usize,
-    pub(crate) x: Rc<AstScalar<C>>,
+    pub(crate) x: AstScalarRc<C>,
     pub(crate) sets: Vec<EvaluatedSet<C>>,
-    pub(crate) evals: Vec<Rc<AstScalar<C>>>,
+    pub(crate) evals: Vec<AstScalarRc<C>>,
     pub(crate) chunk_len: usize,
 }
 
 impl<C: CurveAffine> Evaluated<C> {
     pub(crate) fn build_from_transcript(
-        permutation_product_commitements: Vec<Rc<AstPoint<C>>>,
+        permutation_product_commitements: Vec<AstPointRc<C>>,
         key: &str,
         vk: &VerifyingKey<C>,
         transcript: &mut Rc<AstTranscript<C>>,
-        x: &Rc<AstScalar<C>>,
-        instance_evals: &Vec<Rc<AstScalar<C>>>,
-        advice_evals: &Vec<Rc<AstScalar<C>>>,
-        fixed_evals: &Vec<Rc<AstScalar<C>>>,
+        x: &AstScalarRc<C>,
+        instance_evals: &Vec<AstScalarRc<C>>,
+        advice_evals: &Vec<AstScalarRc<C>>,
+        fixed_evals: &Vec<AstScalarRc<C>>,
     ) -> Self {
         let n = permutation_product_commitements.len();
 
@@ -97,14 +99,14 @@ impl<C: CurveAffine> Evaluated<C> {
         }
     }
 
-    pub fn expressions(&self, params: &VerifierParams<C>) -> Vec<Rc<AstScalar<C>>> {
+    pub fn expressions(&self, params: &VerifierParams<C>) -> Vec<AstScalarRc<C>> {
         todo!()
     }
 
     pub fn queries(
         &self,
-        x_next: Rc<AstScalar<C>>,
-        x_last: Rc<AstScalar<C>>,
+        x_next: AstScalarRc<C>,
+        x_last: AstScalarRc<C>,
     ) -> Vec<EvaluationQuery<C>> {
         iter::empty()
             .chain(self.sets.iter().enumerate().flat_map(|(i, set)| {

@@ -1,5 +1,7 @@
 use super::arith::AstPoint;
+use super::arith::AstPointRc;
 use super::arith::AstScalar;
+use super::arith::AstScalarRc;
 use halo2_proofs::arithmetic::CurveAffine;
 use std::rc::Rc;
 
@@ -11,53 +13,49 @@ pub enum AstTranscript<C: CurveAffine> {
     Init,
 }
 
-#[macro_export]
-macro_rules! common_scalar {
-    ($transcript: expr, $scalar:expr) => {
-        Rc::new(AstTranscript::CommonScalar($transcript, $scalar))
-    };
-}
-
-#[macro_export]
-macro_rules! common_point {
-    ($transcript: expr, $scalar:expr) => {
-        Rc::new(AstTranscript::CommonPoint($transcript, $scalar))
-    };
-}
-
 pub(crate) trait AstTranscriptReader<C: CurveAffine> {
-    fn read_scalar(&mut self) -> Rc<AstScalar<C>>;
-    fn read_n_scalars(&mut self, n: usize) -> Vec<Rc<AstScalar<C>>>;
-    fn read_point(&mut self) -> Rc<AstPoint<C>>;
-    fn read_n_points(&mut self, n: usize) -> Vec<Rc<AstPoint<C>>>;
-    fn squeeze_challenge(&mut self) -> Rc<AstScalar<C>>;
+    fn common_scalar(self, s: AstScalarRc<C>) -> Self;
+    fn common_point(self, p: AstPointRc<C>) -> Self;
+    fn read_scalar(&mut self) -> AstScalarRc<C>;
+    fn read_n_scalars(&mut self, n: usize) -> Vec<AstScalarRc<C>>;
+    fn read_point(&mut self) -> AstPointRc<C>;
+    fn read_n_points(&mut self, n: usize) -> Vec<AstPointRc<C>>;
+    fn squeeze_challenge(&mut self) -> AstScalarRc<C>;
 }
 
 impl<C: CurveAffine> AstTranscriptReader<C> for Rc<AstTranscript<C>> {
-    fn read_scalar(&mut self) -> Rc<AstScalar<C>> {
-        let p = Rc::new(AstScalar::FromTranscript(self.clone()));
-        let t = Rc::new(AstTranscript::CommonScalar(self.clone(), p.clone()));
+    fn common_scalar(self, s: AstScalarRc<C>) -> Self {
+        Rc::new(AstTranscript::CommonScalar(self, s.0))
+    }
+
+    fn common_point(self, p: AstPointRc<C>) -> Self {
+        Rc::new(AstTranscript::CommonPoint(self, p.0))
+    }
+
+    fn read_scalar(&mut self) -> AstScalarRc<C> {
+        let p = AstScalarRc(Rc::new(AstScalar::FromTranscript(self.clone())));
+        let t = Rc::new(AstTranscript::CommonScalar(self.clone(), p.0.clone()));
         *self = t;
         p
     }
 
-    fn read_n_scalars(&mut self, n: usize) -> Vec<Rc<AstScalar<C>>> {
+    fn read_n_scalars(&mut self, n: usize) -> Vec<AstScalarRc<C>> {
         (0..n).map(|_| self.read_scalar()).collect()
     }
 
-    fn read_point(&mut self) -> Rc<AstPoint<C>> {
-        let p = Rc::new(AstPoint::FromTranscript(self.clone()));
-        let t = Rc::new(AstTranscript::CommonPoint(self.clone(), p.clone()));
+    fn read_point(&mut self) -> AstPointRc<C> {
+        let p = AstPointRc(Rc::new(AstPoint::FromTranscript(self.clone())));
+        let t = Rc::new(AstTranscript::CommonPoint(self.clone(), p.0.clone()));
         *self = t;
         p
     }
 
-    fn read_n_points(&mut self, n: usize) -> Vec<Rc<AstPoint<C>>> {
+    fn read_n_points(&mut self, n: usize) -> Vec<AstPointRc<C>> {
         (0..n).map(|_| self.read_point()).collect()
     }
 
-    fn squeeze_challenge(&mut self) -> Rc<AstScalar<C>> {
-        let s = Rc::new(AstScalar::FromChallenge(self.clone()));
+    fn squeeze_challenge(&mut self) -> AstScalarRc<C> {
+        let s = AstScalarRc(Rc::new(AstScalar::FromChallenge(self.clone())));
         let t = Rc::new(AstTranscript::SqueezeChallenge(self.clone()));
         *self = t;
         s

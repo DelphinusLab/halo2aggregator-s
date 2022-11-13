@@ -4,8 +4,6 @@ use super::verifier::VerifierParams;
 use crate::api::arith::*;
 use crate::api::transcript::AstTranscript;
 use crate::api::transcript::AstTranscriptReader;
-use crate::common_point;
-use crate::common_scalar;
 use crate::pconst;
 use crate::pinstance;
 use crate::sconst;
@@ -31,7 +29,7 @@ pub struct VerifierParamsBuilder<'a, E: MultiMillerLoop> {
 impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>>
     VerifierParamsBuilder<'a, E>
 {
-    fn init_transcript(&self) -> (Vec<Rc<AstPoint<C>>>, Rc<AstTranscript<C>>) {
+    fn init_transcript(&self) -> (Vec<AstPointRc<C>>, Rc<AstTranscript<C>>) {
         let mut hasher = blake2b_simd::Params::new()
             .hash_length(64)
             .personal(b"Halo2-Verify-Key")
@@ -53,11 +51,11 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
             .collect::<Vec<_>>();
 
         let mut transcript = Rc::new(AstTranscript::Init);
-        transcript = common_scalar!(transcript, scalar);
+        transcript = transcript.common_scalar(scalar);
         transcript = instance_commitments
             .iter()
             .fold(transcript, |transcript, instance| {
-                common_point!(transcript, instance.clone())
+                transcript.common_point(instance.clone())
             });
 
         (instance_commitments, transcript)
@@ -192,9 +190,9 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
         let omega = sconst!(raw_omega);
         let omega_neg_l = sconst!(raw_omega.pow_vartime([l as u64]).invert().unwrap());
         let omega_neg = sconst!(raw_omega.invert().unwrap());
-        let x_next = omega.as_ref() * x.clone();
-        let x_last = omega_neg_l.as_ref() * x.clone();
-        let x_inv = omega_neg.as_ref() * x.clone();
+        let x_next = omega.clone() * x.clone();
+        let x_last = omega_neg_l * x.clone();
+        let x_inv = omega_neg * x.clone();
         let xn = spow!(x.clone(), n);
 
         VerifierParams {

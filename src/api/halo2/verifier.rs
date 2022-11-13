@@ -3,10 +3,12 @@ use super::protocols::permutation;
 use super::query::CommitQuery;
 use super::query::EvaluationQuery;
 use super::query::EvaluationQuerySchemaRc;
-use crate::api::arith::AstPoint;
+use crate::api::arith::AstPointRc;
 use crate::api::arith::AstScalar;
+use crate::api::arith::AstScalarRc;
 use crate::commit;
 use crate::scalar;
+use crate::sconst;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::plonk::Expression;
 use std::collections::BTreeMap;
@@ -22,47 +24,47 @@ pub struct VerifierParams<C: CurveAffine> {
     pub(crate) lookup_evaluated: Vec<lookup::Evaluated<C>>,
     pub permutation_evaluated: permutation::Evaluated<C>,
 
-    pub instance_commitments: Vec<Rc<AstPoint<C>>>,
-    pub instance_evals: Vec<Rc<AstScalar<C>>>,
+    pub instance_commitments: Vec<AstPointRc<C>>,
+    pub instance_evals: Vec<AstScalarRc<C>>,
     pub instance_queries: Vec<(usize, i32)>,
 
-    pub advice_commitments: Vec<Rc<AstPoint<C>>>,
-    pub advice_evals: Vec<Rc<AstScalar<C>>>,
+    pub advice_commitments: Vec<AstPointRc<C>>,
+    pub advice_evals: Vec<AstScalarRc<C>>,
     pub advice_queries: Vec<(usize, i32)>,
 
-    pub fixed_commitments: Vec<Rc<AstPoint<C>>>,
-    pub fixed_evals: Vec<Rc<AstScalar<C>>>,
+    pub fixed_commitments: Vec<AstPointRc<C>>,
+    pub fixed_evals: Vec<AstScalarRc<C>>,
     pub fixed_queries: Vec<(usize, i32)>,
 
-    pub permutation_commitments: Vec<Rc<AstPoint<C>>>,
-    pub permutation_evals: Vec<Rc<AstScalar<C>>>,
+    pub permutation_commitments: Vec<AstPointRc<C>>,
+    pub permutation_evals: Vec<AstScalarRc<C>>,
 
-    pub vanish_commitments: Vec<Rc<AstPoint<C>>>,
-    pub random_commitment: Rc<AstPoint<C>>,
+    pub vanish_commitments: Vec<AstPointRc<C>>,
+    pub random_commitment: AstPointRc<C>,
 
-    pub w: Vec<Rc<AstPoint<C>>>,
+    pub w: Vec<AstPointRc<C>>,
 
-    pub random_eval: Rc<AstScalar<C>>,
-    pub beta: Rc<AstScalar<C>>,
-    pub gamma: Rc<AstScalar<C>>,
-    pub theta: Rc<AstScalar<C>>,
-    pub delta: Rc<AstScalar<C>>,
+    pub random_eval: AstScalarRc<C>,
+    pub beta: AstScalarRc<C>,
+    pub gamma: AstScalarRc<C>,
+    pub theta: AstScalarRc<C>,
+    pub delta: AstScalarRc<C>,
 
-    pub x: Rc<AstScalar<C>>,
-    pub x_next: Rc<AstScalar<C>>,
-    pub x_last: Rc<AstScalar<C>>,
-    pub x_inv: Rc<AstScalar<C>>,
-    pub xn: Rc<AstScalar<C>>,
+    pub x: AstScalarRc<C>,
+    pub x_next: AstScalarRc<C>,
+    pub x_last: AstScalarRc<C>,
+    pub x_inv: AstScalarRc<C>,
+    pub xn: AstScalarRc<C>,
 
-    pub y: Rc<AstScalar<C>>,
-    pub u: Rc<AstScalar<C>>,
-    pub v: Rc<AstScalar<C>>,
-    pub omega: Rc<AstScalar<C>>,
+    pub y: AstScalarRc<C>,
+    pub u: AstScalarRc<C>,
+    pub v: AstScalarRc<C>,
+    pub omega: AstScalarRc<C>,
 }
 pub struct EvaluationProof<C: CurveAffine> {
-    pub point: Rc<AstScalar<C>>,
+    pub point: AstScalarRc<C>,
     pub s: EvaluationQuerySchemaRc<C>,
-    pub w: Rc<AstPoint<C>>,
+    pub w: AstPointRc<C>,
 }
 
 pub struct MultiOpenProof<C: CurveAffine> {
@@ -71,11 +73,21 @@ pub struct MultiOpenProof<C: CurveAffine> {
 }
 
 impl<C: CurveAffine> VerifierParams<C> {
-    fn evaluate_expression(&self, expr: &Expression<C::ScalarExt>) -> Rc<AstScalar<C>> {
-        todo!()
+    fn evaluate_expression(&self, expr: &Expression<C::ScalarExt>) -> AstScalarRc<C> {
+        match expr {
+            Expression::Constant(c) => sconst!(*c),
+            Expression::Selector(_) => unreachable!(),
+            Expression::Fixed { query_index, .. } => self.fixed_evals[*query_index].clone(),
+            Expression::Advice { query_index, .. } => self.advice_evals[*query_index].clone(),
+            Expression::Instance { query_index, .. } => self.instance_evals[*query_index].clone(),
+            Expression::Negated(_) => sconst!(C::ScalarExt::from(0u64)),
+            Expression::Sum(_, _) => todo!(),
+            Expression::Product(_, _) => todo!(),
+            Expression::Scaled(_, _) => todo!(),
+        }
     }
 
-    fn get_all_expressions_eval(&self) -> Vec<Rc<AstScalar<C>>> {
+    fn get_all_expressions_eval(&self) -> Vec<AstScalarRc<C>> {
         let expression_evals = iter::empty()
             .chain(self.gates.iter().map(|expr| self.evaluate_expression(expr)))
             .chain(self.permutation_evaluated.expressions(self).into_iter())
