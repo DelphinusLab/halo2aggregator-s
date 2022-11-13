@@ -1,6 +1,9 @@
 use super::transcript::AstTranscript;
 use halo2_proofs::arithmetic::CurveAffine;
+use std::ops::Add;
+use std::ops::Div;
 use std::ops::Mul;
+use std::ops::Sub;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -19,13 +22,43 @@ pub enum AstScalar<C: CurveAffine> {
 #[derive(Clone, Debug)]
 pub struct AstScalarRc<C: CurveAffine>(pub Rc<AstScalar<C>>);
 
-impl<'a, C: CurveAffine> Mul<AstScalarRc<C>> for AstScalarRc<C> {
-    type Output = AstScalarRc<C>;
+macro_rules! define_scalar_ops {
+    ($t:ident, $f:ident) => {
+        impl<C: CurveAffine> $t<AstScalarRc<C>> for AstScalarRc<C> {
+            type Output = AstScalarRc<C>;
 
-    fn mul(self, rhs: AstScalarRc<C>) -> Self::Output {
-        AstScalarRc(Rc::new(AstScalar::Mul(self.0, rhs.0)))
-    }
+            fn $f(self, rhs: AstScalarRc<C>) -> Self::Output {
+                AstScalarRc(Rc::new(AstScalar::$t(self.0, rhs.0)))
+            }
+        }
+        impl<C: CurveAffine> $t<&AstScalarRc<C>> for AstScalarRc<C> {
+            type Output = AstScalarRc<C>;
+
+            fn $f(self, rhs: &AstScalarRc<C>) -> Self::Output {
+                AstScalarRc(Rc::new(AstScalar::$t(self.0, rhs.0.clone())))
+            }
+        }
+        impl<C: CurveAffine> $t<AstScalarRc<C>> for &AstScalarRc<C> {
+            type Output = AstScalarRc<C>;
+
+            fn $f(self, rhs: AstScalarRc<C>) -> Self::Output {
+                AstScalarRc(Rc::new(AstScalar::$t(self.0.clone(), rhs.0)))
+            }
+        }
+        impl<C: CurveAffine> $t<&AstScalarRc<C>> for &AstScalarRc<C> {
+            type Output = AstScalarRc<C>;
+
+            fn $f(self, rhs: &AstScalarRc<C>) -> Self::Output {
+                AstScalarRc(Rc::new(AstScalar::$t(self.0.clone(), rhs.0.clone())))
+            }
+        }
+    };
 }
+
+define_scalar_ops!(Add, add);
+define_scalar_ops!(Sub, sub);
+define_scalar_ops!(Div, div);
+define_scalar_ops!(Mul, mul);
 
 #[derive(Debug)]
 pub enum AstPoint<C: CurveAffine> {
@@ -42,7 +75,7 @@ pub struct AstPointRc<C: CurveAffine>(pub Rc<AstPoint<C>>);
 #[macro_export]
 macro_rules! sconst {
     ($scalar:expr) => {
-        AstScalarRc(Rc::new(AstScalar::FromConst($scalar)))
+        AstScalarRc(Rc::new(AstScalar::FromConst(C::ScalarExt::from($scalar))))
     };
 }
 

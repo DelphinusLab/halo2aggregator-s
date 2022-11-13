@@ -1,11 +1,11 @@
 use super::super::query::EvaluationQuery;
-use crate::api::arith::AstPoint;
 use crate::api::arith::AstPointRc;
 use crate::api::arith::AstScalar;
 use crate::api::arith::AstScalarRc;
 use crate::api::halo2::verifier::VerifierParams;
 use crate::api::transcript::AstTranscript;
 use crate::api::transcript::AstTranscriptReader;
+use crate::sconst;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::plonk::Expression;
 use halo2_proofs::plonk::VerifyingKey;
@@ -61,7 +61,44 @@ impl<C: CurveAffine> Evaluated<C> {
     }
 
     pub fn expressions(&self, params: &VerifierParams<C>) -> Vec<AstScalarRc<C>> {
-        todo!()
+        let z_wx = &self.product_next_eval;
+        let z_x = &self.product_eval;
+        let a_x = &self.permuted_input_eval;
+        let s_x = &self.permuted_table_eval;
+        let a_invwx = &self.permuted_input_inv_eval;
+        let product_eval = &self.product_eval;
+
+        let beta = &params.beta;
+        let gamma = &params.gamma;
+        let theta = &params.theta;
+        let l_0 = &params.ls[0];
+        let l_last = &params.ls[params.l as usize];
+        let l_blind = &params.l_blind;
+
+        let left = (z_wx * (a_x + beta)) * (s_x + gamma);
+
+        let input_eval = self
+            .input_expressions
+            .iter()
+            .map(|expression| params.evaluate_expression(expression))
+            .reduce(|acc, x| acc * theta + x)
+            .unwrap();
+
+        let table_eval = self
+            .table_expressions
+            .iter()
+            .map(|expression| params.evaluate_expression(expression))
+            .reduce(|acc, x| acc * theta + x)
+            .unwrap();
+
+        vec![
+            l_0 * (sconst!(1u64) - z_x),
+            (l_last * ((z_x * z_x) - z_x)),
+            ((left - ((product_eval * (input_eval + beta)) * (table_eval + gamma)))
+                * (sconst!(1u64) - (l_last + l_blind))),
+            (l_0 * (a_x - s_x)),
+            (((a_x - s_x) * (a_x - a_invwx)) * (sconst!(1u64) - (l_last + l_blind))),
+        ]
     }
 
     pub fn queries(

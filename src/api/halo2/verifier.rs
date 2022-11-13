@@ -60,6 +60,9 @@ pub struct VerifierParams<C: CurveAffine> {
     pub u: AstScalarRc<C>,
     pub v: AstScalarRc<C>,
     pub omega: AstScalarRc<C>,
+
+    pub ls: Vec<AstScalarRc<C>>,
+    pub l_blind: AstScalarRc<C>,
 }
 pub struct EvaluationProof<C: CurveAffine> {
     pub point: AstScalarRc<C>,
@@ -73,31 +76,32 @@ pub struct MultiOpenProof<C: CurveAffine> {
 }
 
 impl<C: CurveAffine> VerifierParams<C> {
-    fn evaluate_expression(&self, expr: &Expression<C::ScalarExt>) -> AstScalarRc<C> {
+    pub(crate) fn evaluate_expression(&self, expr: &Expression<C::ScalarExt>) -> AstScalarRc<C> {
         match expr {
             Expression::Constant(c) => sconst!(*c),
             Expression::Selector(_) => unreachable!(),
             Expression::Fixed { query_index, .. } => self.fixed_evals[*query_index].clone(),
             Expression::Advice { query_index, .. } => self.advice_evals[*query_index].clone(),
             Expression::Instance { query_index, .. } => self.instance_evals[*query_index].clone(),
-            Expression::Negated(_) => sconst!(C::ScalarExt::from(0u64)),
-            Expression::Sum(_, _) => todo!(),
-            Expression::Product(_, _) => todo!(),
-            Expression::Scaled(_, _) => todo!(),
+            Expression::Negated(a) => {
+                sconst!(C::ScalarExt::from(0u64)) - self.evaluate_expression(a)
+            }
+            Expression::Sum(a, b) => self.evaluate_expression(a) + self.evaluate_expression(b),
+            Expression::Product(a, b) => self.evaluate_expression(a) * self.evaluate_expression(b),
+            Expression::Scaled(a, b) => sconst!(*b) * self.evaluate_expression(a),
         }
     }
 
     fn get_all_expressions_eval(&self) -> Vec<AstScalarRc<C>> {
-        let expression_evals = iter::empty()
+        iter::empty()
             .chain(self.gates.iter().map(|expr| self.evaluate_expression(expr)))
             .chain(self.permutation_evaluated.expressions(self).into_iter())
             .chain(
                 self.lookup_evaluated
                     .iter()
                     .flat_map(|e| e.expressions(self)),
-            );
-
-        todo!()
+            )
+            .collect()
     }
 
     fn get_all_queries(&self) -> Vec<EvaluationQuery<C>> {

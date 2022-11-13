@@ -195,6 +195,27 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
         let x_inv = omega_neg * x.clone();
         let xn = spow!(x.clone(), n);
 
+        let ls = {
+            let mut ws = vec![sconst!(1u64)];
+            let mut acc = raw_omega;
+            for _ in 1..=l {
+                ws.push(ws.last().unwrap() * sconst!(acc.invert().unwrap()));
+                acc = acc * raw_omega
+            }
+            (0..=l as usize)
+                .map(|i| {
+                    let wi = &ws[i];
+                    ((wi / sconst!(n as u64)) * (xn.clone() - sconst!(1u64)))
+                        / (x.clone() - wi.clone())
+                })
+                .collect::<Vec<_>>()
+        };
+        let l_blind = ls[1..l as usize]
+            .into_iter()
+            .map(|x| x.clone())
+            .reduce(|acc, x| acc + x)
+            .unwrap();
+
         VerifierParams {
             key: self.key.clone(),
             gates,
@@ -230,6 +251,8 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
             u,
             v,
             omega,
+            ls,
+            l_blind,
         }
     }
 }
