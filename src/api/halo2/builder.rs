@@ -201,7 +201,8 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
         VerifierParams {
             key: self.key.clone(),
             gates,
-            common: PlonkCommonSetup { l, n },
+            n,
+            l,
             lookup_evaluated,
             permutation_evaluated,
             instance_commitments,

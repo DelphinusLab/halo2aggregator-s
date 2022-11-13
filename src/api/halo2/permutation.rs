@@ -1,3 +1,4 @@
+use super::query::EvaluationQuery;
 use crate::api::arith::AstPoint;
 use crate::api::arith::AstScalar;
 use crate::api::transcript::AstTranscript;
@@ -5,6 +6,7 @@ use crate::api::transcript::AstTranscriptReader;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::plonk::VerifyingKey;
 use halo2_proofs::poly::Rotation;
+use std::iter;
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -92,5 +94,52 @@ impl<C: CurveAffine> Evaluated<C> {
             chunk_len: vk.cs.degree() - 2,
             key: format!("{}_permutation", key.clone()),
         }
+    }
+}
+
+impl<C: CurveAffine> Evaluated<C> {
+    pub fn queries(
+        &self,
+        x_next: Rc<AstScalar<C>>,
+        x_last: Rc<AstScalar<C>>,
+    ) -> Vec<EvaluationQuery<C>> {
+        iter::empty()
+            .chain(self.sets.iter().enumerate().flat_map(|(i, set)| {
+                iter::empty()
+                    // Open permutation product commitments at x and \omega^{-1} x
+                    // Open permutation product commitments at x and \omega x
+                    .chain(Some(EvaluationQuery::new(
+                        0,
+                        self.x.clone(),
+                        format!("{}_product_commitment_{}", self.key, i),
+                        set.permutation_product_commitment.clone(),
+                        set.permutation_product_eval.clone(),
+                    )))
+                    .chain(Some(EvaluationQuery::new(
+                        1,
+                        x_next.clone(),
+                        format!("{}_product_commitment_{}", self.key, i),
+                        set.permutation_product_commitment.clone(),
+                        set.permutation_product_next_eval.clone(),
+                    )))
+            }))
+            // Open it at \omega^{last} x for all but the last set
+            .chain(
+                self.sets
+                    .iter()
+                    .enumerate()
+                    .rev()
+                    .skip(1)
+                    .flat_map(|(i, set)| {
+                        Some(EvaluationQuery::new(
+                            -((self.blinding_factors + 1) as i32),
+                            x_last.clone(),
+                            format!("{}_product_commitment_{}", self.key, i),
+                            set.permutation_product_commitment.clone(),
+                            set.permutation_product_last_eval.as_ref().unwrap().clone(),
+                        ))
+                    }),
+            )
+            .collect()
     }
 }

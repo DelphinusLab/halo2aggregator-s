@@ -1,3 +1,4 @@
+use super::query::EvaluationQuery;
 use crate::api::arith::AstPoint;
 use crate::api::arith::AstScalar;
 use crate::api::transcript::AstTranscript;
@@ -54,5 +55,50 @@ impl<C: CurveAffine> Evaluated<C> {
             permuted_table_eval,
             key: format!("{}_lookup_{}", key.clone(), index),
         }
+    }
+
+    pub fn queries(
+        &self,
+        x: Rc<AstScalar<C>>,
+        x_inv: Rc<AstScalar<C>>,
+        x_next: Rc<AstScalar<C>>,
+    ) -> Vec<EvaluationQuery<C>> {
+        vec![
+            EvaluationQuery::new(
+                0,
+                x.clone(),
+                format!("{}_product_commitment", self.key),
+                self.product_commitment.clone(),
+                self.product_eval.clone(),
+            ),
+            EvaluationQuery::new(
+                0,
+                x.clone(),
+                format!("{}_permuted_input_commitment", self.key),
+                self.permuted_commitment.permuted_input_commitment.clone(),
+                self.permuted_input_eval.clone(),
+            ),
+            EvaluationQuery::new(
+                0,
+                x.clone(),
+                format!("{}_permuted_table_commitment", self.key),
+                self.permuted_commitment.permuted_table_commitment.clone(),
+                self.permuted_table_eval.clone(),
+            ),
+            EvaluationQuery::new(
+                -1,
+                x_inv.clone(),
+                format!("{}_permuted_input_commitment", self.key),
+                self.permuted_commitment.permuted_input_commitment.clone(),
+                self.permuted_input_inv_eval.clone(),
+            ),
+            EvaluationQuery::new(
+                1,
+                x_next.clone(),
+                format!("{}_product_commitment", self.key),
+                self.product_commitment.clone(),
+                self.product_next_eval.clone(),
+            ),
+        ]
     }
 }
