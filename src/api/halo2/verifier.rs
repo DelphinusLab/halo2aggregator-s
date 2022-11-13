@@ -10,6 +10,7 @@ use crate::scalar;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::plonk::Expression;
 use std::collections::BTreeMap;
+use std::iter;
 use std::rc::Rc;
 
 pub struct VerifierParams<C: CurveAffine> {
@@ -70,6 +71,23 @@ pub struct MultiOpenProof<C: CurveAffine> {
 }
 
 impl<C: CurveAffine> VerifierParams<C> {
+    fn evaluate_expression(&self, expr: &Expression<C::ScalarExt>) -> Rc<AstScalar<C>> {
+        todo!()
+    }
+
+    fn get_all_expressions_eval(&self) -> Vec<Rc<AstScalar<C>>> {
+        let expression_evals = iter::empty()
+            .chain(self.gates.iter().map(|expr| self.evaluate_expression(expr)))
+            .chain(self.permutation_evaluated.expressions(self).into_iter())
+            .chain(
+                self.lookup_evaluated
+                    .iter()
+                    .flat_map(|e| e.expressions(self)),
+            );
+
+        todo!()
+    }
+
     fn get_all_queries(&self) -> Vec<EvaluationQuery<C>> {
         todo!()
     }

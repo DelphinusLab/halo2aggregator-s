@@ -1,6 +1,7 @@
 use super::super::query::EvaluationQuery;
 use crate::api::arith::AstPoint;
 use crate::api::arith::AstScalar;
+use crate::api::halo2::verifier::VerifierParams;
 use crate::api::transcript::AstTranscript;
 use crate::api::transcript::AstTranscriptReader;
 use halo2_proofs::arithmetic::CurveAffine;
@@ -95,9 +96,11 @@ impl<C: CurveAffine> Evaluated<C> {
             key: format!("{}_permutation", key.clone()),
         }
     }
-}
 
-impl<C: CurveAffine> Evaluated<C> {
+    pub fn expressions(&self, params: &VerifierParams<C>) -> Vec<Rc<AstScalar<C>>> {
+        todo!()
+    }
+
     pub fn queries(
         &self,
         x_next: Rc<AstScalar<C>>,
