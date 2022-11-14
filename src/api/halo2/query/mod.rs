@@ -1,6 +1,4 @@
-use crate::api::arith::AstPoint;
 use crate::api::arith::AstPointRc;
-use crate::api::arith::AstScalar;
 use crate::api::arith::AstScalarRc;
 use crate::commit;
 use crate::eval;

@@ -63,7 +63,7 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
 
     pub fn build(&self) -> VerifierParams<C> {
         let cs = &self.vk.cs;
-        let raw_omega = self.vk.domain.get_omega();
+        let omega = self.vk.domain.get_omega();
         let poly_degree = self.vk.domain.get_quotient_poly_degree();
 
         // Prepare ast for constants.
@@ -98,6 +98,7 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
             .map(|x| x.polys.clone())
             .collect::<Vec<_>>()
             .concat();
+        let delta = sconst!(C::ScalarExt::DELTA);
 
         let rotations = HashSet::<i32>::from_iter(
             iter::empty()
@@ -187,20 +188,19 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
         let w = transcript.read_n_points(rotations.len());
 
         // Prepare ast for calculation.
-        let omega = sconst!(raw_omega);
-        let omega_neg_l = sconst!(raw_omega.pow_vartime([l as u64]).invert().unwrap());
-        let omega_neg = sconst!(raw_omega.invert().unwrap());
-        let x_next = omega.clone() * x.clone();
+        let omega_neg_l = sconst!(omega.pow_vartime([l as u64]).invert().unwrap());
+        let omega_neg = sconst!(omega.invert().unwrap());
+        let x_next = sconst!(omega) * x.clone();
         let x_last = omega_neg_l * x.clone();
         let x_inv = omega_neg * x.clone();
         let xn = spow!(x.clone(), n);
 
         let ls = {
             let mut ws = vec![sconst!(1u64)];
-            let mut acc = raw_omega;
+            let mut acc = omega;
             for _ in 1..=l {
                 ws.push(ws.last().unwrap() * sconst!(acc.invert().unwrap()));
-                acc = acc * raw_omega
+                acc = acc * omega
             }
             (0..=l as usize)
                 .map(|i| {
@@ -241,7 +241,7 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
             beta,
             gamma,
             theta,
-            delta: sconst!(C::ScalarExt::DELTA),
+            delta,
             x,
             x_next,
             x_last,

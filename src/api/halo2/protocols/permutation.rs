@@ -1,23 +1,17 @@
 use super::super::query::EvaluationQuery;
-use crate::api::arith::AstPoint;
 use crate::api::arith::AstPointRc;
 use crate::api::arith::AstScalar;
 use crate::api::arith::AstScalarRc;
 use crate::api::halo2::verifier::VerifierParams;
 use crate::api::transcript::AstTranscript;
 use crate::api::transcript::AstTranscriptReader;
+use crate::sconst;
+use crate::spow;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::plonk::VerifyingKey;
 use halo2_proofs::poly::Rotation;
 use std::iter;
 use std::rc::Rc;
-
-#[derive(Debug)]
-pub struct CommonEvaluated<C: CurveAffine> {
-    pub key: String,
-    pub permutation_evals: Vec<AstScalarRc<C>>,
-    pub permutation_commitments: Vec<AstPointRc<C>>,
-}
 
 #[derive(Debug)]
 pub struct EvaluatedSet<C: CurveAffine> {
@@ -100,14 +94,68 @@ impl<C: CurveAffine> Evaluated<C> {
     }
 
     pub fn expressions(&self, params: &VerifierParams<C>) -> Vec<AstScalarRc<C>> {
-        todo!()
+        let one = &sconst!(1u64);
+
+        let x = &params.x;
+        let delta = &params.delta;
+        let beta = &params.beta;
+        let gamma = &params.gamma;
+        let l_0 = &params.ls[0];
+        let l_last = &params.ls[params.l as usize];
+        let l_blind = &params.l_blind;
+
+        let mut res = vec![];
+
+        if let Some(first_set) = self.sets.first() {
+            let z_x = &first_set.permutation_product_eval;
+            res.push(l_0 * (one - z_x));
+        }
+
+        if let Some(last_set) = self.sets.last() {
+            let z_x = &last_set.permutation_product_eval;
+            res.push(l_last * (z_x * z_x - z_x));
+        }
+
+        for (set, last_set) in self.sets.iter().skip(1).zip(self.sets.iter()) {
+            let s = &set.permutation_product_eval;
+            let prev_last = last_set.permutation_product_last_eval.as_ref().unwrap();
+            res.push((s - prev_last) * l_0);
+        }
+
+        let t0 = &(beta * x);
+        let t1 = &(one - (l_last + l_blind));
+
+        for (chunk_index, ((set, evals), permutation_evals)) in self
+            .sets
+            .iter()
+            .zip(self.evals.chunks(self.chunk_len))
+            .zip(params.permutation_evals.chunks(self.chunk_len))
+            .enumerate()
+        {
+            let mut left = set.permutation_product_next_eval.clone();
+            let mut right = set.permutation_product_eval.clone();
+
+            let delta_pow = if chunk_index == 0 {
+                one.clone()
+            } else {
+                spow!(delta.clone(), (chunk_index * self.chunk_len) as u32)
+            };
+
+            let mut d = t0 * delta_pow;
+            for (eval, permutation_eval) in evals.iter().zip(permutation_evals) {
+                left = (eval + gamma + beta * permutation_eval) * &left;
+                right = (eval + gamma + &d) * &right;
+                d = delta * &d;
+            }
+            res.push((&left - &right) * t1);
+        }
+
+        res
     }
 
-    pub fn queries(
-        &self,
-        x_next: AstScalarRc<C>,
-        x_last: AstScalarRc<C>,
-    ) -> Vec<EvaluationQuery<C>> {
+    pub fn queries(&self, params: &VerifierParams<C>) -> Vec<EvaluationQuery<C>> {
+        let x_next = &params.x_next;
+        let x_last = &params.x_last;
         iter::empty()
             .chain(self.sets.iter().enumerate().flat_map(|(i, set)| {
                 iter::empty()

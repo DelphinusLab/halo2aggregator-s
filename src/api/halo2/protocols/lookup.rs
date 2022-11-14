@@ -101,12 +101,10 @@ impl<C: CurveAffine> Evaluated<C> {
         ]
     }
 
-    pub fn queries(
-        &self,
-        x: AstScalarRc<C>,
-        x_inv: AstScalarRc<C>,
-        x_next: AstScalarRc<C>,
-    ) -> Vec<EvaluationQuery<C>> {
+    pub fn queries(&self, params: &VerifierParams<C>) -> Vec<EvaluationQuery<C>> {
+        let x = &params.x;
+        let x_inv = &params.x_inv;
+        let x_next = &params.x_next;
         vec![
             EvaluationQuery::new(
                 0,

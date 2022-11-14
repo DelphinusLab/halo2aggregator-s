@@ -1,5 +1,6 @@
 use super::protocols::lookup;
 use super::protocols::permutation;
+use super::protocols::vanish;
 use super::query::CommitQuery;
 use super::query::EvaluationQuery;
 use super::query::EvaluationQuerySchemaRc;
@@ -10,6 +11,7 @@ use crate::commit;
 use crate::scalar;
 use crate::sconst;
 use halo2_proofs::arithmetic::CurveAffine;
+use halo2_proofs::arithmetic::Field;
 use halo2_proofs::plonk::Expression;
 use std::collections::BTreeMap;
 use std::iter;
@@ -59,7 +61,8 @@ pub struct VerifierParams<C: CurveAffine> {
     pub y: AstScalarRc<C>,
     pub u: AstScalarRc<C>,
     pub v: AstScalarRc<C>,
-    pub omega: AstScalarRc<C>,
+
+    pub omega: C::ScalarExt,
 
     pub ls: Vec<AstScalarRc<C>>,
     pub l_blind: AstScalarRc<C>,
@@ -92,7 +95,7 @@ impl<C: CurveAffine> VerifierParams<C> {
         }
     }
 
-    fn get_all_expressions_eval(&self) -> Vec<AstScalarRc<C>> {
+    fn get_all_expression_evals(&self) -> Vec<AstScalarRc<C>> {
         iter::empty()
             .chain(self.gates.iter().map(|expr| self.evaluate_expression(expr)))
             .chain(self.permutation_evaluated.expressions(self).into_iter())
@@ -104,8 +107,83 @@ impl<C: CurveAffine> VerifierParams<C> {
             .collect()
     }
 
+    fn x_rotate(&self, at: i32) -> AstScalarRc<C> {
+        let omega_at = if at < 0 {
+            self.omega.pow_vartime([(-at) as u64]).invert().unwrap()
+        } else {
+            self.omega.pow_vartime([(at) as u64])
+        };
+        sconst!(omega_at) * &self.x
+    }
+
     fn get_all_queries(&self) -> Vec<EvaluationQuery<C>> {
-        todo!()
+        let expression_evals = self.get_all_expression_evals();
+
+        let mut queries = vec![];
+        {
+            let instance_commitments = &self.instance_commitments;
+            let instance_evals = &self.instance_evals;
+            let advice_commitments = &self.advice_commitments;
+            let advice_evals = &self.advice_evals;
+            let permutation = &self.permutation_evaluated;
+            let lookups = &self.lookup_evaluated;
+
+            for (query_index, &(column, at)) in self.instance_queries.iter().enumerate() {
+                queries.push(EvaluationQuery::new(
+                    at,
+                    self.x_rotate(at),
+                    format!("{}_instance_commitments{}", self.key, column),
+                    instance_commitments[column].clone(),
+                    instance_evals[query_index].clone(),
+                ))
+            }
+
+            for (query_index, &(column, at)) in self.advice_queries.iter().enumerate() {
+                queries.push(EvaluationQuery::new(
+                    at,
+                    self.x_rotate(at),
+                    format!("{}_advice_commitments{}", self.key, column),
+                    advice_commitments[column].clone(),
+                    advice_evals[query_index].clone(),
+                ))
+            }
+
+            queries.append(&mut permutation.queries(self));
+            queries.append(&mut lookups.iter().flat_map(|p| p.queries(self)).collect());
+        }
+
+        for (query_index, &(column, at)) in self.fixed_queries.iter().enumerate() {
+            queries.push(EvaluationQuery::new(
+                at,
+                self.x_rotate(at),
+                format!("{}_fixed_commitments{}", self.key, column),
+                self.fixed_commitments[column].clone(),
+                self.fixed_evals[query_index].clone(),
+            ))
+        }
+
+        queries.append(
+            &mut self
+                .permutation_commitments
+                .iter()
+                .zip(self.permutation_evals.iter())
+                .enumerate()
+                .map(|(i, (commitment, eval))| {
+                    EvaluationQuery::new(
+                        0,
+                        self.x.clone(),
+                        format!("{}_permutation_commitments{}", self.key, i),
+                        commitment.clone(),
+                        eval.clone(),
+                    )
+                })
+                .collect(),
+        );
+
+        let vanish = vanish::Evaluated::build_from_verifier_params(&self, expression_evals);
+        queries.append(&mut vanish.queries(self));
+
+        queries
     }
 
     fn get_point_schemas(&self) -> Vec<EvaluationProof<C>> {
