@@ -94,7 +94,7 @@ impl<C: CurveAffine> Evaluated<C> {
     }
 
     pub fn expressions(&self, params: &VerifierParams<C>) -> Vec<AstScalarRc<C>> {
-        let one = &sconst!(1u64);
+        let one = &sconst!(C::ScalarExt::from(1u64));
 
         let x = &params.x;
         let delta = &params.delta;

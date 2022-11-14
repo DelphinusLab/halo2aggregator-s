@@ -21,11 +21,13 @@ impl<C: CurveAffine> Evaluated<C> {
         params: &VerifierParams<C>,
         expression_evals: Vec<AstScalarRc<C>>,
     ) -> Self {
+        let one = &sconst!(C::ScalarExt::from(1u64));
+
         let expected_h_eval = expression_evals
             .into_iter()
             .reduce(|acc, x| acc * &params.y + x)
             .unwrap();
-        let expected_h_eval = expected_h_eval / (&params.xn - sconst!(1u64));
+        let expected_h_eval = expected_h_eval / (&params.xn - one);
 
         let h_commitment = params
             .vanish_commitments

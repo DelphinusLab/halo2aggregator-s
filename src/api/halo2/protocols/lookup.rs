@@ -61,6 +61,8 @@ impl<C: CurveAffine> Evaluated<C> {
     }
 
     pub fn expressions(&self, params: &VerifierParams<C>) -> Vec<AstScalarRc<C>> {
+        let one = &sconst!(C::ScalarExt::from(1u64));
+
         let z_wx = &self.product_next_eval;
         let z_x = &self.product_eval;
         let a_x = &self.permuted_input_eval;
@@ -92,12 +94,12 @@ impl<C: CurveAffine> Evaluated<C> {
             .unwrap();
 
         vec![
-            l_0 * (sconst!(1u64) - z_x),
+            l_0 * (one - z_x),
             (l_last * ((z_x * z_x) - z_x)),
             ((left - ((product_eval * (input_eval + beta)) * (table_eval + gamma)))
-                * (sconst!(1u64) - (l_last + l_blind))),
+                * (one - (l_last + l_blind))),
             (l_0 * (a_x - s_x)),
-            (((a_x - s_x) * (a_x - a_invwx)) * (sconst!(1u64) - (l_last + l_blind))),
+            (((a_x - s_x) * (a_x - a_invwx)) * (one - (l_last + l_blind))),
         ]
     }
 

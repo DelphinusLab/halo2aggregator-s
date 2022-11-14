@@ -75,7 +75,7 @@ pub struct AstPointRc<C: CurveAffine>(pub Rc<AstPoint<C>>);
 #[macro_export]
 macro_rules! sconst {
     ($scalar:expr) => {
-        AstScalarRc(Rc::new(AstScalar::FromConst(C::ScalarExt::from($scalar))))
+        AstScalarRc(Rc::new(AstScalar::FromConst($scalar)))
     };
 }
 

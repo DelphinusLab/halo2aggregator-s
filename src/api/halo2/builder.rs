@@ -20,10 +20,9 @@ use std::iter;
 use std::rc::Rc;
 
 pub struct VerifierParamsBuilder<'a, E: MultiMillerLoop> {
-    vk: &'a VerifyingKey<E::G1Affine>,
-    params: &'a ParamsVerifier<E>,
-    key: String,
-    instances: Vec<E::G1Affine>,
+    pub(crate) key: String,
+    pub(crate) params: &'a ParamsVerifier<E>,
+    pub(crate) vk: &'a VerifyingKey<E::G1Affine>,
 }
 
 impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>>
@@ -43,11 +42,9 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
         let scalar = E::Scalar::from_bytes_wide(hasher.finalize().as_array());
         let scalar = sconst!(scalar);
 
-        let instance_commitments = self
-            .instances
-            .iter()
-            .enumerate()
-            .map(|(i, _)| pinstance!(i))
+        let instance_commitments = (0..self.vk.cs.num_instance_columns)
+            .into_iter()
+            .map(|i| pinstance!(i))
             .collect::<Vec<_>>();
 
         let mut transcript = Rc::new(AstTranscript::Init);
@@ -61,7 +58,8 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
         (instance_commitments, transcript)
     }
 
-    pub fn build(&self) -> VerifierParams<C> {
+    pub fn build(&self) -> (VerifierParams<C>, Rc<AstTranscript<C>>) {
+        let one = C::ScalarExt::one();
         let cs = &self.vk.cs;
         let omega = self.vk.domain.get_omega();
         let poly_degree = self.vk.domain.get_quotient_poly_degree();
@@ -196,7 +194,7 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
         let xn = spow!(x.clone(), n);
 
         let ls = {
-            let mut ws = vec![sconst!(1u64)];
+            let mut ws = vec![sconst!(one)];
             let mut acc = omega;
             for _ in 1..=l {
                 ws.push(ws.last().unwrap() * sconst!(acc.invert().unwrap()));
@@ -205,7 +203,7 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
             (0..=l as usize)
                 .map(|i| {
                     let wi = &ws[i];
-                    ((wi / sconst!(n as u64)) * (xn.clone() - sconst!(1u64)))
+                    ((wi / sconst!(C::ScalarExt::from(n as u64))) * (xn.clone() - sconst!(one)))
                         / (x.clone() - wi.clone())
                 })
                 .collect::<Vec<_>>()
@@ -216,43 +214,46 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
             .reduce(|acc, x| acc + x)
             .unwrap();
 
-        VerifierParams {
-            key: self.key.clone(),
-            gates,
-            n,
-            l,
-            lookup_evaluated,
-            permutation_evaluated,
-            instance_commitments,
-            instance_evals,
-            instance_queries,
-            advice_commitments,
-            advice_evals,
-            advice_queries,
-            fixed_commitments,
-            fixed_evals,
-            fixed_queries,
-            permutation_commitments,
-            permutation_evals,
-            vanish_commitments,
-            random_commitment,
-            w,
-            random_eval,
-            beta,
-            gamma,
-            theta,
-            delta,
-            x,
-            x_next,
-            x_last,
-            x_inv,
-            xn,
-            y,
-            u,
-            v,
-            omega,
-            ls,
-            l_blind,
-        }
+        (
+            VerifierParams {
+                key: self.key.clone(),
+                gates,
+                n,
+                l,
+                lookup_evaluated,
+                permutation_evaluated,
+                instance_commitments,
+                instance_evals,
+                instance_queries,
+                advice_commitments,
+                advice_evals,
+                advice_queries,
+                fixed_commitments,
+                fixed_evals,
+                fixed_queries,
+                permutation_commitments,
+                permutation_evals,
+                vanish_commitments,
+                random_commitment,
+                w,
+                random_eval,
+                beta,
+                gamma,
+                theta,
+                delta,
+                x,
+                x_next,
+                x_last,
+                x_inv,
+                xn,
+                y,
+                u,
+                v,
+                omega,
+                ls,
+                l_blind,
+            },
+            transcript,
+        )
     }
 }
