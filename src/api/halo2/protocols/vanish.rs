@@ -8,6 +8,7 @@ use crate::commit;
 use crate::scalar;
 use crate::sconst;
 use halo2_proofs::arithmetic::CurveAffine;
+use halo2_proofs::arithmetic::Field;
 use std::rc::Rc;
 
 pub struct Evaluated<C: CurveAffine> {
@@ -21,7 +22,7 @@ impl<C: CurveAffine> Evaluated<C> {
         params: &VerifierParams<C>,
         expression_evals: Vec<AstScalarRc<C>>,
     ) -> Self {
-        let one = &sconst!(C::ScalarExt::from(1u64));
+        let one = &sconst!(C::ScalarExt::one());
 
         let expected_h_eval = expression_evals
             .into_iter()

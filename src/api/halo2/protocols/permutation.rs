@@ -8,6 +8,7 @@ use crate::api::transcript::AstTranscriptReader;
 use crate::sconst;
 use crate::spow;
 use halo2_proofs::arithmetic::CurveAffine;
+use halo2_proofs::arithmetic::Field;
 use halo2_proofs::plonk::VerifyingKey;
 use halo2_proofs::poly::Rotation;
 use std::iter;
@@ -94,7 +95,7 @@ impl<C: CurveAffine> Evaluated<C> {
     }
 
     pub fn expressions(&self, params: &VerifierParams<C>) -> Vec<AstScalarRc<C>> {
-        let one = &sconst!(C::ScalarExt::from(1u64));
+        let one = &sconst!(C::ScalarExt::one());
 
         let x = &params.x;
         let delta = &params.delta;

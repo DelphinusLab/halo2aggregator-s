@@ -7,6 +7,7 @@ use crate::eval;
 use crate::pconst;
 use crate::sconst;
 use halo2_proofs::arithmetic::CurveAffine;
+use halo2_proofs::arithmetic::Field;
 use std::collections::HashMap;
 use std::ops::Add;
 use std::ops::Mul;
@@ -134,7 +135,7 @@ impl<C: CurveAffine> Mul<EvaluationQuerySchemaRc<C>> for EvaluationQuerySchemaRc
 
 impl<C: CurveAffine> EvaluationQuerySchemaRc<C> {
     pub fn eval(self, s_coeff: AstScalarRc<C>) -> AstPointRc<C> {
-        let one = sconst!(C::ScalarExt::from(1u64));
+        let one = sconst!(C::ScalarExt::one());
 
         let (pl, s) = self.eval_prepare(one);
         AstPointRc(Rc::new(AstPoint::Multiexp(
@@ -161,7 +162,7 @@ impl<C: CurveAffine> EvaluationQuerySchemaRc<C> {
                 HashMap::from_iter(
                     vec![(cq.key.clone(), (cq.commitment.clone().unwrap(), coeff))].into_iter(),
                 ),
-                sconst!(C::ScalarExt::from(0u64)),
+                sconst!(C::ScalarExt::zero()),
             ),
             EvaluationQuerySchema::Eval(cq) => (HashMap::new(), coeff * cq.eval.clone().unwrap()),
             EvaluationQuerySchema::Scalar(s) => (HashMap::new(), s * coeff),

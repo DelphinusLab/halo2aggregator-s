@@ -87,7 +87,7 @@ impl<C: CurveAffine> VerifierParams<C> {
             Expression::Advice { query_index, .. } => self.advice_evals[*query_index].clone(),
             Expression::Instance { query_index, .. } => self.instance_evals[*query_index].clone(),
             Expression::Negated(a) => {
-                sconst!(C::ScalarExt::from(0u64)) - self.evaluate_expression(a)
+                sconst!(C::ScalarExt::zero()) - self.evaluate_expression(a)
             }
             Expression::Sum(a, b) => self.evaluate_expression(a) + self.evaluate_expression(b),
             Expression::Product(a, b) => self.evaluate_expression(a) * self.evaluate_expression(b),
