@@ -10,6 +10,7 @@ use std::path::Path;
 
 pub mod api;
 pub mod circuits;
+pub mod native_verifier;
 
 fn main() {
     let path = "./output";

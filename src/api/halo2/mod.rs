@@ -38,9 +38,9 @@ pub fn verify_single_proof_no_eval<E: MultiMillerLoop>(
     )
 }
 
-pub fn verify_aggregation_proofs_in_chip<'a, E: MultiMillerLoop>(
+pub fn verify_aggregation_proofs<E: MultiMillerLoop>(
     params: &ParamsVerifier<E>,
-    vks: Vec<&'a VerifyingKey<E::G1Affine>>,
+    vks: &[&VerifyingKey<E::G1Affine>],
 ) -> (
     AstPointRc<E::G1Affine>,           // w_x
     AstPointRc<E::G1Affine>,           // w_g

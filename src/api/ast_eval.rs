@@ -1,0 +1,321 @@
+use crate::api::arith::AstPoint;
+use crate::api::arith::AstScalar;
+use crate::api::transcript::AstTranscript;
+use halo2_proofs::arithmetic::CurveAffine;
+use std::collections::BTreeMap;
+use std::collections::BTreeSet;
+use std::collections::HashMap;
+use std::collections::HashSet;
+use std::rc::Rc;
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub enum EvalPos {
+    Constant(usize),
+    Empty,
+    Instance(usize),
+    Ops(usize),
+}
+
+impl EvalPos {
+    pub fn map(&self, reverse_order: &Vec<usize>) -> Self {
+        match self {
+            EvalPos::Ops(a) => EvalPos::Ops(reverse_order[*a]),
+            _ => self.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq, Hash)]
+pub enum EvalOps {
+    TranscriptReadScalar(EvalPos),
+    TranscriptReadPoint(EvalPos),
+    TranscriptCommonScalar(EvalPos, EvalPos),
+    TranscriptCommonPoint(EvalPos, EvalPos),
+    TranscriptSqueeze(EvalPos),
+
+    ScalarAdd(EvalPos, EvalPos),
+    ScalarSub(EvalPos, EvalPos),
+    ScalarMul(EvalPos, EvalPos),
+    ScalarDiv(EvalPos, EvalPos),
+    ScalarPow(EvalPos, u32),
+
+    MSM(Vec<(EvalPos, EvalPos)>),
+}
+
+impl EvalOps {
+    pub fn deps(&self) -> Vec<&EvalPos> {
+        match self {
+            EvalOps::TranscriptReadScalar(a) => vec![a],
+            EvalOps::TranscriptReadPoint(a) => vec![a],
+            EvalOps::TranscriptCommonScalar(a, b) => vec![a, b],
+            EvalOps::TranscriptCommonPoint(a, b) => vec![a, b],
+            EvalOps::TranscriptSqueeze(a) => vec![a],
+            EvalOps::ScalarAdd(a, b) => vec![a, b],
+            EvalOps::ScalarSub(a, b) => vec![a, b],
+            EvalOps::ScalarMul(a, b) => vec![a, b],
+            EvalOps::ScalarDiv(a, b) => vec![a, b],
+            EvalOps::ScalarPow(a, _) => vec![a],
+            EvalOps::MSM(psl) => {
+                let mut deps = vec![];
+                for (p, s) in psl {
+                    deps.push(p);
+                    deps.push(s);
+                }
+                deps
+            }
+        }
+    }
+
+    pub fn map(&self, reverse_order: &Vec<usize>) -> Self {
+        match self {
+            EvalOps::TranscriptReadScalar(a) => EvalOps::TranscriptReadScalar(a.map(reverse_order)),
+            EvalOps::TranscriptReadPoint(a) => EvalOps::TranscriptReadPoint(a.map(reverse_order)),
+            EvalOps::TranscriptCommonScalar(a, b) => {
+                EvalOps::TranscriptCommonScalar(a.map(reverse_order), b.map(reverse_order))
+            }
+            EvalOps::TranscriptCommonPoint(a, b) => {
+                EvalOps::TranscriptCommonPoint(a.map(reverse_order), b.map(reverse_order))
+            }
+            EvalOps::TranscriptSqueeze(a) => EvalOps::TranscriptSqueeze(a.map(reverse_order)),
+            EvalOps::ScalarAdd(a, b) => {
+                EvalOps::ScalarAdd(a.map(reverse_order), b.map(reverse_order))
+            }
+            EvalOps::ScalarSub(a, b) => {
+                EvalOps::ScalarSub(a.map(reverse_order), b.map(reverse_order))
+            }
+            EvalOps::ScalarMul(a, b) => {
+                EvalOps::ScalarMul(a.map(reverse_order), b.map(reverse_order))
+            }
+            EvalOps::ScalarDiv(a, b) => {
+                EvalOps::ScalarDiv(a.map(reverse_order), b.map(reverse_order))
+            }
+            EvalOps::ScalarPow(a, n) => EvalOps::ScalarPow(a.map(reverse_order), *n),
+            EvalOps::MSM(psl) => EvalOps::MSM({
+                psl.iter()
+                    .map(|(p, s)| (p.map(reverse_order), s.map(reverse_order)))
+                    .collect()
+            }),
+        }
+    }
+}
+
+#[derive(Default)]
+pub struct EvalContext<C: CurveAffine> {
+    pub ops: Vec<EvalOps>,
+    pub const_points: Vec<C>,
+    pub const_scalars: Vec<C::ScalarExt>,
+    pub finals: Vec<usize>,
+
+    ops_cache: HashMap<EvalOps, usize>,
+    deps: HashMap<usize, HashSet<usize>>,
+    reverse_deps: HashMap<usize, HashSet<usize>>,
+}
+
+impl<C: CurveAffine> EvalContext<C> {
+    pub fn translate(ast: &[Rc<AstPoint<C>>]) -> Self {
+        let mut c = Self::default();
+        c.full_translate_ast_point(ast);
+        c
+    }
+
+    fn add_dep(&mut self, prev: &EvalPos, post: &EvalPos) {
+        if let EvalPos::Ops(prev) = prev {
+            if let EvalPos::Ops(post) = post {
+                if let Some(set) = self.reverse_deps.get_mut(prev) {
+                    set.insert(*post);
+                } else {
+                    self.reverse_deps.insert(*prev, HashSet::from([*post]));
+                }
+
+                if let Some(set) = self.deps.get_mut(post) {
+                    set.insert(*prev);
+                } else {
+                    self.deps.insert(*post, HashSet::from([*prev]));
+                }
+            }
+        }
+    }
+
+    fn push_op(&mut self, op: EvalOps) -> EvalPos {
+        if let Some(pos) = self.ops_cache.get(&op) {
+            EvalPos::Ops((*pos).try_into().unwrap())
+        } else {
+            let pos = EvalPos::Ops(self.ops.len().try_into().unwrap());
+            for prev in op.deps() {
+                self.add_dep(prev, &pos);
+            }
+            self.ops.push(op);
+            pos
+        }
+    }
+
+    fn translate_ast_scalar(&mut self, ast: &Rc<AstScalar<C>>) -> EvalPos {
+        let ast: &AstScalar<C> = ast.as_ref();
+        match ast {
+            AstScalar::FromConst(x) => {
+                let mut pos = self.const_scalars.len();
+                for (i, s) in self.const_scalars.iter().enumerate() {
+                    if s == x {
+                        pos = i;
+                    }
+                }
+                if pos == self.const_scalars.len() {
+                    self.const_scalars.push(*x);
+                }
+                EvalPos::Constant(pos.try_into().unwrap())
+            }
+            AstScalar::FromTranscript(t) => self.translate_ast_transcript(t),
+            AstScalar::FromChallenge(t) => self.translate_ast_transcript(t),
+            AstScalar::Add(a, b) => {
+                let a = self.translate_ast_scalar(a);
+                let b = self.translate_ast_scalar(b);
+                self.push_op(EvalOps::ScalarAdd(a, b))
+            }
+            AstScalar::Sub(a, b) => {
+                let a = self.translate_ast_scalar(a);
+                let b = self.translate_ast_scalar(b);
+                self.push_op(EvalOps::ScalarSub(a, b))
+            }
+            AstScalar::Mul(a, b) => {
+                let a = self.translate_ast_scalar(a);
+                let b = self.translate_ast_scalar(b);
+                self.push_op(EvalOps::ScalarMul(a, b))
+            }
+            AstScalar::Div(a, b) => {
+                let a = self.translate_ast_scalar(a);
+                let b = self.translate_ast_scalar(b);
+                self.push_op(EvalOps::ScalarDiv(a, b))
+            }
+            AstScalar::Pow(a, n) => {
+                let a = self.translate_ast_scalar(a);
+                self.push_op(EvalOps::ScalarPow(a, *n))
+            }
+        }
+    }
+
+    fn translate_ast_transcript(&mut self, ast: &Rc<AstTranscript<C>>) -> EvalPos {
+        let ast: &AstTranscript<C> = ast.as_ref();
+        match ast {
+            AstTranscript::CommonScalar(t, s) => {
+                let t = self.translate_ast_transcript(t);
+                let s = self.translate_ast_scalar(s);
+                self.push_op(EvalOps::TranscriptCommonScalar(t, s))
+            }
+            AstTranscript::CommonPoint(t, p) => {
+                let t = self.translate_ast_transcript(t);
+                let p = self.translate_ast_point(p);
+                self.push_op(EvalOps::TranscriptCommonScalar(t, p))
+            }
+            AstTranscript::ReadScalar(t) => {
+                let t = self.translate_ast_transcript(t);
+                self.push_op(EvalOps::TranscriptReadScalar(t))
+            }
+            AstTranscript::ReadPoint(t) => {
+                let t = self.translate_ast_transcript(t);
+                self.push_op(EvalOps::TranscriptReadPoint(t))
+            }
+            AstTranscript::SqueezeChallenge(t) => {
+                let t = self.translate_ast_transcript(t);
+                self.push_op(EvalOps::TranscriptSqueeze(t))
+            }
+            AstTranscript::Init => EvalPos::Empty,
+        }
+    }
+
+    fn translate_ast_point(&mut self, ast: &Rc<AstPoint<C>>) -> EvalPos {
+        let ast: &AstPoint<C> = ast.as_ref();
+        match ast {
+            AstPoint::FromConst(c) => {
+                let mut pos = self.const_points.len();
+                for (i, p) in self.const_points.iter().enumerate() {
+                    if p == c {
+                        pos = i;
+                    }
+                }
+                if pos == self.const_points.len() {
+                    self.const_points.push(*c);
+                }
+                EvalPos::Constant(pos.try_into().unwrap())
+            }
+            AstPoint::FromTranscript(t) => self.translate_ast_transcript(t),
+            AstPoint::FromInstance(i) => EvalPos::Instance((*i) as usize),
+            AstPoint::Multiexp(psl) => {
+                let mut sl = vec![];
+                let mut pl = vec![];
+                for (_, x) in psl {
+                    sl.push(self.translate_ast_scalar(x));
+                }
+
+                for (x, _) in psl {
+                    pl.push(self.translate_ast_point(x));
+                }
+                self.push_op(EvalOps::MSM(pl.into_iter().zip(sl.into_iter()).collect()))
+            }
+        }
+    }
+
+    // Translate AST into small ops & Dedup & Topological sorting
+    fn full_translate_ast_point(&mut self, asts: &[Rc<AstPoint<C>>]) {
+        // Translate & Dedup
+        for ast in asts {
+            self.translate_ast_point(ast);
+            self.finals.push(self.ops.len() - 1);
+        }
+
+        // Topological sorting
+        let mut dep_counts = (0..self.ops.len())
+            .into_iter()
+            .map(|i| self.deps.get(&(i as usize)).map_or(0, |set| set.len()))
+            .collect::<Vec<_>>();
+
+        let mut nodes = BTreeMap::<usize, BTreeSet<usize>>::new();
+        for i in 0..self.ops.len() {
+            nodes.insert(i, BTreeSet::new());
+        }
+        for (i, dep_count) in dep_counts.iter().enumerate() {
+            nodes
+                .get_mut(dep_count)
+                .unwrap()
+                .insert(i.try_into().unwrap());
+        }
+
+        let mut order = vec![];
+
+        for _ in 0..self.ops.len() {
+            let node = nodes.get_mut(&0usize).unwrap().pop_first().unwrap();
+            assert_eq!(dep_counts[node as usize], 0);
+            order.push(node);
+            if let Some(deps) = self.reverse_deps.get(&node) {
+                for dep in deps {
+                    let count = dep_counts[(*dep) as usize];
+                    assert!(count > 0);
+                    nodes.get_mut(&count).unwrap().remove(dep);
+
+                    dep_counts[(*dep) as usize] -= 1;
+                    let count = count - 1;
+                    nodes.get_mut(&count).unwrap().insert(*dep);
+                }
+            }
+        }
+
+        // Reconstruct ops queue with new order
+        let mut reverse_order = vec![0; order.len()];
+        for (i, o) in order.iter().enumerate() {
+            reverse_order[*o] = i;
+        }
+
+        let mut ops = vec![];
+        for o in order {
+            ops.push(self.ops[o].map(&reverse_order));
+        }
+
+        self.ops = ops;
+        self.ops_cache.clear();
+        self.deps.clear();
+        self.reverse_deps.clear();
+
+        for f in self.finals.iter_mut() {
+            *f = reverse_order[*f];
+        }
+    }
+}

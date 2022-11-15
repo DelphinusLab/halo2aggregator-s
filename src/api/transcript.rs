@@ -7,6 +7,8 @@ use std::rc::Rc;
 
 #[derive(Debug)]
 pub enum AstTranscript<C: CurveAffine> {
+    ReadScalar(Rc<Self>),
+    ReadPoint(Rc<Self>),
     CommonScalar(Rc<Self>, Rc<AstScalar<C>>),
     CommonPoint(Rc<Self>, Rc<AstPoint<C>>),
     SqueezeChallenge(Rc<Self>),
@@ -33,10 +35,10 @@ impl<C: CurveAffine> AstTranscriptReader<C> for Rc<AstTranscript<C>> {
     }
 
     fn read_scalar(&mut self) -> AstScalarRc<C> {
-        let p = AstScalarRc(Rc::new(AstScalar::FromTranscript(self.clone())));
-        let t = Rc::new(AstTranscript::CommonScalar(self.clone(), p.0.clone()));
+        let t = Rc::new(AstTranscript::ReadScalar(self.clone()));
         *self = t;
-        p
+        let s = AstScalarRc(Rc::new(AstScalar::FromTranscript(self.clone())));
+        s
     }
 
     fn read_n_scalars(&mut self, n: usize) -> Vec<AstScalarRc<C>> {
@@ -44,9 +46,9 @@ impl<C: CurveAffine> AstTranscriptReader<C> for Rc<AstTranscript<C>> {
     }
 
     fn read_point(&mut self) -> AstPointRc<C> {
-        let p = AstPointRc(Rc::new(AstPoint::FromTranscript(self.clone())));
-        let t = Rc::new(AstTranscript::CommonPoint(self.clone(), p.0.clone()));
+        let t = Rc::new(AstTranscript::ReadPoint(self.clone()));
         *self = t;
+        let p = AstPointRc(Rc::new(AstPoint::FromTranscript(self.clone())));
         p
     }
 

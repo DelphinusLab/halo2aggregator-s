@@ -1,8 +1,10 @@
+use crate::native_verifier::verify_single_proof;
 use ark_std::end_timer;
 use ark_std::rand::rngs::OsRng;
 use ark_std::start_timer;
 use halo2_proofs::arithmetic::BaseExt;
 use halo2_proofs::arithmetic::MultiMillerLoop;
+use halo2_proofs::pairing::group::Curve;
 use halo2_proofs::plonk::create_proof;
 use halo2_proofs::plonk::keygen_pk;
 use halo2_proofs::plonk::keygen_vk;
@@ -90,6 +92,22 @@ pub fn store_instance<E: MultiMillerLoop>(instances: Vec<Vec<E::Scalar>>, cache_
     }
 }
 
+pub fn instance_to_instance_commitment<E: MultiMillerLoop>(
+    params: &ParamsVerifier<E>,
+    vk: &VerifyingKey<E::G1Affine>,
+    instances: &[&[E::Scalar]],
+) -> Vec<E::G1Affine> {
+    instances
+        .iter()
+        .map(|instance| {
+            assert!(instance.len() <= params.n as usize - (vk.cs.blinding_factors() + 1));
+
+            params.commit_lagrange(instance.to_vec()).to_affine()
+        })
+        .collect()
+}
+
+#[derive(Clone, Copy)]
 pub enum TranscriptHash {
     Blake2b,
 }
@@ -101,9 +119,10 @@ pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
     instances: &[&[E::Scalar]],
     cache_file_opt: Option<&Path>,
     hash: TranscriptHash,
+    do_load: bool,
 ) -> Vec<u8> {
     if let Some(cache_file) = &cache_file_opt {
-        if Path::exists(&cache_file) {
+        if do_load && Path::exists(&cache_file) {
             println!("read transcript from {:?}", cache_file);
             let mut fd = std::fs::File::open(&cache_file).unwrap();
             let mut buf = vec![];
@@ -170,6 +189,7 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
         &instances.iter().map(|x| &x[..]).collect::<Vec<_>>(),
         Some(&cache_folder.join(format!("{}.transcript.data", prefix))),
         hash,
+        false,
     );
 
     if true {
@@ -185,7 +205,7 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
         let params_verifier: ParamsVerifier<E> = params.verifier(public_inputs_size).unwrap();
 
         let strategy = SingleVerifier::new(&params_verifier);
-        let timer = start_timer!(|| "verify proof");
+        let timer = start_timer!(|| "origin verify proof");
 
         verify_proof(
             &params_verifier,
@@ -195,6 +215,16 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
             &mut Blake2bRead::init(&proof[..]),
         )
         .unwrap();
+        end_timer!(timer);
+
+        let timer = start_timer!(|| "native verify proof");
+        verify_single_proof::<E>(
+            &params_verifier,
+            &vkey,
+            &instances.iter().map(|x| &x[..]).collect::<Vec<_>>()[..],
+            proof,
+            hash,
+        );
         end_timer!(timer);
     }
 }

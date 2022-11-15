@@ -64,7 +64,7 @@ define_scalar_ops!(Mul, mul);
 pub enum AstPoint<C: CurveAffine> {
     FromConst(C),
     FromTranscript(Rc<AstTranscript<C>>),
-    FromInstance(usize),
+    FromInstance(u32),
     Multiexp(Vec<(Rc<Self>, Rc<AstScalar<C>>)>),
 }
 

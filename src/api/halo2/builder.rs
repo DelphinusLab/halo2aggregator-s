@@ -44,7 +44,7 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
 
         let instance_commitments = (0..self.vk.cs.num_instance_columns)
             .into_iter()
-            .map(|i| pinstance!(i))
+            .map(|i| pinstance!(i.try_into().unwrap()))
             .collect::<Vec<_>>();
 
         let mut transcript = Rc::new(AstTranscript::Init);
@@ -63,6 +63,13 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
         let cs = &self.vk.cs;
         let omega = self.vk.domain.get_omega();
         let poly_degree = self.vk.domain.get_quotient_poly_degree();
+        let n_permutation_commitments = self
+            .vk
+            .cs
+            .permutation
+            .columns
+            .chunks(self.vk.cs.degree() - 2)
+            .len();
 
         // Prepare ast for constants.
         let l = cs.blinding_factors() as u32 + 1;
@@ -98,13 +105,18 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
             .concat();
         let delta = sconst!(C::ScalarExt::DELTA);
 
-        let rotations = HashSet::<i32>::from_iter(
-            iter::empty()
-                .chain(instance_queries.iter().map(|x| x.1))
-                .chain(advice_queries.iter().map(|x| x.1))
-                .chain(fixed_queries.iter().map(|x| x.1))
-                .chain(vec![0, 1, -1, -((cs.blinding_factors() + 1) as i32)].into_iter()),
-        );
+        let mut rotations = HashSet::<i32>::new();
+        for i in iter::empty()
+            .chain(instance_queries.iter().map(|x| x.1))
+            .chain(advice_queries.iter().map(|x| x.1))
+            .chain(fixed_queries.iter().map(|x| x.1))
+            .chain(vec![0, 1, -1].into_iter())
+        {
+            rotations.insert(i);
+        }
+        if n_permutation_commitments > 1 {
+            rotations.insert(-((cs.blinding_factors() + 1) as i32));
+        }
 
         // Prepare ast for transcript.
         let (instance_commitments, mut transcript) = self.init_transcript();
@@ -125,14 +137,7 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
         let beta = transcript.squeeze_challenge();
         let gamma = transcript.squeeze_challenge();
 
-        let permutation_product_commitments = transcript.read_n_points(
-            self.vk
-                .cs
-                .permutation
-                .columns
-                .chunks(self.vk.cs.degree() - 2)
-                .len(),
-        );
+        let permutation_product_commitments = transcript.read_n_points(n_permutation_commitments);
         let lookup_product_commitments = transcript.read_n_points(self.vk.cs.lookups.len());
 
         let random_commitment = transcript.read_point();
