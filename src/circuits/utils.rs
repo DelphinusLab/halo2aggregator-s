@@ -171,6 +171,7 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
     circuits: Vec<C>,
     instances: Vec<Vec<Vec<E::Scalar>>>,
     hash: TranscriptHash,
+    commentment_check: Vec<[usize; 4]>
 ) {
     let params =
         load_or_build_unsafe_params::<E>(k, Some(&cache_folder.join(format!("K{}.params", k))));
@@ -249,7 +250,7 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
             &instances,
             proofs,
             hash,
-            vec![],
+            commentment_check,
         );
 
         end_timer!(timer);

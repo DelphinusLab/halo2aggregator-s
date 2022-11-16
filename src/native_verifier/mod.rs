@@ -131,7 +131,7 @@ pub fn verify_multi_proofs<E: MultiMillerLoop>(
     instances: &Vec<Vec<Vec<E::Scalar>>>,
     proofs: Vec<Vec<u8>>,
     hash: TranscriptHash,
-    commitment_check: Vec<((usize, usize), (usize, usize))>,
+    commitment_check: Vec<[usize; 4]>,
 ) {
     let (w_x, w_g, advices) = verify_aggregation_proofs(params, vkey);
 
@@ -141,7 +141,14 @@ pub fn verify_multi_proofs<E: MultiMillerLoop>(
         .map(|(i, instances)| instance_to_instance_commitment(params, vkey[i], &instances))
         .collect::<Vec<_>>();
 
-    let c = EvalContext::translate(&[w_x.0, w_g.0]);
+    let mut targets = vec![w_x.0, w_g.0];
+    for idx in commitment_check {
+        println!("{} {} {:?}", idx[0], idx[1], advices[idx[0]][idx[1]]);
+        targets.push(advices[idx[0]][idx[1]].0.clone());
+        targets.push(advices[idx[2]][idx[3]].0.clone());
+    }
+
+    let c = EvalContext::translate(&targets[..]);
 
     let pl = match hash {
         TranscriptHash::Blake2b => {
@@ -175,4 +182,8 @@ pub fn verify_multi_proofs<E: MultiMillerLoop>(
     );
 
     assert!(success);
+
+    for c in pl.chunks(2).skip(1) {
+        assert_eq!(c[0], c[1]);
+    }
 }

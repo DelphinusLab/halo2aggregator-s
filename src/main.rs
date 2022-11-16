@@ -28,6 +28,7 @@ fn test_single_one_pass() {
         vec![circuit],
         vec![instances],
         TranscriptHash::Blake2b,
+        vec![],
     );
 }
 
@@ -54,5 +55,6 @@ fn test_multi_one_pass() {
         vec![circuit1, circuit2],
         vec![instance1, instance2],
         TranscriptHash::Blake2b,
+        vec![],
     );
 }

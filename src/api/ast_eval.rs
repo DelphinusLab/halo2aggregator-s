@@ -290,8 +290,11 @@ impl<C: CurveAffine> EvalContext<C> {
     fn full_translate_ast_point(&mut self, asts: &[Rc<AstPoint<C>>]) {
         // Translate & Dedup
         for ast in asts {
-            self.translate_ast_point(ast);
-            self.finals.push(self.ops.len() - 1);
+            let pos = self.translate_ast_point(ast);
+            match pos {
+                EvalPos::Ops(pos) => self.finals.push(pos),
+                _ => unreachable!(),
+            }
         }
 
         // Topological sorting

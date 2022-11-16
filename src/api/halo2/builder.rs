@@ -4,6 +4,7 @@ use super::verifier::VerifierParams;
 use crate::api::arith::*;
 use crate::api::transcript::AstTranscript;
 use crate::api::transcript::AstTranscriptReader;
+use crate::pcheckpoint;
 use crate::pconst;
 use crate::pinstance;
 use crate::scheckpoint;
@@ -53,9 +54,7 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
         transcript.common_scalar(scalar);
         instance_commitments
             .iter()
-            .for_each(|instance_commitment| {
-                transcript.common_point(instance_commitment.clone())
-            });
+            .for_each(|instance_commitment| transcript.common_point(instance_commitment.clone()));
 
         (instance_commitments, transcript)
     }
@@ -122,7 +121,12 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
 
         // Prepare ast for transcript.
         let (instance_commitments, mut transcript) = self.init_transcript(self.proof_index);
-        let advice_commitments = transcript.read_n_points(n_advice);
+        let advice_commitments = transcript
+            .read_n_points(n_advice)
+            .into_iter()
+            .enumerate()
+            .map(|(i, x)| pcheckpoint!(format!("advice commitment {} {}", self.proof_index, i), x))
+            .collect();
         let theta = transcript.squeeze_challenge();
         let lookup_permuted = (0..self.vk.cs.lookups.len())
             .map(|_| {
