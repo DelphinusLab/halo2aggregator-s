@@ -65,7 +65,7 @@ define_scalar_ops!(Mul, mul);
 pub enum AstPoint<C: CurveAffine> {
     FromConst(C),
     FromTranscript(Rc<AstTranscript<C>>),
-    FromInstance(u32),
+    FromInstance(usize, usize),
     Multiexp(Vec<(Rc<Self>, Rc<AstScalar<C>>)>),
     CheckPoint(String, Rc<Self>), // for debug purpose
 }
@@ -90,8 +90,8 @@ macro_rules! spow {
 
 #[macro_export]
 macro_rules! pinstance {
-    ($instance_idx:expr) => {
-        AstPointRc(Rc::new(AstPoint::FromInstance($instance_idx)))
+    ($proof_idx:expr, $instance_idx:expr) => {
+        AstPointRc(Rc::new(AstPoint::FromInstance($proof_idx, $instance_idx)))
     };
 }
 

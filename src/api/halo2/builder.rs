@@ -22,6 +22,7 @@ use std::rc::Rc;
 
 pub struct VerifierParamsBuilder<'a, E: MultiMillerLoop> {
     pub(crate) key: String,
+    pub(crate) proof_index: usize,
     pub(crate) params: &'a ParamsVerifier<E>,
     pub(crate) vk: &'a VerifyingKey<E::G1Affine>,
 }
@@ -29,7 +30,7 @@ pub struct VerifierParamsBuilder<'a, E: MultiMillerLoop> {
 impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>>
     VerifierParamsBuilder<'a, E>
 {
-    fn init_transcript(&self) -> (Vec<AstPointRc<C>>, Rc<AstTranscript<C>>) {
+    fn init_transcript(&self, proof_index: usize) -> (Vec<AstPointRc<C>>, Rc<AstTranscript<C>>) {
         let mut hasher = blake2b_simd::Params::new()
             .hash_length(64)
             .personal(b"Halo2-Verify-Key")
@@ -45,14 +46,14 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
 
         let instance_commitments = (0..self.vk.cs.num_instance_columns)
             .into_iter()
-            .map(|i| pinstance!(i.try_into().unwrap()))
+            .map(|i| pinstance!(proof_index, i.try_into().unwrap()))
             .collect::<Vec<_>>();
 
-        let mut transcript = Rc::new(AstTranscript::Init);
-        transcript = transcript.common_scalar(scalar);
-        transcript = instance_commitments
+        let mut transcript = Rc::new(AstTranscript::Init(proof_index));
+        transcript.common_scalar(scalar);
+        instance_commitments
             .iter()
-            .fold(transcript, |transcript, instance_commitment| {
+            .for_each(|instance_commitment| {
                 transcript.common_point(instance_commitment.clone())
             });
 
@@ -120,7 +121,7 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
         }
 
         // Prepare ast for transcript.
-        let (instance_commitments, mut transcript) = self.init_transcript();
+        let (instance_commitments, mut transcript) = self.init_transcript(self.proof_index);
         let advice_commitments = transcript.read_n_points(n_advice);
         let theta = transcript.squeeze_challenge();
         let lookup_permuted = (0..self.vk.cs.lookups.len())

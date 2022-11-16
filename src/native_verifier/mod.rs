@@ -18,8 +18,8 @@ use halo2_proofs::transcript::TranscriptRead;
 
 fn context_eval<E: MultiMillerLoop, T: TranscriptRead<E::G1Affine, Challenge255<E::G1Affine>>>(
     c: EvalContext<E::G1Affine>,
-    instance_commitments: &[E::G1Affine],
-    t: &mut T,
+    instance_commitments: &[&[E::G1Affine]],
+    t: &mut [&mut T],
 ) -> Vec<E::G1Affine> {
     let mut it: Vec<(Option<E::G1Affine>, Option<E::Scalar>)> = vec![];
 
@@ -38,7 +38,7 @@ fn context_eval<E: MultiMillerLoop, T: TranscriptRead<E::G1Affine, Challenge255<
             match $pos {
                 EvalPos::Constant(i) => c.const_points[*i],
                 EvalPos::Ops(i) => it[*i].0.unwrap(),
-                EvalPos::Instance(i) => instance_commitments[*i],
+                EvalPos::Instance(i, j) => instance_commitments[*i][*j],
                 _ => unreachable!(),
             }
         };
@@ -55,17 +55,19 @@ fn context_eval<E: MultiMillerLoop, T: TranscriptRead<E::G1Affine, Challenge255<
 
     for (_, op) in c.ops.iter().enumerate() {
         it.push(match op {
-            EvalOps::TranscriptReadScalar(_) => (None, Some(t.read_scalar().unwrap())),
-            EvalOps::TranscriptReadPoint(_) => (Some(t.read_point().unwrap()), None),
-            EvalOps::TranscriptCommonScalar(_, s) => {
-                t.common_scalar(eval_scalar_pos!(s)).unwrap();
+            EvalOps::TranscriptReadScalar(i, _) => (None, Some(t[*i].read_scalar().unwrap())),
+            EvalOps::TranscriptReadPoint(i, _) => (Some(t[*i].read_point().unwrap()), None),
+            EvalOps::TranscriptCommonScalar(i, _, s) => {
+                t[*i].common_scalar(eval_scalar_pos!(s)).unwrap();
                 (None, None)
             }
-            EvalOps::TranscriptCommonPoint(_, p) => {
-                t.common_point(eval_point_pos!(p)).unwrap();
+            EvalOps::TranscriptCommonPoint(i, _, p) => {
+                t[*i].common_point(eval_point_pos!(p)).unwrap();
                 (None, None)
             }
-            EvalOps::TranscriptSqueeze(_) => (None, Some(t.squeeze_challenge().get_scalar())),
+            EvalOps::TranscriptSqueeze(i, _) => {
+                (None, Some(t[*i].squeeze_challenge().get_scalar()))
+            }
             EvalOps::ScalarAdd(a, b) => (None, Some(eval_scalar_pos!(a) + eval_scalar_pos!(b))),
             EvalOps::ScalarSub(a, b) => (None, Some(eval_scalar_pos!(a) - eval_scalar_pos!(b))),
             EvalOps::ScalarMul(a, b) => (None, Some(eval_scalar_pos!(a) * eval_scalar_pos!(b))),
@@ -95,7 +97,7 @@ fn context_eval<E: MultiMillerLoop, T: TranscriptRead<E::G1Affine, Challenge255<
 pub fn verify_single_proof<E: MultiMillerLoop>(
     params: &ParamsVerifier<E>,
     vkey: &VerifyingKey<E::G1Affine>,
-    instances: &[&[E::Scalar]],
+    instances: &Vec<Vec<E::Scalar>>,
     proof: Vec<u8>,
     hash: TranscriptHash,
 ) {
@@ -108,7 +110,59 @@ pub fn verify_single_proof<E: MultiMillerLoop>(
     let pl = match hash {
         TranscriptHash::Blake2b => {
             let mut t = Blake2bRead::<_, E::G1Affine, Challenge255<_>>::init(&proof[..]);
-            context_eval::<E, _>(c, &instance_commitments, &mut t)
+            context_eval::<E, _>(c, &[&instance_commitments], &mut [&mut t])
+        }
+    };
+
+    let s_g2_prepared = E::G2Prepared::from(params.s_g2);
+    let n_g2_prepared = E::G2Prepared::from(-params.g2);
+    let success = bool::from(
+        E::multi_miller_loop(&[(&pl[0], &s_g2_prepared), (&pl[1], &n_g2_prepared)])
+            .final_exponentiation()
+            .is_identity(),
+    );
+
+    assert!(success);
+}
+
+pub fn verify_multi_proofs<E: MultiMillerLoop>(
+    params: &ParamsVerifier<E>,
+    vkey: &[&VerifyingKey<E::G1Affine>],
+    instances: &Vec<Vec<Vec<E::Scalar>>>,
+    proofs: Vec<Vec<u8>>,
+    hash: TranscriptHash,
+    commitment_check: Vec<((usize, usize), (usize, usize))>,
+) {
+    let (w_x, w_g, advices) = verify_aggregation_proofs(params, vkey);
+
+    let instance_commitments = instances
+        .into_iter()
+        .enumerate()
+        .map(|(i, instances)| instance_to_instance_commitment(params, vkey[i], &instances))
+        .collect::<Vec<_>>();
+
+    let c = EvalContext::translate(&[w_x.0, w_g.0]);
+
+    let pl = match hash {
+        TranscriptHash::Blake2b => {
+            let mut t = vec![];
+            for i in 0..proofs.len() {
+                t.push(Blake2bRead::<_, E::G1Affine, Challenge255<_>>::init(
+                    &proofs[i][..],
+                ));
+            }
+            let empty = vec![];
+            t.push(Blake2bRead::<_, E::G1Affine, Challenge255<_>>::init(
+                &empty[..],
+            ));
+            context_eval::<E, _>(
+                c,
+                &instance_commitments
+                    .iter()
+                    .map(|x| &x[..])
+                    .collect::<Vec<_>>()[..],
+                &mut t.iter_mut().collect::<Vec<_>>(),
+            )
         }
     };
 

@@ -1,3 +1,4 @@
+use crate::native_verifier::verify_multi_proofs;
 use crate::native_verifier::verify_single_proof;
 use ark_std::end_timer;
 use ark_std::rand::rngs::OsRng;
@@ -95,7 +96,7 @@ pub fn store_instance<E: MultiMillerLoop>(instances: Vec<Vec<E::Scalar>>, cache_
 pub fn instance_to_instance_commitment<E: MultiMillerLoop>(
     params: &ParamsVerifier<E>,
     vk: &VerifyingKey<E::G1Affine>,
-    instances: &[&[E::Scalar]],
+    instances: &Vec<Vec<E::Scalar>>,
 ) -> Vec<E::G1Affine> {
     instances
         .iter()
@@ -167,64 +168,90 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
     cache_folder: &Path,
     prefix: &str,
     k: u32,
-    circuit: C,
-    instances: Vec<Vec<E::Scalar>>,
+    circuits: Vec<C>,
+    instances: Vec<Vec<Vec<E::Scalar>>>,
     hash: TranscriptHash,
 ) {
     let params =
         load_or_build_unsafe_params::<E>(k, Some(&cache_folder.join(format!("K{}.params", k))));
 
-    let circuit_without_witness = circuit.without_witnesses();
+    let circuit_without_witness = circuits
+        .iter()
+        .map(|c| c.without_witnesses())
+        .collect::<Vec<_>>();
 
-    let vkey = load_or_build_vkey::<E, C>(
-        &params,
-        &circuit_without_witness,
-        Some(&cache_folder.join(format!("{}.vkey.data", prefix))),
-    );
-
-    let proof = load_or_create_proof::<E, C>(
-        &params,
-        vkey,
-        circuit,
-        &instances.iter().map(|x| &x[..]).collect::<Vec<_>>(),
-        Some(&cache_folder.join(format!("{}.transcript.data", prefix))),
-        hash,
-        false,
-    );
-
-    if true {
+    let mut proofs = vec![];
+    for (i, circuit) in circuits.into_iter().enumerate() {
         let vkey = load_or_build_vkey::<E, C>(
             &params,
-            &circuit_without_witness,
-            Some(&cache_folder.join(format!("{}.vkey.data", prefix))),
+            &circuit_without_witness[i],
+            Some(&cache_folder.join(format!("{}_{}.vkey.data", prefix, i))),
         );
 
+        let proof = load_or_create_proof::<E, C>(
+            &params,
+            vkey,
+            circuit,
+            &instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>(),
+            Some(&cache_folder.join(format!("{}.transcript.data", prefix))),
+            hash,
+            false,
+        );
+        proofs.push(proof);
+    }
+
+    if true {
         let public_inputs_size = instances
             .iter()
             .fold(0usize, |acc, x| usize::max(acc, x.len()));
         let params_verifier: ParamsVerifier<E> = params.verifier(public_inputs_size).unwrap();
 
-        let strategy = SingleVerifier::new(&params_verifier);
-        let timer = start_timer!(|| "origin verify proof");
+        let mut vkeys = vec![];
 
-        verify_proof(
-            &params_verifier,
-            &vkey,
-            strategy,
-            &[&instances.iter().map(|x| &x[..]).collect::<Vec<_>>()[..]],
-            &mut Blake2bRead::init(&proof[..]),
-        )
-        .unwrap();
-        end_timer!(timer);
+        for (i, proof) in proofs.iter().enumerate() {
+            let vkey = load_or_build_vkey::<E, C>(
+                &params,
+                &circuit_without_witness[i],
+                Some(&cache_folder.join(format!("{}.vkey.data", prefix))),
+            );
+
+            let timer = start_timer!(|| "origin verify proof");
+            let strategy = SingleVerifier::new(&params_verifier);
+            verify_proof(
+                &params_verifier,
+                &vkey,
+                strategy,
+                &[&instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>()[..]],
+                &mut Blake2bRead::init(&proof[..]),
+            )
+            .unwrap();
+            end_timer!(timer);
+
+            let timer = start_timer!(|| "native verify proof");
+            for (i, proof) in proofs.iter().enumerate() {
+                verify_single_proof::<E>(
+                    &params_verifier,
+                    &vkey,
+                    &instances[i],
+                    proof.clone(),
+                    hash,
+                );
+            }
+            end_timer!(timer);
+
+            vkeys.push(vkey);
+        }
 
         let timer = start_timer!(|| "native verify proof");
-        verify_single_proof::<E>(
+        verify_multi_proofs::<E>(
             &params_verifier,
-            &vkey,
-            &instances.iter().map(|x| &x[..]).collect::<Vec<_>>()[..],
-            proof,
+            &vkeys.iter().map(|x| x).collect::<Vec<_>>()[..],
+            &instances,
+            proofs,
             hash,
+            vec![],
         );
+
         end_timer!(timer);
     }
 }

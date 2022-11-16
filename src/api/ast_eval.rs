@@ -12,7 +12,7 @@ use std::rc::Rc;
 pub enum EvalPos {
     Constant(usize),
     Empty,
-    Instance(usize),
+    Instance(usize, usize),
     Ops(usize),
 }
 
@@ -27,11 +27,11 @@ impl EvalPos {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum EvalOps {
-    TranscriptReadScalar(EvalPos),
-    TranscriptReadPoint(EvalPos),
-    TranscriptCommonScalar(EvalPos, EvalPos),
-    TranscriptCommonPoint(EvalPos, EvalPos),
-    TranscriptSqueeze(EvalPos),
+    TranscriptReadScalar(usize, EvalPos),
+    TranscriptReadPoint(usize, EvalPos),
+    TranscriptCommonScalar(usize, EvalPos, EvalPos),
+    TranscriptCommonPoint(usize, EvalPos, EvalPos),
+    TranscriptSqueeze(usize, EvalPos),
 
     ScalarAdd(EvalPos, EvalPos),
     ScalarSub(EvalPos, EvalPos),
@@ -47,11 +47,11 @@ pub enum EvalOps {
 impl EvalOps {
     pub fn deps(&self) -> Vec<&EvalPos> {
         match self {
-            EvalOps::TranscriptReadScalar(a) => vec![a],
-            EvalOps::TranscriptReadPoint(a) => vec![a],
-            EvalOps::TranscriptCommonScalar(a, b) => vec![a, b],
-            EvalOps::TranscriptCommonPoint(a, b) => vec![a, b],
-            EvalOps::TranscriptSqueeze(a) => vec![a],
+            EvalOps::TranscriptReadScalar(_, a) => vec![a],
+            EvalOps::TranscriptReadPoint(_, a) => vec![a],
+            EvalOps::TranscriptCommonScalar(_, a, b) => vec![a, b],
+            EvalOps::TranscriptCommonPoint(_, a, b) => vec![a, b],
+            EvalOps::TranscriptSqueeze(_, a) => vec![a],
             EvalOps::ScalarAdd(a, b) => vec![a, b],
             EvalOps::ScalarSub(a, b) => vec![a, b],
             EvalOps::ScalarMul(a, b) => vec![a, b],
@@ -71,15 +71,21 @@ impl EvalOps {
 
     pub fn map(&self, reverse_order: &Vec<usize>) -> Self {
         match self {
-            EvalOps::TranscriptReadScalar(a) => EvalOps::TranscriptReadScalar(a.map(reverse_order)),
-            EvalOps::TranscriptReadPoint(a) => EvalOps::TranscriptReadPoint(a.map(reverse_order)),
-            EvalOps::TranscriptCommonScalar(a, b) => {
-                EvalOps::TranscriptCommonScalar(a.map(reverse_order), b.map(reverse_order))
+            EvalOps::TranscriptReadScalar(i, a) => {
+                EvalOps::TranscriptReadScalar(*i, a.map(reverse_order))
             }
-            EvalOps::TranscriptCommonPoint(a, b) => {
-                EvalOps::TranscriptCommonPoint(a.map(reverse_order), b.map(reverse_order))
+            EvalOps::TranscriptReadPoint(i, a) => {
+                EvalOps::TranscriptReadPoint(*i, a.map(reverse_order))
             }
-            EvalOps::TranscriptSqueeze(a) => EvalOps::TranscriptSqueeze(a.map(reverse_order)),
+            EvalOps::TranscriptCommonScalar(i, a, b) => {
+                EvalOps::TranscriptCommonScalar(*i, a.map(reverse_order), b.map(reverse_order))
+            }
+            EvalOps::TranscriptCommonPoint(i, a, b) => {
+                EvalOps::TranscriptCommonPoint(*i, a.map(reverse_order), b.map(reverse_order))
+            }
+            EvalOps::TranscriptSqueeze(i, a) => {
+                EvalOps::TranscriptSqueeze(*i, a.map(reverse_order))
+            }
             EvalOps::ScalarAdd(a, b) => {
                 EvalOps::ScalarAdd(a.map(reverse_order), b.map(reverse_order))
             }
@@ -214,29 +220,29 @@ impl<C: CurveAffine> EvalContext<C> {
 
         let ast_inner: &AstTranscript<C> = ast.as_ref();
         let pos = match ast_inner {
-            AstTranscript::CommonScalar(t, s) => {
+            AstTranscript::CommonScalar(i, t, s) => {
                 let t = self.translate_ast_transcript(t);
                 let s = self.translate_ast_scalar(s);
-                self.push_op(EvalOps::TranscriptCommonScalar(t, s))
+                self.push_op(EvalOps::TranscriptCommonScalar(*i, t, s))
             }
-            AstTranscript::CommonPoint(t, p) => {
+            AstTranscript::CommonPoint(i, t, p) => {
                 let t = self.translate_ast_transcript(t);
                 let p = self.translate_ast_point(p);
-                self.push_op(EvalOps::TranscriptCommonPoint(t, p))
+                self.push_op(EvalOps::TranscriptCommonPoint(*i, t, p))
             }
-            AstTranscript::ReadScalar(t) => {
+            AstTranscript::ReadScalar(i, t) => {
                 let t = self.translate_ast_transcript(t);
-                self.push_op(EvalOps::TranscriptReadScalar(t))
+                self.push_op(EvalOps::TranscriptReadScalar(*i, t))
             }
-            AstTranscript::ReadPoint(t) => {
+            AstTranscript::ReadPoint(i, t) => {
                 let t = self.translate_ast_transcript(t);
-                self.push_op(EvalOps::TranscriptReadPoint(t))
+                self.push_op(EvalOps::TranscriptReadPoint(*i, t))
             }
-            AstTranscript::SqueezeChallenge(t) => {
+            AstTranscript::SqueezeChallenge(i, t) => {
                 let t = self.translate_ast_transcript(t);
-                self.push_op(EvalOps::TranscriptSqueeze(t))
+                self.push_op(EvalOps::TranscriptSqueeze(*i, t))
             }
-            AstTranscript::Init => EvalPos::Empty,
+            AstTranscript::Init(_) => EvalPos::Empty,
         };
 
         self.transcript_cache.push((ast.clone(), pos.clone()));
@@ -259,7 +265,7 @@ impl<C: CurveAffine> EvalContext<C> {
                 EvalPos::Constant(pos.try_into().unwrap())
             }
             AstPoint::FromTranscript(t) => self.translate_ast_transcript(t),
-            AstPoint::FromInstance(i) => EvalPos::Instance((*i) as usize),
+            AstPoint::FromInstance(i, j) => EvalPos::Instance(*i, *j),
             AstPoint::Multiexp(psl) => {
                 let mut sl = vec![];
                 let mut pl = vec![];

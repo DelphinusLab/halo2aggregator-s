@@ -18,15 +18,20 @@ pub mod query;
 pub mod verifier;
 
 pub fn verify_single_proof_no_eval<E: MultiMillerLoop>(
-    key: String,
     params: &ParamsVerifier<E>,
     vk: &VerifyingKey<E::G1Affine>,
+    index: usize,
 ) -> (
     MultiOpenProof<E::G1Affine>,
     Vec<AstPointRc<E::G1Affine>>,
     Rc<AstTranscript<E::G1Affine>>,
 ) {
-    let params_builder = VerifierParamsBuilder { vk, params, key };
+    let params_builder = VerifierParamsBuilder {
+        vk,
+        params,
+        key: format!("circuit {}", index),
+        proof_index: index,
+    };
 
     let (verifier_params, transcript) = params_builder.build();
     (
@@ -44,14 +49,14 @@ pub fn verify_aggregation_proofs<E: MultiMillerLoop>(
     AstPointRc<E::G1Affine>,           // w_g
     Vec<Vec<AstPointRc<E::G1Affine>>>, // advice commitments
 ) {
-    let mut transcript = Rc::new(AstTranscript::Init);
+    let mut transcript = Rc::new(AstTranscript::Init(vks.len()));
 
     let mut pairs = vec![];
     let mut advice_commitments = vec![];
 
     for (i, vk) in vks.into_iter().enumerate() {
-        let (p, a, mut t) = verify_single_proof_no_eval(format!("circuit_{}", i), params, vk);
-        transcript = transcript.common_scalar(t.squeeze_challenge());
+        let (p, a, mut t) = verify_single_proof_no_eval(params, vk, i);
+        transcript.common_scalar(t.squeeze_challenge());
         advice_commitments.push(a);
         pairs.push(p);
     }
