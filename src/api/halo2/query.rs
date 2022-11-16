@@ -5,6 +5,7 @@ use crate::api::arith::AstScalarRc;
 use crate::commit;
 use crate::eval;
 use crate::pconst;
+use crate::scheckpoint;
 use crate::sconst;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::Field;
@@ -27,6 +28,7 @@ pub enum EvaluationQuerySchema<C: CurveAffine> {
     Scalar(AstScalarRc<C>),
     Add(Rc<Self>, Rc<Self>, bool),
     Mul(Rc<Self>, Rc<Self>, bool),
+    CheckPoint(String, Rc<Self>),
 }
 
 #[repr(transparent)]
@@ -97,6 +99,15 @@ macro_rules! scalar {
     };
 }
 
+#[macro_export]
+macro_rules! echeckpoint {
+    ($tag:expr, $x:expr) => {
+        EvaluationQuerySchemaRc(Rc::new(
+            crate::api::halo2::query::EvaluationQuerySchema::CheckPoint($tag, $x),
+        ))
+    };
+}
+
 impl<C: CurveAffine> EvaluationQuerySchema<C> {
     pub fn contains_commitment(&self) -> bool {
         match self {
@@ -105,6 +116,7 @@ impl<C: CurveAffine> EvaluationQuerySchema<C> {
             EvaluationQuerySchema::Scalar(_) => false,
             EvaluationQuerySchema::Add(_, _, c) => *c,
             EvaluationQuerySchema::Mul(_, _, c) => *c,
+            EvaluationQuerySchema::CheckPoint(_, s) => s.contains_commitment(),
         }
     }
 }
@@ -112,7 +124,7 @@ impl<C: CurveAffine> EvaluationQuerySchema<C> {
 impl<C: CurveAffine> Add<EvaluationQuerySchemaRc<C>> for EvaluationQuerySchemaRc<C> {
     type Output = EvaluationQuerySchemaRc<C>;
     fn add(self, other: EvaluationQuerySchemaRc<C>) -> Self::Output {
-        let contains_commitment = self.0.contains_commitment() && other.0.contains_commitment();
+        let contains_commitment = self.0.contains_commitment() || other.0.contains_commitment();
         EvaluationQuerySchemaRc(Rc::new(EvaluationQuerySchema::Add(
             self.0,
             other.0,
@@ -124,7 +136,7 @@ impl<C: CurveAffine> Add<EvaluationQuerySchemaRc<C>> for EvaluationQuerySchemaRc
 impl<C: CurveAffine> Mul<EvaluationQuerySchemaRc<C>> for EvaluationQuerySchemaRc<C> {
     type Output = EvaluationQuerySchemaRc<C>;
     fn mul(self, other: EvaluationQuerySchemaRc<C>) -> Self::Output {
-        let contains_commitment = self.0.contains_commitment() && other.0.contains_commitment();
+        let contains_commitment = self.0.contains_commitment() || other.0.contains_commitment();
         EvaluationQuerySchemaRc(Rc::new(EvaluationQuerySchema::Mul(
             self.0,
             other.0,
@@ -134,17 +146,15 @@ impl<C: CurveAffine> Mul<EvaluationQuerySchemaRc<C>> for EvaluationQuerySchemaRc
 }
 
 impl<C: CurveAffine> EvaluationQuerySchemaRc<C> {
-    pub fn eval(self, s_coeff: AstScalarRc<C>) -> AstPointRc<C> {
-        let one = sconst!(C::ScalarExt::one());
-
-        let (pl, s) = self.eval_prepare(one);
+    pub fn eval(self, g1: C) -> AstPointRc<C> {
+        let (pl, s) = self.eval_prepare();
         AstPointRc(Rc::new(AstPoint::Multiexp(
             vec![
-                vec![(pconst!(C::generator()).0, (s_coeff * s).0)],
+                vec![(pconst!(g1).0, s.0)],
                 pl.into_values()
                     .into_iter()
                     .map(|(p, s)| (p.0, s.0))
-                    .collect(),
+                    .collect::<Vec<_>>(),
             ]
             .concat(),
         )))
@@ -152,7 +162,6 @@ impl<C: CurveAffine> EvaluationQuerySchemaRc<C> {
 
     fn eval_prepare(
         self,
-        coeff: AstScalarRc<C>,
     ) -> (
         HashMap<String, (AstPointRc<C>, AstScalarRc<C>)>,
         AstScalarRc<C>,
@@ -160,20 +169,28 @@ impl<C: CurveAffine> EvaluationQuerySchemaRc<C> {
         match self.0.as_ref() {
             EvaluationQuerySchema::Commitment(cq) => (
                 HashMap::from_iter(
-                    vec![(cq.key.clone(), (cq.commitment.clone().unwrap(), coeff))].into_iter(),
+                    vec![(
+                        cq.key.clone(),
+                        (
+                            cq.commitment.clone().unwrap(),
+                            sconst!(C::ScalarExt::one()),
+                        ),
+                    )]
+                    .into_iter(),
                 ),
                 sconst!(C::ScalarExt::zero()),
             ),
-            EvaluationQuerySchema::Eval(cq) => (HashMap::new(), coeff * cq.eval.clone().unwrap()),
-            EvaluationQuerySchema::Scalar(s) => (HashMap::new(), s * coeff),
+            EvaluationQuerySchema::Eval(cq) => (HashMap::new(), cq.eval.clone().unwrap()),
+            EvaluationQuerySchema::Scalar(s) => (HashMap::new(), s.clone()),
             EvaluationQuerySchema::Add(l, r, _) => {
-                let evaluated_l = EvaluationQuerySchemaRc(l.clone()).eval_prepare(coeff.clone());
-                let evaluated_r = EvaluationQuerySchemaRc(r.clone()).eval_prepare(coeff.clone());
+                let evaluated_l = EvaluationQuerySchemaRc(l.clone()).eval_prepare();
+                let evaluated_r = EvaluationQuerySchemaRc(r.clone()).eval_prepare();
 
                 let s = evaluated_l.1 + evaluated_r.1;
                 let mut pl = evaluated_l.0;
                 for (k, (p, sr)) in evaluated_r.0 {
                     if let Some(sl) = pl.get_mut(&k) {
+                        assert!(Rc::ptr_eq(&sl.0 .0, &p.0));
                         sl.1 = &sl.1 + sr;
                     } else {
                         pl.insert(k, (p, sr));
@@ -182,23 +199,27 @@ impl<C: CurveAffine> EvaluationQuerySchemaRc<C> {
                 (pl, s)
             }
             EvaluationQuerySchema::Mul(l, r, _) => {
-                let (s, other) = if l.contains_commitment() {
+                let (coeff, other) = if l.contains_commitment() {
                     (
-                        EvaluationQuerySchemaRc(r.clone())
-                            .eval_prepare(coeff.clone())
-                            .1,
+                        EvaluationQuerySchemaRc(r.clone()).eval_prepare().1,
                         l.clone(),
                     )
                 } else {
                     (
-                        EvaluationQuerySchemaRc(l.clone())
-                            .eval_prepare(coeff.clone())
-                            .1,
+                        EvaluationQuerySchemaRc(l.clone()).eval_prepare().1,
                         r.clone(),
                     )
                 };
 
-                EvaluationQuerySchemaRc(other).eval_prepare(coeff * s)
+                let (mut pl, s) = EvaluationQuerySchemaRc(other).eval_prepare();
+                for (_, (_, ps)) in pl.iter_mut() {
+                    *ps = ps.clone() * coeff.clone();
+                }
+                (pl, s * coeff)
+            }
+            EvaluationQuerySchema::CheckPoint(tag, s) => {
+                let (pl, s) = EvaluationQuerySchemaRc(s.clone()).eval_prepare();
+                (pl, scheckpoint!(tag.clone(), s))
             }
         }
     }

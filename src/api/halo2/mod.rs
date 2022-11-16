@@ -1,14 +1,12 @@
 use self::builder::VerifierParamsBuilder;
 use self::verifier::MultiOpenProof;
 use super::arith::AstPointRc;
-use super::arith::AstScalarRc;
 use super::transcript::AstTranscript;
 use super::transcript::AstTranscriptReader;
-use crate::api::arith::AstScalar;
+use crate::api::arith::AstPoint;
 use crate::api::halo2::query::EvaluationQuerySchemaRc;
+use crate::pcheckpoint;
 use crate::scalar;
-use crate::sconst;
-use halo2_proofs::arithmetic::Field;
 use halo2_proofs::arithmetic::MultiMillerLoop;
 use halo2_proofs::plonk::VerifyingKey;
 use halo2_proofs::poly::commitment::ParamsVerifier;
@@ -68,8 +66,8 @@ pub fn verify_aggregation_proofs<E: MultiMillerLoop>(
         })
         .unwrap();
 
-    let w_x = pair.w_x.eval(sconst!(E::Scalar::one()));
-    let w_g = pair.w_g.eval(sconst!(-E::Scalar::one()));
+    let w_x = pcheckpoint!("w_x".to_owned(), pair.w_x.eval(params.g1));
+    let w_g = pcheckpoint!("w_g".to_owned(), pair.w_g.eval(-params.g1));
 
     (w_x, w_g, advice_commitments)
 }

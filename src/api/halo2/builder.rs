@@ -6,6 +6,7 @@ use crate::api::transcript::AstTranscript;
 use crate::api::transcript::AstTranscriptReader;
 use crate::pconst;
 use crate::pinstance;
+use crate::scheckpoint;
 use crate::sconst;
 use crate::spow;
 use halo2_proofs::arithmetic::BaseExt;
@@ -51,8 +52,8 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
         transcript = transcript.common_scalar(scalar);
         transcript = instance_commitments
             .iter()
-            .fold(transcript, |transcript, instance| {
-                transcript.common_point(instance.clone())
+            .fold(transcript, |transcript, instance_commitment| {
+                transcript.common_point(instance_commitment.clone())
             });
 
         (instance_commitments, transcript)
@@ -63,7 +64,7 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
         let cs = &self.vk.cs;
         let omega = self.vk.domain.get_omega();
         let poly_degree = self.vk.domain.get_quotient_poly_degree();
-        let n_permutation_commitments = self
+        let n_permutation_product_commitments = self
             .vk
             .cs
             .permutation
@@ -114,7 +115,7 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
         {
             rotations.insert(i);
         }
-        if n_permutation_commitments > 1 {
+        if n_permutation_product_commitments > 1 {
             rotations.insert(-((cs.blinding_factors() + 1) as i32));
         }
 
@@ -137,7 +138,8 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
         let beta = transcript.squeeze_challenge();
         let gamma = transcript.squeeze_challenge();
 
-        let permutation_product_commitments = transcript.read_n_points(n_permutation_commitments);
+        let permutation_product_commitments =
+            transcript.read_n_points(n_permutation_product_commitments);
         let lookup_product_commitments = transcript.read_n_points(self.vk.cs.lookups.len());
 
         let random_commitment = transcript.read_point();
@@ -186,8 +188,8 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
             .map(|&p| pconst!(p))
             .collect::<Vec<_>>();
 
-        let v = transcript.squeeze_challenge();
-        let u = transcript.squeeze_challenge();
+        let v = scheckpoint!("v".to_owned(), transcript.squeeze_challenge());
+        let u = scheckpoint!("u".to_owned(), transcript.squeeze_challenge());
         let w = transcript.read_n_points(rotations.len());
 
         // Prepare ast for calculation.
@@ -200,17 +202,23 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
 
         let ls = {
             let mut ws = vec![sconst!(one)];
-            let mut acc = omega;
+            let omega_inv = omega.invert().unwrap();
+            let mut acc = omega_inv;
             for _ in 1..=l {
-                ws.push(ws.last().unwrap() * sconst!(acc.invert().unwrap()));
-                acc = acc * omega
+                ws.push(sconst!(acc));
+                acc = acc * omega_inv;
             }
             (0..=l as usize)
                 .map(|i| {
                     let wi = &ws[i];
-                    ((wi / sconst!(C::ScalarExt::from(n as u64))) * (xn.clone() - sconst!(one)))
-                        / (x.clone() - wi.clone())
+                    scheckpoint!(
+                        format!("ls{}", l - i as u32),
+                        ((wi / sconst!(C::ScalarExt::from(n as u64)))
+                            * (xn.clone() - sconst!(one)))
+                            / (x.clone() - wi.clone())
+                    )
                 })
+                .rev()
                 .collect::<Vec<_>>()
         };
         let l_blind = ls[1..l as usize]

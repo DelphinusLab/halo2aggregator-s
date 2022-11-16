@@ -26,8 +26,8 @@ fn context_eval<E: MultiMillerLoop, T: TranscriptRead<E::G1Affine, Challenge255<
     macro_rules! eval_scalar_pos {
         ($pos:expr) => {
             match $pos {
-                EvalPos::Constant(i) => c.const_scalars[i],
-                EvalPos::Ops(i) => it[i].1.unwrap(),
+                EvalPos::Constant(i) => c.const_scalars[*i],
+                EvalPos::Ops(i) => it[*i].1.unwrap(),
                 _ => unreachable!(),
             }
         };
@@ -36,20 +36,28 @@ fn context_eval<E: MultiMillerLoop, T: TranscriptRead<E::G1Affine, Challenge255<
     macro_rules! eval_point_pos {
         ($pos:expr) => {
             match $pos {
-                EvalPos::Constant(i) => c.const_points[i],
-                EvalPos::Ops(i) => it[i].0.unwrap(),
-                EvalPos::Instance(i) => instance_commitments[i],
+                EvalPos::Constant(i) => c.const_points[*i],
+                EvalPos::Ops(i) => it[*i].0.unwrap(),
+                EvalPos::Instance(i) => instance_commitments[*i],
                 _ => unreachable!(),
             }
         };
     }
 
-    for op in c.ops {
+    macro_rules! eval_any_pos {
+        ($pos:expr) => {
+            match $pos {
+                EvalPos::Ops(i) => it[*i],
+                _ => unreachable!(),
+            }
+        };
+    }
+
+    for (_, op) in c.ops.iter().enumerate() {
         it.push(match op {
             EvalOps::TranscriptReadScalar(_) => (None, Some(t.read_scalar().unwrap())),
             EvalOps::TranscriptReadPoint(_) => (Some(t.read_point().unwrap()), None),
             EvalOps::TranscriptCommonScalar(_, s) => {
-                println!("{:?}",s);
                 t.common_scalar(eval_scalar_pos!(s)).unwrap();
                 (None, None)
             }
@@ -65,13 +73,19 @@ fn context_eval<E: MultiMillerLoop, T: TranscriptRead<E::G1Affine, Challenge255<
                 None,
                 Some(eval_scalar_pos!(a) * eval_scalar_pos!(b).invert().unwrap()),
             ),
-            EvalOps::ScalarPow(a, n) => (None, Some(eval_scalar_pos!(a).pow_vartime([n as u64]))),
+            EvalOps::ScalarPow(a, n) => (None, Some(eval_scalar_pos!(a).pow_vartime([*n as u64]))),
             EvalOps::MSM(psl) => (
-                psl.iter()
-                    .map(|(p, s)| (eval_point_pos!(*p) * eval_scalar_pos!(*s)).to_affine())
+                psl.into_iter()
+                    .map(|(p, s)| (eval_point_pos!(p) * eval_scalar_pos!(s)).to_affine())
                     .reduce(|acc, p| (acc + p).to_affine()),
                 None,
             ),
+            EvalOps::CheckPoint(tag, v) => {
+                if false {
+                    println!("checkpoint {}: {:?}", tag, eval_any_pos!(v));
+                }
+                eval_any_pos!(v)
+            }
         });
     }
 
@@ -89,14 +103,12 @@ pub fn verify_single_proof<E: MultiMillerLoop>(
 
     let instance_commitments = instance_to_instance_commitment(params, vkey, instances);
 
+    let c = EvalContext::translate(&[w_x.0, w_g.0]);
+
     let pl = match hash {
         TranscriptHash::Blake2b => {
             let mut t = Blake2bRead::<_, E::G1Affine, Challenge255<_>>::init(&proof[..]);
-            context_eval::<E, _>(
-                EvalContext::translate(&[w_x.0, w_g.0]),
-                &instance_commitments,
-                &mut t,
-            )
+            context_eval::<E, _>(c, &instance_commitments, &mut t)
         }
     };
 

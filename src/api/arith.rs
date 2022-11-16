@@ -6,7 +6,7 @@ use std::ops::Mul;
 use std::ops::Sub;
 use std::rc::Rc;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum AstScalar<C: CurveAffine> {
     FromConst(C::ScalarExt),
     FromTranscript(Rc<AstTranscript<C>>),
@@ -16,6 +16,7 @@ pub enum AstScalar<C: CurveAffine> {
     Mul(Rc<Self>, Rc<Self>),
     Div(Rc<Self>, Rc<Self>),
     Pow(Rc<Self>, u32),
+    CheckPoint(String, Rc<Self>), // for debug
 }
 
 #[repr(transparent)]
@@ -60,12 +61,13 @@ define_scalar_ops!(Sub, sub);
 define_scalar_ops!(Div, div);
 define_scalar_ops!(Mul, mul);
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum AstPoint<C: CurveAffine> {
     FromConst(C),
     FromTranscript(Rc<AstTranscript<C>>),
     FromInstance(u32),
     Multiexp(Vec<(Rc<Self>, Rc<AstScalar<C>>)>),
+    CheckPoint(String, Rc<Self>), // for debug purpose
 }
 
 #[repr(transparent)]
@@ -97,5 +99,19 @@ macro_rules! pinstance {
 macro_rules! pconst {
     ($instance_idx:expr) => {
         AstPointRc(Rc::new(AstPoint::FromConst($instance_idx)))
+    };
+}
+
+#[macro_export]
+macro_rules! pcheckpoint {
+    ($tag:expr, $v:expr) => {
+        AstPointRc(Rc::new(AstPoint::CheckPoint($tag, $v.0)))
+    };
+}
+
+#[macro_export]
+macro_rules! scheckpoint {
+    ($tag:expr, $v:expr) => {
+        AstScalarRc(Rc::new(AstScalar::CheckPoint($tag, $v.0)))
     };
 }

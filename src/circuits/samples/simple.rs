@@ -72,6 +72,9 @@ impl<F: FieldExt> Circuit<F> for SimpleCircuit<F> {
             vec![(b, a)]
         });
 
+        meta.enable_equality(advices[0]);
+        meta.enable_equality(advices[1]);
+
         SimpleConfig { advices, sel }
     }
 

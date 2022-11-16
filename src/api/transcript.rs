@@ -5,7 +5,7 @@ use super::arith::AstScalarRc;
 use halo2_proofs::arithmetic::CurveAffine;
 use std::rc::Rc;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum AstTranscript<C: CurveAffine> {
     ReadScalar(Rc<Self>),
     ReadPoint(Rc<Self>),
@@ -35,10 +35,8 @@ impl<C: CurveAffine> AstTranscriptReader<C> for Rc<AstTranscript<C>> {
     }
 
     fn read_scalar(&mut self) -> AstScalarRc<C> {
-        let t = Rc::new(AstTranscript::ReadScalar(self.clone()));
-        *self = t;
-        let s = AstScalarRc(Rc::new(AstScalar::FromTranscript(self.clone())));
-        s
+        *self = Rc::new(AstTranscript::ReadScalar(self.clone()));
+        AstScalarRc(Rc::new(AstScalar::FromTranscript(self.clone())))
     }
 
     fn read_n_scalars(&mut self, n: usize) -> Vec<AstScalarRc<C>> {
@@ -46,10 +44,8 @@ impl<C: CurveAffine> AstTranscriptReader<C> for Rc<AstTranscript<C>> {
     }
 
     fn read_point(&mut self) -> AstPointRc<C> {
-        let t = Rc::new(AstTranscript::ReadPoint(self.clone()));
-        *self = t;
-        let p = AstPointRc(Rc::new(AstPoint::FromTranscript(self.clone())));
-        p
+        *self = Rc::new(AstTranscript::ReadPoint(self.clone()));
+        AstPointRc(Rc::new(AstPoint::FromTranscript(self.clone())))
     }
 
     fn read_n_points(&mut self, n: usize) -> Vec<AstPointRc<C>> {
@@ -57,9 +53,7 @@ impl<C: CurveAffine> AstTranscriptReader<C> for Rc<AstTranscript<C>> {
     }
 
     fn squeeze_challenge(&mut self) -> AstScalarRc<C> {
-        let s = AstScalarRc(Rc::new(AstScalar::FromChallenge(self.clone())));
-        let t = Rc::new(AstTranscript::SqueezeChallenge(self.clone()));
-        *self = t;
-        s
+        *self = Rc::new(AstTranscript::SqueezeChallenge(self.clone()));
+        AstScalarRc(Rc::new(AstScalar::FromChallenge(self.clone())))
     }
 }

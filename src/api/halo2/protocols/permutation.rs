@@ -51,7 +51,7 @@ impl<C: CurveAffine> Evaluated<C> {
             .map(|(i, permutation_product_commitment)| {
                 let permutation_product_eval = transcript.read_scalar();
                 let permutation_product_next_eval = transcript.read_scalar();
-                let permutation_product_last_eval = if i < n {
+                let permutation_product_last_eval = if i + 1 < n {
                     Some(transcript.read_scalar())
                 } else {
                     None
@@ -101,8 +101,8 @@ impl<C: CurveAffine> Evaluated<C> {
         let delta = &params.delta;
         let beta = &params.beta;
         let gamma = &params.gamma;
-        let l_0 = &params.ls[0];
-        let l_last = &params.ls[params.l as usize];
+        let l_0 = params.ls.last().unwrap();
+        let l_last = &params.ls[0];
         let l_blind = &params.l_blind;
 
         let mut res = vec![];

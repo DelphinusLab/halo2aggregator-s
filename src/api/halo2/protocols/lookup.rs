@@ -74,8 +74,8 @@ impl<C: CurveAffine> Evaluated<C> {
         let beta = &params.beta;
         let gamma = &params.gamma;
         let theta = &params.theta;
-        let l_0 = &params.ls[0];
-        let l_last = &params.ls[params.l as usize];
+        let l_0 = params.ls.last().unwrap();
+        let l_last = &params.ls[0];
         let l_blind = &params.l_blind;
 
         let left = (z_wx * (a_x + beta)) * (s_x + gamma);

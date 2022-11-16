@@ -25,7 +25,7 @@ impl EvalPos {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum EvalOps {
     TranscriptReadScalar(EvalPos),
     TranscriptReadPoint(EvalPos),
@@ -40,6 +40,8 @@ pub enum EvalOps {
     ScalarPow(EvalPos, u32),
 
     MSM(Vec<(EvalPos, EvalPos)>),
+
+    CheckPoint(String, EvalPos), // for debug purpose
 }
 
 impl EvalOps {
@@ -63,6 +65,7 @@ impl EvalOps {
                 }
                 deps
             }
+            EvalOps::CheckPoint(_, a) => vec![a],
         }
     }
 
@@ -95,6 +98,7 @@ impl EvalOps {
                     .map(|(p, s)| (p.map(reverse_order), s.map(reverse_order)))
                     .collect()
             }),
+            EvalOps::CheckPoint(n, a) => EvalOps::CheckPoint(n.clone(), a.map(reverse_order)),
         }
     }
 }
@@ -106,6 +110,7 @@ pub struct EvalContext<C: CurveAffine> {
     pub const_scalars: Vec<C::ScalarExt>,
     pub finals: Vec<usize>,
 
+    transcript_cache: Vec<(Rc<AstTranscript<C>>, EvalPos)>,
     ops_cache: HashMap<EvalOps, usize>,
     deps: HashMap<usize, HashSet<usize>>,
     reverse_deps: HashMap<usize, HashSet<usize>>,
@@ -140,6 +145,7 @@ impl<C: CurveAffine> EvalContext<C> {
         if let Some(pos) = self.ops_cache.get(&op) {
             EvalPos::Ops((*pos).try_into().unwrap())
         } else {
+            self.ops_cache.insert(op.clone(), self.ops.len());
             let pos = EvalPos::Ops(self.ops.len().try_into().unwrap());
             for prev in op.deps() {
                 self.add_dep(prev, &pos);
@@ -164,8 +170,9 @@ impl<C: CurveAffine> EvalContext<C> {
                 }
                 EvalPos::Constant(pos.try_into().unwrap())
             }
-            AstScalar::FromTranscript(t) => self.translate_ast_transcript(t),
-            AstScalar::FromChallenge(t) => self.translate_ast_transcript(t),
+            AstScalar::FromTranscript(t) | AstScalar::FromChallenge(t) => {
+                self.translate_ast_transcript(t)
+            }
             AstScalar::Add(a, b) => {
                 let a = self.translate_ast_scalar(a);
                 let b = self.translate_ast_scalar(b);
@@ -190,12 +197,23 @@ impl<C: CurveAffine> EvalContext<C> {
                 let a = self.translate_ast_scalar(a);
                 self.push_op(EvalOps::ScalarPow(a, *n))
             }
+            AstScalar::CheckPoint(tag, a) => {
+                let a = self.translate_ast_scalar(a);
+                self.push_op(EvalOps::CheckPoint(tag.clone(), a.clone()));
+                a
+            }
         }
     }
 
     fn translate_ast_transcript(&mut self, ast: &Rc<AstTranscript<C>>) -> EvalPos {
-        let ast: &AstTranscript<C> = ast.as_ref();
-        match ast {
+        for (t, pos) in self.transcript_cache.iter() {
+            if Rc::ptr_eq(t, ast) {
+                return pos.clone();
+            }
+        }
+
+        let ast_inner: &AstTranscript<C> = ast.as_ref();
+        let pos = match ast_inner {
             AstTranscript::CommonScalar(t, s) => {
                 let t = self.translate_ast_transcript(t);
                 let s = self.translate_ast_scalar(s);
@@ -204,7 +222,7 @@ impl<C: CurveAffine> EvalContext<C> {
             AstTranscript::CommonPoint(t, p) => {
                 let t = self.translate_ast_transcript(t);
                 let p = self.translate_ast_point(p);
-                self.push_op(EvalOps::TranscriptCommonScalar(t, p))
+                self.push_op(EvalOps::TranscriptCommonPoint(t, p))
             }
             AstTranscript::ReadScalar(t) => {
                 let t = self.translate_ast_transcript(t);
@@ -219,7 +237,10 @@ impl<C: CurveAffine> EvalContext<C> {
                 self.push_op(EvalOps::TranscriptSqueeze(t))
             }
             AstTranscript::Init => EvalPos::Empty,
-        }
+        };
+
+        self.transcript_cache.push((ast.clone(), pos.clone()));
+        pos
     }
 
     fn translate_ast_point(&mut self, ast: &Rc<AstPoint<C>>) -> EvalPos {
@@ -250,6 +271,11 @@ impl<C: CurveAffine> EvalContext<C> {
                     pl.push(self.translate_ast_point(x));
                 }
                 self.push_op(EvalOps::MSM(pl.into_iter().zip(sl.into_iter()).collect()))
+            }
+            AstPoint::CheckPoint(tag, a) => {
+                let a = self.translate_ast_point(a);
+                self.push_op(EvalOps::CheckPoint(tag.clone(), a.clone()));
+                a
             }
         }
     }
@@ -313,6 +339,7 @@ impl<C: CurveAffine> EvalContext<C> {
         self.ops_cache.clear();
         self.deps.clear();
         self.reverse_deps.clear();
+        self.transcript_cache.clear();
 
         for f in self.finals.iter_mut() {
             *f = reverse_order[*f];

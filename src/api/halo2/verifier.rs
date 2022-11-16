@@ -8,7 +8,9 @@ use crate::api::arith::AstPointRc;
 use crate::api::arith::AstScalar;
 use crate::api::arith::AstScalarRc;
 use crate::commit;
+use crate::echeckpoint;
 use crate::scalar;
+use crate::scheckpoint;
 use crate::sconst;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::Field;
@@ -86,9 +88,7 @@ impl<C: CurveAffine> VerifierParams<C> {
             Expression::Fixed { query_index, .. } => self.fixed_evals[*query_index].clone(),
             Expression::Advice { query_index, .. } => self.advice_evals[*query_index].clone(),
             Expression::Instance { query_index, .. } => self.instance_evals[*query_index].clone(),
-            Expression::Negated(a) => {
-                sconst!(C::ScalarExt::zero()) - self.evaluate_expression(a)
-            }
+            Expression::Negated(a) => sconst!(C::ScalarExt::zero()) - self.evaluate_expression(a),
             Expression::Sum(a, b) => self.evaluate_expression(a) + self.evaluate_expression(b),
             Expression::Product(a, b) => self.evaluate_expression(a) * self.evaluate_expression(b),
             Expression::Scaled(a, b) => sconst!(*b) * self.evaluate_expression(a),
@@ -117,7 +117,12 @@ impl<C: CurveAffine> VerifierParams<C> {
     }
 
     fn get_all_queries(&self) -> Vec<EvaluationQuery<C>> {
-        let expression_evals = self.get_all_expression_evals();
+        let expression_evals = self
+            .get_all_expression_evals()
+            .into_iter()
+            .enumerate()
+            .map(|(i, e)| scheckpoint!(format!("expression {}", i), e))
+            .collect();
 
         let mut queries = vec![];
         {
@@ -205,10 +210,17 @@ impl<C: CurveAffine> VerifierParams<C> {
             .into_values()
             .enumerate()
             .map(|(i, (point, queries))| EvaluationProof {
-                s: queries
-                    .into_iter()
-                    .reduce(|acc, q| scalar!(self.v.clone()) * acc + q)
-                    .unwrap(),
+                s: queries.into_iter().enumerate().fold(
+                    scalar!(sconst!(C::ScalarExt::zero())),
+                    |acc, (j, q)| {
+                        echeckpoint!(
+                            format!("eval acc {} {}", i, j),
+                            (acc * scalar!(self.v.clone())
+                                + echeckpoint!(format!("eval {} {}", i, j), q.0))
+                            .0
+                        )
+                    },
+                ),
                 point,
                 w: self.w[i].clone(),
             })
