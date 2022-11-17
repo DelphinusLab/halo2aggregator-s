@@ -1,5 +1,7 @@
 use crate::native_verifier::verify_multi_proofs;
 use crate::native_verifier::verify_single_proof;
+use crate::transcript::poseidon::PoseidonRead;
+use crate::transcript::poseidon::PoseidonWrite;
 use ark_std::end_timer;
 use ark_std::rand::rngs::OsRng;
 use ark_std::start_timer;
@@ -20,6 +22,12 @@ use halo2_proofs::transcript::Blake2bWrite;
 use std::io::Read;
 use std::io::Write;
 use std::path::Path;
+
+#[derive(Clone, Copy)]
+pub enum TranscriptHash {
+    Blake2b,
+    Poseidon,
+}
 
 pub fn load_or_build_unsafe_params<E: MultiMillerLoop>(
     k: u32,
@@ -108,11 +116,6 @@ pub fn instance_to_instance_commitment<E: MultiMillerLoop>(
         .collect()
 }
 
-#[derive(Clone, Copy)]
-pub enum TranscriptHash {
-    Blake2b,
-}
-
 pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
     params: &Params<E::G1Affine>,
     vkey: VerifyingKey<E::G1Affine>,
@@ -151,6 +154,19 @@ pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
             .expect("proof generation should not fail");
             transcript.finalize()
         }
+        TranscriptHash::Poseidon => {
+            let mut transcript = PoseidonWrite::init(vec![]);
+            create_proof(
+                params,
+                &pkey,
+                &[circuit],
+                &[instances],
+                OsRng,
+                &mut transcript,
+            )
+            .expect("proof generation should not fail");
+            transcript.finalize()
+        }
     };
     end_timer!(timer);
 
@@ -171,7 +187,7 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
     circuits: Vec<C>,
     instances: Vec<Vec<Vec<E::Scalar>>>,
     hash: TranscriptHash,
-    commentment_check: Vec<[usize; 4]>
+    commentment_check: Vec<[usize; 4]>,
 ) {
     let params =
         load_or_build_unsafe_params::<E>(k, Some(&cache_folder.join(format!("K{}.params", k))));
@@ -218,13 +234,22 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
 
             let timer = start_timer!(|| "origin verify proof");
             let strategy = SingleVerifier::new(&params_verifier);
-            verify_proof(
-                &params_verifier,
-                &vkey,
-                strategy,
-                &[&instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>()[..]],
-                &mut Blake2bRead::init(&proof[..]),
-            )
+            match hash {
+                TranscriptHash::Blake2b => verify_proof(
+                    &params_verifier,
+                    &vkey,
+                    strategy,
+                    &[&instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>()[..]],
+                    &mut Blake2bRead::init(&proof[..]),
+                ),
+                TranscriptHash::Poseidon => verify_proof(
+                    &params_verifier,
+                    &vkey,
+                    strategy,
+                    &[&instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>()[..]],
+                    &mut PoseidonRead::init(&proof[..]),
+                ),
+            }
             .unwrap();
             end_timer!(timer);
 

@@ -7,9 +7,13 @@ edition = "2021"
 
 [dependencies]
 blake2b_simd = "1"
-halo2_proofs = { git = "https://github.com/junyu0312/halo2.git", branch = "gpu", default-features = true, features = ["cuda"] }
+halo2_proofs = { git = "https://github.com/junyu0312/halo2.git", branch = "gpu", default-features = true }
 halo2ecc-s = { git = "https://github.com/lanbones/halo2ecc-s.git" }
 ark-std = { version = "0.3", features = ["print-trace"] }
+poseidon = { git = "https://github.com/lanbones/poseidon" }
+num-integer = "0.1"
+num-bigint = { version = "0.4", features = ["rand"] }
 
 [features]
 default = []
+cuda = ["halo2_proofs/cuda"]

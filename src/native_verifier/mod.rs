@@ -4,6 +4,7 @@ use crate::api::ast_eval::EvalPos;
 use crate::api::halo2::verify_aggregation_proofs;
 use crate::circuits::utils::instance_to_instance_commitment;
 use crate::circuits::utils::TranscriptHash;
+use crate::transcript::poseidon::PoseidonRead;
 use halo2_proofs::arithmetic::Field;
 use halo2_proofs::arithmetic::MillerLoopResult;
 use halo2_proofs::arithmetic::MultiMillerLoop;
@@ -16,7 +17,11 @@ use halo2_proofs::transcript::Challenge255;
 use halo2_proofs::transcript::EncodedChallenge;
 use halo2_proofs::transcript::TranscriptRead;
 
-fn context_eval<E: MultiMillerLoop, T: TranscriptRead<E::G1Affine, Challenge255<E::G1Affine>>>(
+fn context_eval<
+    E: MultiMillerLoop,
+    EC: EncodedChallenge<E::G1Affine>,
+    T: TranscriptRead<E::G1Affine, EC>,
+>(
     c: EvalContext<E::G1Affine>,
     instance_commitments: &[&[E::G1Affine]],
     t: &mut [&mut T],
@@ -110,7 +115,11 @@ pub fn verify_single_proof<E: MultiMillerLoop>(
     let pl = match hash {
         TranscriptHash::Blake2b => {
             let mut t = Blake2bRead::<_, E::G1Affine, Challenge255<_>>::init(&proof[..]);
-            context_eval::<E, _>(c, &[&instance_commitments], &mut [&mut t])
+            context_eval::<E, _, _>(c, &[&instance_commitments], &mut [&mut t])
+        }
+        TranscriptHash::Poseidon => {
+            let mut t = PoseidonRead::init(&proof[..]);
+            context_eval::<E, _, _>(c, &[&instance_commitments], &mut [&mut t])
         }
     };
 
@@ -162,7 +171,23 @@ pub fn verify_multi_proofs<E: MultiMillerLoop>(
             t.push(Blake2bRead::<_, E::G1Affine, Challenge255<_>>::init(
                 &empty[..],
             ));
-            context_eval::<E, _>(
+            context_eval::<E, _, _>(
+                c,
+                &instance_commitments
+                    .iter()
+                    .map(|x| &x[..])
+                    .collect::<Vec<_>>()[..],
+                &mut t.iter_mut().collect::<Vec<_>>(),
+            )
+        }
+        TranscriptHash::Poseidon => {
+            let mut t = vec![];
+            for i in 0..proofs.len() {
+                t.push(PoseidonRead::init(&proofs[i][..]));
+            }
+            let empty = vec![];
+            t.push(PoseidonRead::init(&empty[..]));
+            context_eval::<E, _, _>(
                 c,
                 &instance_commitments
                     .iter()
