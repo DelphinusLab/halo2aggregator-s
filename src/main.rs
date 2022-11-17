@@ -4,8 +4,10 @@ pub mod api;
 pub mod circuits;
 pub mod native_verifier;
 pub mod transcript;
+pub mod circuit_verifier;
 
 pub fn main() {}
+
 
 #[test]
 fn test_single_one_pass() {

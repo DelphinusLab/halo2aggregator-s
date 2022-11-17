@@ -12,10 +12,10 @@ use poseidon::Poseidon;
 use std::io;
 use std::marker::PhantomData;
 
-const T: usize = 9;
-const RATE: usize = 8;
-const R_F: usize = 8;
-const R_P: usize = 63;
+pub const T: usize = 9;
+pub const RATE: usize = 8;
+pub const R_F: usize = 8;
+pub const R_P: usize = 63;
 
 const PREFIX_CHALLENGE: u64 = 0u64;
 
