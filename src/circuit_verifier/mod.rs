@@ -1,3 +1,4 @@
+use self::circuit::AggregatorCircuit;
 use self::transcript::PoseidonChipRead;
 use crate::api::ast_eval::EvalContext;
 use crate::api::ast_eval::EvalOps;
@@ -22,7 +23,9 @@ use halo2ecc_s::circuit::native_ecc_chip::EccChipOps;
 use halo2ecc_s::context::Context;
 use halo2ecc_s::context::EccContext;
 use std::io;
+use std::sync::Arc;
 
+pub mod circuit;
 pub mod transcript;
 
 fn context_eval<E: MultiMillerLoop, R: io::Read>(
@@ -167,19 +170,22 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
     }
 
     vec![
-        c.finals.iter().map(|x| circuit.ecc_reduce(it[*x].0.as_ref().unwrap())).collect(),
+        c.finals
+            .iter()
+            .map(|x| circuit.ecc_reduce(it[*x].0.as_ref().unwrap()))
+            .collect(),
         instance_commitments.concat(),
     ]
     .concat()
 }
 
-pub fn verify_single_proof<E: MultiMillerLoop>(
+pub fn build_single_proof_verify_circuit<E: MultiMillerLoop>(
     params: &ParamsVerifier<E>,
     vkey: &VerifyingKey<E::G1Affine>,
     instances: &Vec<Vec<E::Scalar>>,
     proof: Vec<u8>,
     hash: TranscriptHash,
-) {
+) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>) {
     let mut ctx = Context::<_, E::Scalar>::new_with_range_info();
 
     let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey]);
@@ -212,4 +218,24 @@ pub fn verify_single_proof<E: MultiMillerLoop>(
     );
 
     assert!(success);
+
+    let assigned_instances = pl
+        .iter()
+        .map(|p| ctx.ecc_encode(p))
+        .collect::<Vec<_>>()
+        .concat();
+
+    for ai in assigned_instances.iter() {
+        ctx.records.lock().unwrap().enable_permute(&ai.cell);
+    }
+
+    let instances = assigned_instances.iter().map(|x| x.val).collect::<Vec<_>>();
+
+    (
+        AggregatorCircuit::new(
+            Arc::try_unwrap(ctx.records).unwrap().into_inner().unwrap(),
+            assigned_instances,
+        ),
+        instances,
+    )
 }

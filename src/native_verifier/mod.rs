@@ -106,35 +106,17 @@ pub fn verify_single_proof<E: MultiMillerLoop>(
     proof: Vec<u8>,
     hash: TranscriptHash,
 ) {
-    let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey]);
-
-    let instance_commitments = instance_to_instance_commitment(params, vkey, instances);
-
-    let c = EvalContext::translate(&[w_x.0, w_g.0]);
-
-    let pl = match hash {
-        TranscriptHash::Blake2b => {
-            let mut t = Blake2bRead::<_, E::G1Affine, Challenge255<_>>::init(&proof[..]);
-            context_eval::<E, _, _>(c, &[&instance_commitments], &mut [&mut t])
-        }
-        TranscriptHash::Poseidon => {
-            let mut t = PoseidonRead::init(&proof[..]);
-            context_eval::<E, _, _>(c, &[&instance_commitments], &mut [&mut t])
-        }
-    };
-
-    let s_g2_prepared = E::G2Prepared::from(params.s_g2);
-    let n_g2_prepared = E::G2Prepared::from(-params.g2);
-    let success = bool::from(
-        E::multi_miller_loop(&[(&pl[0], &s_g2_prepared), (&pl[1], &n_g2_prepared)])
-            .final_exponentiation()
-            .is_identity(),
-    );
-
-    assert!(success);
+    verify_proofs(
+        params,
+        &[vkey],
+        &vec![instances.clone()],
+        vec![proof],
+        hash,
+        vec![],
+    )
 }
 
-pub fn verify_multi_proofs<E: MultiMillerLoop>(
+pub fn verify_proofs<E: MultiMillerLoop>(
     params: &ParamsVerifier<E>,
     vkey: &[&VerifyingKey<E::G1Affine>],
     instances: &Vec<Vec<Vec<E::Scalar>>>,
@@ -152,7 +134,6 @@ pub fn verify_multi_proofs<E: MultiMillerLoop>(
 
     let mut targets = vec![w_x.0, w_g.0];
     for idx in commitment_check {
-        println!("{} {} {:?}", idx[0], idx[1], advices[idx[0]][idx[1]]);
         targets.push(advices[idx[0]][idx[1]].0.clone());
         targets.push(advices[idx[2]][idx[3]].0.clone());
     }

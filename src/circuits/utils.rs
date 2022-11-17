@@ -1,4 +1,4 @@
-use crate::native_verifier::verify_multi_proofs;
+use crate::native_verifier::verify_proofs;
 use crate::transcript::poseidon::PoseidonRead;
 use crate::transcript::poseidon::PoseidonWrite;
 use ark_std::end_timer;
@@ -6,6 +6,7 @@ use ark_std::rand::rngs::OsRng;
 use ark_std::start_timer;
 use halo2_proofs::arithmetic::BaseExt;
 use halo2_proofs::arithmetic::MultiMillerLoop;
+use halo2_proofs::dev::MockProver;
 use halo2_proofs::pairing::group::Curve;
 use halo2_proofs::plonk::create_proof;
 use halo2_proofs::plonk::keygen_pk;
@@ -274,13 +275,16 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
             if true && hash == TranscriptHash::Poseidon {
                 let timer = start_timer!(|| "circuit verify single proof");
                 for (i, proof) in proofs.iter().enumerate() {
-                    crate::circuit_verifier::verify_single_proof::<E>(
+                    let (circuit, instances) = crate::circuit_verifier::build_single_proof_verify_circuit::<E>(
                         &params_verifier,
                         &vkey,
                         &instances[i],
                         proof.clone(),
                         hash,
                     );
+                    const K: u32 = 22;
+                    let prover = MockProver::run(K, &circuit, vec![instances]).unwrap();
+                    assert_eq!(prover.verify(), Ok(()));
                 }
                 end_timer!(timer);
             }
@@ -291,7 +295,7 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
         // native multi check
         if false {
             let timer = start_timer!(|| "native verify aggregated proofs");
-            verify_multi_proofs::<E>(
+            verify_proofs::<E>(
                 &params_verifier,
                 &vkeys.iter().map(|x| x).collect::<Vec<_>>()[..],
                 &instances,
