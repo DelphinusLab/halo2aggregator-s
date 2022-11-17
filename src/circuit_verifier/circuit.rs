@@ -2,7 +2,7 @@ use ark_std::end_timer;
 use ark_std::start_timer;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::circuit::Layouter;
-use halo2_proofs::circuit::SimpleFloorPlanner;
+use halo2_proofs::circuit::floor_planner::V1;
 use halo2_proofs::plonk::Circuit;
 use halo2_proofs::plonk::Column;
 use halo2_proofs::plonk::ConstraintSystem;
@@ -41,7 +41,7 @@ impl<C: CurveAffine> AggregatorCircuit<C> {
 
 impl<C: CurveAffine> Circuit<C::ScalarExt> for AggregatorCircuit<C> {
     type Config = AggregatorChipConfig;
-    type FloorPlanner = SimpleFloorPlanner;
+    type FloorPlanner = V1;
 
     fn without_witnesses(&self) -> Self {
         self.clone()
