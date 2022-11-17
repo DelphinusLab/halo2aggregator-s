@@ -17,7 +17,9 @@ pub const RATE: usize = 8;
 pub const R_F: usize = 8;
 pub const R_P: usize = 63;
 
-const PREFIX_CHALLENGE: u64 = 0u64;
+pub const PREFIX_CHALLENGE: u64 = 0u64;
+pub const PREFIX_POINT: u64 = 1u64;
+pub const PREFIX_SCALAR: u64 = 2u64;
 
 pub struct PoseidonEncodedChallenge<C: CurveAffine> {
     inner: C::ScalarExt,
@@ -63,13 +65,14 @@ impl<R: io::Read, C: CurveAffine> Transcript<C, PoseidonEncodedChallenge<C>>
 
     // For 3 x 90bits LIMBS
     fn common_point(&mut self, point: C) -> io::Result<()> {
+        self.state.update(&[C::ScalarExt::from(PREFIX_POINT)]);
         let x_y: Option<_> = point.coordinates().map(|c| (*c.x(), *c.y())).into();
         let (x, y) = x_y.unwrap_or((C::Base::zero(), C::Base::zero()));
         let x_bn = field_to_bn(&x);
         let y_bn = field_to_bn(&y);
 
         let chunk0 = &x_bn & ((BigUint::from(1u64) << 180) - 1u64);
-        let chunk1 = (x_bn >> 180) + (&y_bn & ((BigUint::from(1u64) << 90) - 1u64));
+        let chunk1 = (x_bn >> 180) + ((&y_bn & ((BigUint::from(1u64) << 90) - 1u64)) << 90u64);
         let chunk2 = y_bn >> 90;
 
         self.state.update(
@@ -83,6 +86,7 @@ impl<R: io::Read, C: CurveAffine> Transcript<C, PoseidonEncodedChallenge<C>>
     }
 
     fn common_scalar(&mut self, scalar: <C>::Scalar) -> io::Result<()> {
+        self.state.update(&[C::ScalarExt::from(PREFIX_SCALAR)]);
         self.state.update(&[scalar]);
 
         Ok(())
@@ -148,13 +152,14 @@ impl<W: io::Write, C: CurveAffine> Transcript<C, PoseidonEncodedChallenge<C>>
 
     // For 3 x 90bits LIMBS
     fn common_point(&mut self, point: C) -> io::Result<()> {
+        self.state.update(&[C::ScalarExt::from(PREFIX_POINT)]);
         let x_y: Option<_> = point.coordinates().map(|c| (*c.x(), *c.y())).into();
         let (x, y) = x_y.unwrap_or((C::Base::zero(), C::Base::zero()));
         let x_bn = field_to_bn(&x);
         let y_bn = field_to_bn(&y);
 
         let chunk0 = &x_bn & ((BigUint::from(1u64) << 180) - 1u64);
-        let chunk1 = (x_bn >> 180) + (&y_bn & ((BigUint::from(1u64) << 90) - 1u64));
+        let chunk1 = (x_bn >> 180) + ((&y_bn & ((BigUint::from(1u64) << 90) - 1u64)) << 90u64);
         let chunk2 = y_bn >> 90;
 
         self.state.update(
@@ -168,6 +173,7 @@ impl<W: io::Write, C: CurveAffine> Transcript<C, PoseidonEncodedChallenge<C>>
     }
 
     fn common_scalar(&mut self, scalar: <C>::Scalar) -> io::Result<()> {
+        self.state.update(&[C::ScalarExt::from(PREFIX_SCALAR)]);
         self.state.update(&[scalar]);
 
         Ok(())

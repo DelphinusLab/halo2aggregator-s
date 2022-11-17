@@ -1,5 +1,4 @@
 use crate::native_verifier::verify_multi_proofs;
-use crate::native_verifier::verify_single_proof;
 use crate::transcript::poseidon::PoseidonRead;
 use crate::transcript::poseidon::PoseidonWrite;
 use ark_std::end_timer;
@@ -23,7 +22,7 @@ use std::io::Read;
 use std::io::Write;
 use std::path::Path;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Eq, PartialEq)]
 pub enum TranscriptHash {
     Blake2b,
     Poseidon,
@@ -232,52 +231,75 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
                 Some(&cache_folder.join(format!("{}.vkey.data", prefix))),
             );
 
-            let timer = start_timer!(|| "origin verify proof");
-            let strategy = SingleVerifier::new(&params_verifier);
-            match hash {
-                TranscriptHash::Blake2b => verify_proof(
-                    &params_verifier,
-                    &vkey,
-                    strategy,
-                    &[&instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>()[..]],
-                    &mut Blake2bRead::init(&proof[..]),
-                ),
-                TranscriptHash::Poseidon => verify_proof(
-                    &params_verifier,
-                    &vkey,
-                    strategy,
-                    &[&instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>()[..]],
-                    &mut PoseidonRead::init(&proof[..]),
-                ),
+            // origin check
+            if true {
+                let timer = start_timer!(|| "origin verify single proof");
+                let strategy = SingleVerifier::new(&params_verifier);
+                match hash {
+                    TranscriptHash::Blake2b => verify_proof(
+                        &params_verifier,
+                        &vkey,
+                        strategy,
+                        &[&instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>()[..]],
+                        &mut Blake2bRead::init(&proof[..]),
+                    ),
+                    TranscriptHash::Poseidon => verify_proof(
+                        &params_verifier,
+                        &vkey,
+                        strategy,
+                        &[&instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>()[..]],
+                        &mut PoseidonRead::init(&proof[..]),
+                    ),
+                }
+                .unwrap();
+                end_timer!(timer);
             }
-            .unwrap();
-            end_timer!(timer);
 
-            let timer = start_timer!(|| "native verify proof");
-            for (i, proof) in proofs.iter().enumerate() {
-                verify_single_proof::<E>(
-                    &params_verifier,
-                    &vkey,
-                    &instances[i],
-                    proof.clone(),
-                    hash,
-                );
+            // native single check
+            if true {
+                let timer = start_timer!(|| "native verify single proof");
+                for (i, proof) in proofs.iter().enumerate() {
+                    crate::native_verifier::verify_single_proof::<E>(
+                        &params_verifier,
+                        &vkey,
+                        &instances[i],
+                        proof.clone(),
+                        hash,
+                    );
+                }
+                end_timer!(timer);
             }
-            end_timer!(timer);
+
+            // circuit single check
+            if true && hash == TranscriptHash::Poseidon {
+                let timer = start_timer!(|| "circuit verify single proof");
+                for (i, proof) in proofs.iter().enumerate() {
+                    crate::circuit_verifier::verify_single_proof::<E>(
+                        &params_verifier,
+                        &vkey,
+                        &instances[i],
+                        proof.clone(),
+                        hash,
+                    );
+                }
+                end_timer!(timer);
+            }
 
             vkeys.push(vkey);
         }
 
-        let timer = start_timer!(|| "native verify proof");
-        verify_multi_proofs::<E>(
-            &params_verifier,
-            &vkeys.iter().map(|x| x).collect::<Vec<_>>()[..],
-            &instances,
-            proofs,
-            hash,
-            commentment_check,
-        );
-
-        end_timer!(timer);
+        // native multi check
+        if false {
+            let timer = start_timer!(|| "native verify aggregated proofs");
+            verify_multi_proofs::<E>(
+                &params_verifier,
+                &vkeys.iter().map(|x| x).collect::<Vec<_>>()[..],
+                &instances,
+                proofs,
+                hash,
+                commentment_check,
+            );
+            end_timer!(timer);
+        }
     }
 }
