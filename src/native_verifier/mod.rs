@@ -106,31 +106,20 @@ pub fn verify_single_proof<E: MultiMillerLoop>(
     proof: Vec<u8>,
     hash: TranscriptHash,
 ) {
-    verify_proofs(
-        params,
-        &[vkey],
-        &vec![instances.clone()],
-        vec![proof],
-        hash,
-        vec![],
-    )
+    verify_proofs(params, &[vkey], vec![instances], vec![proof], hash, vec![])
 }
 
 pub fn verify_proofs<E: MultiMillerLoop>(
     params: &ParamsVerifier<E>,
     vkey: &[&VerifyingKey<E::G1Affine>],
-    instances: &Vec<Vec<Vec<E::Scalar>>>,
+    instances: Vec<&Vec<Vec<E::Scalar>>>,
     proofs: Vec<Vec<u8>>,
     hash: TranscriptHash,
     commitment_check: Vec<[usize; 4]>,
 ) {
     let (w_x, w_g, advices) = verify_aggregation_proofs(params, vkey);
 
-    let instance_commitments = instances
-        .into_iter()
-        .enumerate()
-        .map(|(i, instances)| instance_to_instance_commitment(params, vkey[i], &instances))
-        .collect::<Vec<_>>();
+    let instance_commitments = instance_to_instance_commitment(params, vkey, instances);
 
     let mut targets = vec![w_x.0, w_g.0];
     for idx in commitment_check {

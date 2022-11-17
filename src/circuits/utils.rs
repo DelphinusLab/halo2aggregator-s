@@ -1,3 +1,4 @@
+use crate::circuit_verifier::build_aggregate_verify_circuit;
 use crate::native_verifier::verify_proofs;
 use crate::transcript::poseidon::PoseidonRead;
 use crate::transcript::poseidon::PoseidonWrite;
@@ -103,17 +104,23 @@ pub fn store_instance<E: MultiMillerLoop>(instances: Vec<Vec<E::Scalar>>, cache_
 
 pub fn instance_to_instance_commitment<E: MultiMillerLoop>(
     params: &ParamsVerifier<E>,
-    vk: &VerifyingKey<E::G1Affine>,
-    instances: &Vec<Vec<E::Scalar>>,
-) -> Vec<E::G1Affine> {
+    vk: &[&VerifyingKey<E::G1Affine>],
+    instances: Vec<&Vec<Vec<E::Scalar>>>,
+) -> Vec<Vec<E::G1Affine>> {
     instances
         .iter()
-        .map(|instance| {
-            assert!(instance.len() <= params.n as usize - (vk.cs.blinding_factors() + 1));
+        .zip(vk.iter())
+        .map(|(instances, vk)| {
+            instances
+                .iter()
+                .map(|instance| {
+                    assert!(instance.len() <= params.n as usize - (vk.cs.blinding_factors() + 1));
 
-            params.commit_lagrange(instance.to_vec()).to_affine()
+                    params.commit_lagrange(instance.to_vec()).to_affine()
+                })
+                .collect::<Vec<_>>()
         })
-        .collect()
+        .collect::<Vec<_>>()
 }
 
 pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
@@ -275,13 +282,14 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
             if true && hash == TranscriptHash::Poseidon {
                 let timer = start_timer!(|| "circuit verify single proof");
                 for (i, proof) in proofs.iter().enumerate() {
-                    let (circuit, instances) = crate::circuit_verifier::build_single_proof_verify_circuit::<E>(
-                        &params_verifier,
-                        &vkey,
-                        &instances[i],
-                        proof.clone(),
-                        hash,
-                    );
+                    let (circuit, instances) =
+                        crate::circuit_verifier::build_single_proof_verify_circuit::<E>(
+                            &params_verifier,
+                            &vkey,
+                            &instances[i],
+                            proof.clone(),
+                            hash,
+                        );
                     const K: u32 = 22;
                     let prover = MockProver::run(K, &circuit, vec![instances]).unwrap();
                     assert_eq!(prover.verify(), Ok(()));
@@ -298,11 +306,28 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
             verify_proofs::<E>(
                 &params_verifier,
                 &vkeys.iter().map(|x| x).collect::<Vec<_>>()[..],
-                &instances,
+                instances.iter().collect(),
+                proofs.clone(),
+                hash,
+                commentment_check.clone(),
+            );
+            end_timer!(timer);
+        }
+
+        // circuit multi check
+        if true {
+            let timer = start_timer!(|| "circuit verify single proof");
+            let (circuit, instances) = build_aggregate_verify_circuit::<E>(
+                &params_verifier,
+                &vkeys[..].iter().collect::<Vec<_>>(),
+                instances.iter().collect(),
                 proofs,
                 hash,
                 commentment_check,
             );
+            const K: u32 = 22;
+            let prover = MockProver::run(K, &circuit, vec![instances]).unwrap();
+            assert_eq!(prover.verify(), Ok(()));
             end_timer!(timer);
         }
     }

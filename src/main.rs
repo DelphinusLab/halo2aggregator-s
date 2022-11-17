@@ -57,7 +57,7 @@ fn test_single_one_pass_poseidon() {
         vec![circuit],
         vec![instances],
         TranscriptHash::Poseidon,
-        vec![],
+        vec![[0, 0, 0, 0]],
     );
 }
 

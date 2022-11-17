@@ -33,7 +33,10 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
     instance_commitments: &[&[E::G1Affine]],
     t: &mut [&mut PoseidonChipRead<R, E::G1Affine>],
     circuit: &mut EccContext<E::G1Affine>,
-) -> Vec<AssignedPoint<E::G1Affine, E::Scalar>> {
+) -> (
+    Vec<AssignedPoint<E::G1Affine, E::Scalar>>,
+    Vec<Vec<AssignedPoint<E::G1Affine, E::Scalar>>>,
+) {
     let mut it: Vec<(
         Option<AssignedPoint<E::G1Affine, E::Scalar>>,
         Option<AssignedValue<E::Scalar>>,
@@ -65,6 +68,8 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
             })
             .collect::<Vec<_>>()
     };
+
+    let mut commitments = vec![vec![]; instance_commitments.len()];
 
     macro_rules! eval_scalar_pos {
         ($pos:expr) => {
@@ -104,6 +109,7 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
             }
             EvalOps::TranscriptReadPoint(i, _) => {
                 let p = t[*i].read_point(circuit);
+                commitments[*i].push(p.clone());
                 (Some(p), None)
             }
             EvalOps::TranscriptCommonScalar(i, _, s) => {
@@ -169,14 +175,17 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
         });
     }
 
-    vec![
-        c.finals
-            .iter()
-            .map(|x| circuit.ecc_reduce(it[*x].0.as_ref().unwrap()))
-            .collect(),
-        instance_commitments.concat(),
-    ]
-    .concat()
+    (
+        vec![
+            c.finals
+                .iter()
+                .map(|x| circuit.ecc_reduce(it[*x].0.as_ref().unwrap()))
+                .collect(),
+            instance_commitments.concat(),
+        ]
+        .concat(),
+        commitments,
+    )
 }
 
 pub fn build_single_proof_verify_circuit<E: MultiMillerLoop>(
@@ -186,22 +195,52 @@ pub fn build_single_proof_verify_circuit<E: MultiMillerLoop>(
     proof: Vec<u8>,
     hash: TranscriptHash,
 ) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>) {
+    build_aggregate_verify_circuit(params, &[vkey], vec![instances], vec![proof], hash, vec![])
+}
+
+pub fn build_aggregate_verify_circuit<E: MultiMillerLoop>(
+    params: &ParamsVerifier<E>,
+    vkey: &[&VerifyingKey<E::G1Affine>],
+    instances: Vec<&Vec<Vec<E::Scalar>>>,
+    proofs: Vec<Vec<u8>>,
+    hash: TranscriptHash,
+    commitment_check: Vec<[usize; 4]>,
+) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>) {
     let mut ctx = Context::<_, E::Scalar>::new_with_range_info();
 
-    let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey]);
+    let (w_x, w_g, _) = verify_aggregation_proofs(params, vkey);
 
     let instance_commitments = instance_to_instance_commitment(params, vkey, instances);
 
     let c = EvalContext::translate(&[w_x.0, w_g.0]);
 
-    let pl = match hash {
+    let (pl, cl) = match hash {
         TranscriptHash::Poseidon => {
-            let t = PoseidonRead::init(&proof[..]);
-            let mut t = PoseidonChipRead::init(t, &mut ctx);
-            context_eval::<E, _>(c, &[&instance_commitments], &mut [&mut t], &mut ctx)
+            let mut t = vec![];
+            for i in 0..proofs.len() {
+                let it = PoseidonRead::init(&proofs[i][..]);
+                t.push(PoseidonChipRead::init(it, &mut ctx));
+            }
+            let empty = vec![];
+            let it = PoseidonRead::init(&empty[..]);
+            t.push(PoseidonChipRead::init(it, &mut ctx));
+
+            context_eval::<E, _>(
+                c,
+                &instance_commitments
+                    .iter()
+                    .map(|x| &x[..])
+                    .collect::<Vec<_>>()[..],
+                &mut t.iter_mut().collect::<Vec<_>>(),
+                &mut ctx,
+            )
         }
         _ => unreachable!(),
     };
+
+    for check in commitment_check {
+        ctx.ecc_assert_equal(&cl[check[0]][check[1]], &cl[check[2]][check[3]]);
+    }
 
     assert!(pl[0].z.0.val == E::Scalar::zero());
     assert!(pl[1].z.0.val == E::Scalar::zero());
