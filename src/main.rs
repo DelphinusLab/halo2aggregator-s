@@ -57,7 +57,7 @@ fn test_single_one_pass_with_verify_circuit() {
         vec![instances],
         TranscriptHash::Poseidon,
         vec![[0, 0, 0, 0]],
-    );
+    ).unwrap();
 
     run_circuit_unsafe_full_pass::<Bn256, _>(
         path,

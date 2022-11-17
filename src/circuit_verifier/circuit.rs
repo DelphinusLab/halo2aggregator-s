@@ -15,6 +15,7 @@ use halo2ecc_s::circuit::range_chip::RangeChip;
 use halo2ecc_s::circuit::range_chip::RangeChipConfig;
 use halo2ecc_s::context::Records;
 use halo2ecc_s::range_info::RangeInfo;
+use std::rc::Rc;
 
 #[derive(Clone)]
 pub struct AggregatorChipConfig {
@@ -25,13 +26,13 @@ pub struct AggregatorChipConfig {
 
 #[derive(Clone)]
 pub struct AggregatorCircuit<C: CurveAffine> {
-    records: Records<C::ScalarExt>,
+    records: Rc<Records<C::ScalarExt>>,
     instances: Vec<AssignedValue<C::ScalarExt>>,
 }
 
 impl<C: CurveAffine> AggregatorCircuit<C> {
     pub fn new(
-        records: Records<C::ScalarExt>,
+        records: Rc<Records<C::ScalarExt>>,
         instances: Vec<AssignedValue<C::ScalarExt>>,
     ) -> Self {
         Self { records, instances }

@@ -197,7 +197,7 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
     instances: Vec<Vec<Vec<E::Scalar>>>,
     hash: TranscriptHash,
     commentment_check: Vec<[usize; 4]>,
-) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>) {
+) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)> {
     let params =
         load_or_build_unsafe_params::<E>(k, Some(&cache_folder.join(format!("K{}.params", k))));
 
@@ -321,23 +321,26 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
     }
 
     // circuit multi check
+    if hash == TranscriptHash::Poseidon {
+        let timer = start_timer!(|| "circuit verify single proof");
+        let (circuit, instances) = build_aggregate_verify_circuit::<E>(
+            &params_verifier,
+            &vkeys[..].iter().collect::<Vec<_>>(),
+            instances.iter().collect(),
+            proofs,
+            hash,
+            commentment_check,
+        );
+        end_timer!(timer);
 
-    let timer = start_timer!(|| "circuit verify single proof");
-    let (circuit, instances) = build_aggregate_verify_circuit::<E>(
-        &params_verifier,
-        &vkeys[..].iter().collect::<Vec<_>>(),
-        instances.iter().collect(),
-        proofs,
-        hash,
-        commentment_check,
-    );
-    end_timer!(timer);
+        if true {
+            const K: u32 = 20;
+            let prover = MockProver::run(K, &circuit, vec![instances.clone()]).unwrap();
+            assert_eq!(prover.verify(), Ok(()));
+        }
 
-    if true {
-        const K: u32 = 20;
-        let prover = MockProver::run(K, &circuit, vec![instances.clone()]).unwrap();
-        assert_eq!(prover.verify(), Ok(()));
+        Some((circuit, instances))
+    } else {
+        None
     }
-
-    (circuit, instances)
 }

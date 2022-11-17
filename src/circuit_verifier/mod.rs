@@ -23,6 +23,7 @@ use halo2ecc_s::circuit::native_ecc_chip::EccChipOps;
 use halo2ecc_s::context::Context;
 use halo2ecc_s::context::EccContext;
 use std::io;
+use std::rc::Rc;
 use std::sync::Arc;
 
 pub mod circuit;
@@ -272,7 +273,7 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop>(
 
     (
         AggregatorCircuit::new(
-            Arc::try_unwrap(ctx.records).unwrap().into_inner().unwrap(),
+            Rc::new(Arc::try_unwrap(ctx.records).unwrap().into_inner().unwrap()),
             assigned_instances,
         ),
         instances,
