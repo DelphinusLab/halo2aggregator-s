@@ -217,7 +217,7 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
             vkey,
             circuit,
             &instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>(),
-            Some(&cache_folder.join(format!("{}.transcript.data", prefix))),
+            Some(&cache_folder.join(format!("{}_{}.transcript.data", prefix, i))),
             hash,
             false,
         );
@@ -236,7 +236,7 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
             let vkey = load_or_build_vkey::<E, C>(
                 &params,
                 &circuit_without_witness[i],
-                Some(&cache_folder.join(format!("{}.vkey.data", prefix))),
+                Some(&cache_folder.join(format!("{}_{}.vkey.data", prefix, i))),
             );
 
             // origin check
