@@ -23,6 +23,13 @@ impl EvalPos {
             _ => self.clone(),
         }
     }
+
+    pub fn to_ops_index_unsafe(&self) -> usize {
+        match self {
+            EvalPos::Ops(a) => *a,
+            _ => unreachable!(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -35,7 +42,7 @@ pub enum EvalOps {
 
     ScalarAdd(EvalPos, EvalPos),
     ScalarSub(EvalPos, EvalPos),
-    ScalarMul(EvalPos, EvalPos),
+    ScalarMul(EvalPos, EvalPos, bool),
     ScalarDiv(EvalPos, EvalPos),
     ScalarPow(EvalPos, u32),
 
@@ -54,7 +61,7 @@ impl EvalOps {
             EvalOps::TranscriptSqueeze(_, a) => vec![a],
             EvalOps::ScalarAdd(a, b) => vec![a, b],
             EvalOps::ScalarSub(a, b) => vec![a, b],
-            EvalOps::ScalarMul(a, b) => vec![a, b],
+            EvalOps::ScalarMul(a, b, _) => vec![a, b],
             EvalOps::ScalarDiv(a, b) => vec![a, b],
             EvalOps::ScalarPow(a, _) => vec![a],
             EvalOps::MSM(psl) => {
@@ -92,8 +99,8 @@ impl EvalOps {
             EvalOps::ScalarSub(a, b) => {
                 EvalOps::ScalarSub(a.map(reverse_order), b.map(reverse_order))
             }
-            EvalOps::ScalarMul(a, b) => {
-                EvalOps::ScalarMul(a.map(reverse_order), b.map(reverse_order))
+            EvalOps::ScalarMul(a, b, c) => {
+                EvalOps::ScalarMul(a.map(reverse_order), b.map(reverse_order), *c)
             }
             EvalOps::ScalarDiv(a, b) => {
                 EvalOps::ScalarDiv(a.map(reverse_order), b.map(reverse_order))
@@ -109,7 +116,7 @@ impl EvalOps {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct EvalContext<C: CurveAffine> {
     pub ops: Vec<EvalOps>,
     pub const_points: Vec<C>,
@@ -189,10 +196,10 @@ impl<C: CurveAffine> EvalContext<C> {
                 let b = self.translate_ast_scalar(b);
                 self.push_op(EvalOps::ScalarSub(a, b))
             }
-            AstScalar::Mul(a, b) => {
+            AstScalar::Mul(a, b, is_cg) => {
                 let a = self.translate_ast_scalar(a);
                 let b = self.translate_ast_scalar(b);
-                self.push_op(EvalOps::ScalarMul(a, b))
+                self.push_op(EvalOps::ScalarMul(a, b, *is_cg))
             }
             AstScalar::Div(a, b) => {
                 let a = self.translate_ast_scalar(a);

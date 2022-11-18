@@ -5,7 +5,6 @@ use crate::api::arith::AstScalarRc;
 use crate::commit;
 use crate::eval;
 use crate::pconst;
-use crate::scheckpoint;
 use crate::sconst;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::Field;
@@ -147,7 +146,7 @@ impl<C: CurveAffine> Mul<EvaluationQuerySchemaRc<C>> for EvaluationQuerySchemaRc
 
 impl<C: CurveAffine> EvaluationQuerySchemaRc<C> {
     pub fn eval(self, g1: C) -> AstPointRc<C> {
-        let (pl, s) = self.eval_prepare();
+        let (pl, s) = self.eval_prepare(sconst!(C::ScalarExt::one()));
         AstPointRc(Rc::new(AstPoint::Multiexp(
             vec![
                 vec![(pconst!(g1).0, s.0)],
@@ -160,6 +159,7 @@ impl<C: CurveAffine> EvaluationQuerySchemaRc<C> {
         )))
     }
 
+    /*
     fn eval_prepare(
         self,
     ) -> (
@@ -220,6 +220,67 @@ impl<C: CurveAffine> EvaluationQuerySchemaRc<C> {
             EvaluationQuerySchema::CheckPoint(tag, s) => {
                 let (pl, s) = EvaluationQuerySchemaRc(s.clone()).eval_prepare();
                 (pl, scheckpoint!(tag.clone(), s))
+            }
+        }
+    }
+    */
+
+    fn eval_prepare(
+        self,
+        coeff: AstScalarRc<C>
+    ) -> (
+        BTreeMap<String, (AstPointRc<C>, AstScalarRc<C>)>,
+        AstScalarRc<C>,
+    ) {
+        match self.0.as_ref() {
+            EvaluationQuerySchema::Commitment(cq) => (
+                BTreeMap::from_iter(
+                    vec![(
+                        cq.key.clone(),
+                        (
+                            cq.commitment.clone().unwrap(),
+                            coeff,
+                        ),
+                    )]
+                    .into_iter(),
+                ),
+                sconst!(C::ScalarExt::zero()),
+            ),
+            EvaluationQuerySchema::Eval(cq) => (BTreeMap::new(), coeff * cq.eval.clone().unwrap()),
+            EvaluationQuerySchema::Scalar(s) => (BTreeMap::new(), coeff * s),
+            EvaluationQuerySchema::Add(l, r, _) => {
+                let evaluated_l = EvaluationQuerySchemaRc(l.clone()).eval_prepare(coeff.clone());
+                let evaluated_r = EvaluationQuerySchemaRc(r.clone()).eval_prepare(coeff);
+
+                let s = evaluated_l.1 + evaluated_r.1;
+                let mut pl = evaluated_l.0;
+                for (k, (p, sr)) in evaluated_r.0 {
+                    if let Some(sl) = pl.get_mut(&k) {
+                        assert!(Rc::ptr_eq(&sl.0 .0, &p.0));
+                        sl.1 = &sl.1 + sr;
+                    } else {
+                        pl.insert(k, (p, sr));
+                    }
+                }
+                (pl, s)
+            }
+            EvaluationQuerySchema::Mul(l, r, _) => {
+                let (coeff, other) = if l.contains_commitment() {
+                    (
+                        EvaluationQuerySchemaRc(r.clone()).eval_prepare(coeff).1,
+                        l.clone(),
+                    )
+                } else {
+                    (
+                        EvaluationQuerySchemaRc(l.clone()).eval_prepare(coeff).1,
+                        r.clone(),
+                    )
+                };
+
+                EvaluationQuerySchemaRc(other).eval_prepare(coeff)
+            }
+            EvaluationQuerySchema::CheckPoint(_, s) => {
+                EvaluationQuerySchemaRc(s.clone()).eval_prepare(coeff)
             }
         }
     }

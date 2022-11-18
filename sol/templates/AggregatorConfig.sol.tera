@@ -1,0 +1,190 @@
+// SPDX-License-Identifier: MIT
+// Tells the Solidity compiler to compile only from v0.8.13 to v0.9.0
+pragma solidity ^0.8.13;
+
+import "./AggregatorLib.sol";
+
+library AggregatorConfig {
+    function fill_circuits_g2(uint256[] memory s) internal pure {
+        s[2] = {{target_circuit_s_g2_x0}};
+        s[3] = {{target_circuit_s_g2_x1}};
+        s[4] = {{target_circuit_s_g2_y0}};
+        s[5] = {{target_circuit_s_g2_y1}};
+
+        s[8] = {{target_circuit_n_g2_x0}};
+        s[9] = {{target_circuit_n_g2_x1}};
+        s[10] = {{target_circuit_n_g2_y0}};
+        s[11] = {{target_circuit_n_g2_y1}};
+
+        s[14] = {{verify_circuit_s_g2_x0}};
+        s[15] = {{verify_circuit_s_g2_x1}};
+        s[16] = {{verify_circuit_s_g2_y0}};
+        s[17] = {{verify_circuit_s_g2_y1}};
+
+        s[20] = {{verify_circuit_n_g2_x0}};
+        s[21] = {{verify_circuit_n_g2_x1}};
+        s[22] = {{verify_circuit_n_g2_y0}};
+        s[23] = {{verify_circuit_n_g2_y1}};
+    }
+
+    function calc_verfiy_circuit_lagrange(uint256[] calldata instances) internal view 
+    returns (uint256[] memory buf) {
+        buf = new uint256[]({{ verify_circuit_lagrange_commitments | length() * 3 }});
+        require(instances.length * 3 <= buf.length, "too many verify instances");
+
+        {% set_global i = 0 %}
+        {% for commitment in verify_circuit_lagrange_commitments -%}
+        buf[{{ i }}] = {{ commitment[0] }};
+        buf[{{ i + 1 }}] = {{ commitment[1] }};
+        {% set_global i = i + 3 %}
+        {% endfor %}
+        
+        for (uint256 i = 0; i < instances.length; i++) {
+            buf[i * 3 + 2] = instances[i];
+        }
+
+        AggregatorLib.msm(buf, 0, instances.length);
+    }
+
+    function calc_target_circuit_lagrange(uint256[] calldata instances) internal view 
+    returns (uint256[] memory buf) {
+        buf = new uint256[]({{ target_circuit_lagrange_commitments | length() * 3 }});
+        require(instances.length * 3 <= buf.length, "too many target instances");
+
+        {% set_global i = 0 %}
+        {% for commitment in target_circuit_lagrange_commitments -%}
+        buf[{{ i }}] = {{ commitment[0] }};
+        buf[{{ i + 1 }}] = {{ commitment[1] }};
+        {% set_global i = i + 3 %}
+        {% endfor %}
+        
+        for (uint256 i = 0; i < instances.length; i++) {
+            buf[i * 3 + 2] = instances[i];
+        }
+
+        AggregatorLib.msm(buf, 0, instances.length);
+    }
+
+    function hash(uint256[] memory absorbing, uint256 length)
+        private
+        view
+        returns (bytes32[1] memory v)
+    {
+        bool success;
+        assembly {
+            success := staticcall(
+                sub(gas(), 2000),
+                2,
+                add(absorbing, 0x20),
+                length,
+                v,
+                32
+            )
+            switch success
+            case 0 {
+                invalid()
+            }
+        }
+        assert(success);
+    }
+
+    function squeeze_challenge(uint256[] memory absorbing, uint256 length) internal view returns (uint256 v) {
+        absorbing[length] = 0;
+        bytes32 res = hash(absorbing, length * 32 + 1)[0];
+        absorbing[0] = uint256(res);
+        v = absorbing[0] % AggregatorLib.p_mod;
+    }
+
+    function get_chanllenges(
+        uint256[] calldata transcript,
+        uint256[] memory instance_commitment
+    ) internal view returns (uint256[7] memory challenges) {
+        uint256[] memory absorbing = new uint256[]({{ evals * 2 }});
+        absorbing[0] = {{ init_scalar }};
+        absorbing[1] = instance_commitment[0];
+        absorbing[2] = instance_commitment[1];
+
+        uint256 pos = 3;
+        uint256 transcript_pos = 0;
+        for (uint i = 0; i < {{ nadvice }}; i ++) {
+            AggregatorLib.check_on_curve(transcript[transcript_pos], transcript[transcript_pos + 1]);
+            absorbing[pos++] = transcript[transcript_pos++];
+            absorbing[pos++] = transcript[transcript_pos++];
+        }
+        // theta
+        challenges[0] = squeeze_challenge(absorbing, pos);
+        {% if challenges0 %}
+        require(challenges[0] == {{challenges0}}, "challenge 0");
+        {% endif %}
+        pos = 1;
+        for (uint i = 0; i < {{ lookups * 2 }}; i ++) {
+            AggregatorLib.check_on_curve(transcript[transcript_pos], transcript[transcript_pos + 1]);
+            absorbing[pos++] = transcript[transcript_pos++];
+            absorbing[pos++] = transcript[transcript_pos++];
+        }
+        // beta
+        challenges[1] = squeeze_challenge(absorbing, pos);
+        {% if challenges1 %}
+        require(challenges[1] == {{challenges1}}, "challenge 1");
+        {% endif %}
+        pos = 1;
+        // gamma
+        challenges[2] = squeeze_challenge(absorbing, pos);
+        {% if challenges2 %}
+        require(challenges[2] == {{challenges2}}, "challenge 2");
+        {% endif %}
+        pos = 1;
+        for (uint i = 0; i < {{ permutaion_products + lookups + 1 }}; i ++) {
+            AggregatorLib.check_on_curve(transcript[transcript_pos], transcript[transcript_pos + 1]);
+            absorbing[pos++] = transcript[transcript_pos++];
+            absorbing[pos++] = transcript[transcript_pos++];
+        }
+        // y
+        challenges[3] = squeeze_challenge(absorbing, pos);
+        {% if challenges3 %}
+        require(challenges[3] == {{challenges3}}, "challenge 3");
+        {% endif %}
+        pos = 1;
+        for (uint i = 0; i < {{ degree }}; i ++) {
+            AggregatorLib.check_on_curve(transcript[transcript_pos], transcript[transcript_pos + 1]);
+            absorbing[pos++] = transcript[transcript_pos++];
+            absorbing[pos++] = transcript[transcript_pos++];
+        }
+        //x
+        challenges[4] = squeeze_challenge(absorbing, pos);
+        {% if challenges4 %}
+        require(challenges[4] == {{challenges4}}, "challenge 4");
+        {% endif %}
+        pos = 1;
+        for (uint i = 0; i < {{ evals }}; i ++) {
+            absorbing[pos++] = transcript[transcript_pos++];
+        }
+        //v
+        challenges[5] = squeeze_challenge(absorbing, pos);
+        {% if challenges5 %}
+        require(challenges[5] == {{challenges5}}, "challenge 5");
+        {% endif %}
+        pos = 1;
+        //u
+        challenges[6] = squeeze_challenge(absorbing, pos);
+        {% if challenges6 %}
+        require(challenges[6] == {{challenges6}}, "challenge 6");
+        {% endif %}
+
+        for (; transcript_pos < transcript.length; transcript_pos += 2) {
+            AggregatorLib.check_on_curve(transcript[transcript_pos], transcript[transcript_pos + 1]);
+        }
+    }
+
+    function verify_proof(
+        uint256[] calldata transcript,
+        uint256[] memory instance,
+        uint256[7] memory challenge,
+        uint256[] memory buf
+    ) internal view {
+        {{ main }}
+        
+        AggregatorLib.msm(buf, 128, 9);
+        AggregatorLib.msm(buf, 192, 46);
+    }
+}

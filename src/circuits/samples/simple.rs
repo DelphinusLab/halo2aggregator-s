@@ -16,6 +16,7 @@ pub struct SimpleConfig {
     sel: Column<Fixed>,
 }
 
+#[derive(Default, Clone)]
 pub struct SimpleCircuit<F: FieldExt> {
     a: F,
     b: F,
@@ -29,6 +30,14 @@ impl<F: FieldExt> SimpleCircuit<F> {
     pub fn random_new_with_instance() -> (Self, Vec<Vec<F>>) {
         let a = F::random(OsRng);
         let b = F::random(OsRng);
+        let instance = a + b;
+
+        (Self::new_with_instance(a, b), vec![vec![instance]])
+    }
+
+    pub fn default_with_instance() -> (Self, Vec<Vec<F>>) {
+        let a = F::zero();
+        let b = F::zero();
         let instance = a + b;
 
         (Self::new_with_instance(a, b), vec![vec![instance]])

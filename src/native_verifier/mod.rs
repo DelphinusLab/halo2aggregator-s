@@ -5,6 +5,7 @@ use crate::api::halo2::verify_aggregation_proofs;
 use crate::circuits::utils::instance_to_instance_commitment;
 use crate::circuits::utils::TranscriptHash;
 use crate::transcript::poseidon::PoseidonRead;
+use crate::transcript::sha256::ShaRead;
 use halo2_proofs::arithmetic::Field;
 use halo2_proofs::arithmetic::MillerLoopResult;
 use halo2_proofs::arithmetic::MultiMillerLoop;
@@ -16,89 +17,131 @@ use halo2_proofs::transcript::Blake2bRead;
 use halo2_proofs::transcript::Challenge255;
 use halo2_proofs::transcript::EncodedChallenge;
 use halo2_proofs::transcript::TranscriptRead;
+use std::marker::PhantomData;
 
-fn context_eval<
+pub struct NativeEvalContext<
     E: MultiMillerLoop,
     EC: EncodedChallenge<E::G1Affine>,
     T: TranscriptRead<E::G1Affine, EC>,
->(
+> {
+    pub finals: Vec<E::G1Affine>,
+    pub values: Vec<(Option<E::G1Affine>, Option<E::Scalar>)>,
+
     c: EvalContext<E::G1Affine>,
-    instance_commitments: &[&[E::G1Affine]],
-    t: &mut [&mut T],
-) -> Vec<E::G1Affine> {
-    let mut it: Vec<(Option<E::G1Affine>, Option<E::Scalar>)> = vec![];
-
-    macro_rules! eval_scalar_pos {
-        ($pos:expr) => {
-            match $pos {
-                EvalPos::Constant(i) => c.const_scalars[*i],
-                EvalPos::Ops(i) => it[*i].1.unwrap(),
-                _ => unreachable!(),
-            }
-        };
-    }
-
-    macro_rules! eval_point_pos {
-        ($pos:expr) => {
-            match $pos {
-                EvalPos::Constant(i) => c.const_points[*i],
-                EvalPos::Ops(i) => it[*i].0.unwrap(),
-                EvalPos::Instance(i, j) => instance_commitments[*i][*j],
-                _ => unreachable!(),
-            }
-        };
-    }
-
-    macro_rules! eval_any_pos {
-        ($pos:expr) => {
-            match $pos {
-                EvalPos::Ops(i) => it[*i],
-                _ => unreachable!(),
-            }
-        };
-    }
-
-    for (_, op) in c.ops.iter().enumerate() {
-        it.push(match op {
-            EvalOps::TranscriptReadScalar(i, _) => (None, Some(t[*i].read_scalar().unwrap())),
-            EvalOps::TranscriptReadPoint(i, _) => (Some(t[*i].read_point().unwrap()), None),
-            EvalOps::TranscriptCommonScalar(i, _, s) => {
-                t[*i].common_scalar(eval_scalar_pos!(s)).unwrap();
-                (None, None)
-            }
-            EvalOps::TranscriptCommonPoint(i, _, p) => {
-                t[*i].common_point(eval_point_pos!(p)).unwrap();
-                (None, None)
-            }
-            EvalOps::TranscriptSqueeze(i, _) => {
-                (None, Some(t[*i].squeeze_challenge().get_scalar()))
-            }
-            EvalOps::ScalarAdd(a, b) => (None, Some(eval_scalar_pos!(a) + eval_scalar_pos!(b))),
-            EvalOps::ScalarSub(a, b) => (None, Some(eval_scalar_pos!(a) - eval_scalar_pos!(b))),
-            EvalOps::ScalarMul(a, b) => (None, Some(eval_scalar_pos!(a) * eval_scalar_pos!(b))),
-            EvalOps::ScalarDiv(a, b) => (
-                None,
-                Some(eval_scalar_pos!(a) * eval_scalar_pos!(b).invert().unwrap()),
-            ),
-            EvalOps::ScalarPow(a, n) => (None, Some(eval_scalar_pos!(a).pow_vartime([*n as u64]))),
-            EvalOps::MSM(psl) => (
-                psl.into_iter()
-                    .map(|(p, s)| (eval_point_pos!(p) * eval_scalar_pos!(s)).to_affine())
-                    .reduce(|acc, p| (acc + p).to_affine()),
-                None,
-            ),
-            EvalOps::CheckPoint(tag, v) => {
-                if false {
-                    println!("checkpoint {}: {:?}", tag, eval_any_pos!(v));
-                }
-                eval_any_pos!(v)
-            }
-        });
-    }
-
-    c.finals.iter().map(|x| it[*x].0.unwrap()).collect()
+    instance_commitments: Vec<Vec<E::G1Affine>>,
+    t: Vec<T>,
+    _mark: PhantomData<EC>,
 }
 
+impl<E: MultiMillerLoop, EC: EncodedChallenge<E::G1Affine>, T: TranscriptRead<E::G1Affine, EC>>
+    NativeEvalContext<E, EC, T>
+{
+    pub fn new(
+        c: EvalContext<E::G1Affine>,
+        instance_commitments: Vec<Vec<E::G1Affine>>,
+        t: Vec<T>,
+    ) -> Self {
+        Self {
+            c,
+            instance_commitments,
+            t,
+            values: vec![],
+            finals: vec![],
+            _mark: PhantomData,
+        }
+    }
+
+    fn eval_scalar_pos(&self, pos: &EvalPos) -> E::Scalar {
+        match pos {
+            EvalPos::Constant(i) => self.c.const_scalars[*i],
+            EvalPos::Ops(i) => self.values[*i].1.unwrap(),
+            _ => unreachable!(),
+        }
+    }
+
+    fn eval_point_pos(&self, pos: &EvalPos) -> E::G1Affine {
+        match pos {
+            EvalPos::Constant(i) => self.c.const_points[*i],
+            EvalPos::Ops(i) => self.values[*i].0.unwrap(),
+            EvalPos::Instance(i, j) => self.instance_commitments[*i][*j],
+            _ => unreachable!(),
+        }
+    }
+
+    fn eval_any_pos(&self, pos: &EvalPos) -> (Option<E::G1Affine>, Option<E::Scalar>) {
+        match pos {
+            EvalPos::Ops(i) => self.values[*i],
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn context_eval(&mut self) {
+        for (_, op) in self.c.ops.iter().enumerate() {
+            let v = match op {
+                EvalOps::TranscriptReadScalar(i, _) => {
+                    (None, Some(self.t[*i].read_scalar().unwrap()))
+                }
+                EvalOps::TranscriptReadPoint(i, _) => {
+                    (Some(self.t[*i].read_point().unwrap()), None)
+                }
+                EvalOps::TranscriptCommonScalar(i, _, s) => {
+                    let v = self.eval_scalar_pos(s);
+                    self.t[*i].common_scalar(v).unwrap();
+                    (None, None)
+                }
+                EvalOps::TranscriptCommonPoint(i, _, p) => {
+                    let v = self.eval_point_pos(p);
+                    self.t[*i].common_point(v).unwrap();
+                    (None, None)
+                }
+                EvalOps::TranscriptSqueeze(i, _) => {
+                    (None, Some(self.t[*i].squeeze_challenge().get_scalar()))
+                }
+                EvalOps::ScalarAdd(a, b) => (
+                    None,
+                    Some(self.eval_scalar_pos(a) + self.eval_scalar_pos(b)),
+                ),
+                EvalOps::ScalarSub(a, b) => (
+                    None,
+                    Some(self.eval_scalar_pos(a) - self.eval_scalar_pos(b)),
+                ),
+                EvalOps::ScalarMul(a, b, _) => (
+                    None,
+                    Some(self.eval_scalar_pos(a) * self.eval_scalar_pos(b)),
+                ),
+                EvalOps::ScalarDiv(a, b) => (
+                    None,
+                    Some(self.eval_scalar_pos(a) * self.eval_scalar_pos(b).invert().unwrap()),
+                ),
+                EvalOps::ScalarPow(a, n) => {
+                    (None, Some(self.eval_scalar_pos(a).pow_vartime([*n as u64])))
+                }
+                EvalOps::MSM(psl) => (
+                    psl.into_iter()
+                        .map(|(p, s)| {
+                            (self.eval_point_pos(p) * self.eval_scalar_pos(s)).to_affine()
+                        })
+                        .reduce(|acc, p| (acc + p).to_affine()),
+                    None,
+                ),
+                EvalOps::CheckPoint(tag, v) => {
+                    if false {
+                        println!("checkpoint {}: {:?}", tag, self.eval_any_pos(v));
+                    }
+                    self.eval_any_pos(v)
+                }
+            };
+            self.values.push(v);
+        }
+
+        self.finals = self
+            .c
+            .finals
+            .iter()
+            .map(|x| self.values[*x].0.unwrap())
+            .collect();
+    }
+}
 pub fn verify_single_proof<E: MultiMillerLoop>(
     params: &ParamsVerifier<E>,
     vkey: &VerifyingKey<E::G1Affine>,
@@ -141,14 +184,9 @@ pub fn verify_proofs<E: MultiMillerLoop>(
             t.push(Blake2bRead::<_, E::G1Affine, Challenge255<_>>::init(
                 &empty[..],
             ));
-            context_eval::<E, _, _>(
-                c,
-                &instance_commitments
-                    .iter()
-                    .map(|x| &x[..])
-                    .collect::<Vec<_>>()[..],
-                &mut t.iter_mut().collect::<Vec<_>>(),
-            )
+            let mut ctx = NativeEvalContext::<E, _, _>::new(c, instance_commitments, t);
+            ctx.context_eval();
+            ctx.finals
         }
         TranscriptHash::Poseidon => {
             let mut t = vec![];
@@ -157,14 +195,20 @@ pub fn verify_proofs<E: MultiMillerLoop>(
             }
             let empty = vec![];
             t.push(PoseidonRead::init(&empty[..]));
-            context_eval::<E, _, _>(
-                c,
-                &instance_commitments
-                    .iter()
-                    .map(|x| &x[..])
-                    .collect::<Vec<_>>()[..],
-                &mut t.iter_mut().collect::<Vec<_>>(),
-            )
+            let mut ctx = NativeEvalContext::<E, _, _>::new(c, instance_commitments, t);
+            ctx.context_eval();
+            ctx.finals
+        }
+        TranscriptHash::Sha => {
+            let mut t = vec![];
+            for i in 0..proofs.len() {
+                t.push(ShaRead::<_, _, _, sha2::Sha256>::init(&proofs[i][..]));
+            }
+            let empty = vec![];
+            t.push(ShaRead::init(&empty[..]));
+            let mut ctx = NativeEvalContext::<E, _, _>::new(c, instance_commitments, t);
+            ctx.context_eval();
+            ctx.finals
         }
     };
 

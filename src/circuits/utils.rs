@@ -3,6 +3,8 @@ use crate::circuit_verifier::circuit::AggregatorCircuit;
 use crate::native_verifier::verify_proofs;
 use crate::transcript::poseidon::PoseidonRead;
 use crate::transcript::poseidon::PoseidonWrite;
+use crate::transcript::sha256::ShaRead;
+use crate::transcript::sha256::ShaWrite;
 use ark_std::end_timer;
 use ark_std::rand::rngs::OsRng;
 use ark_std::start_timer;
@@ -30,6 +32,7 @@ use std::path::Path;
 pub enum TranscriptHash {
     Blake2b,
     Poseidon,
+    Sha,
 }
 
 pub fn load_or_build_unsafe_params<E: MultiMillerLoop>(
@@ -125,6 +128,14 @@ pub fn instance_to_instance_commitment<E: MultiMillerLoop>(
         .collect::<Vec<_>>()
 }
 
+pub fn load_proof(cache_file: &Path) -> Vec<u8> {
+    println!("read transcript from {:?}", cache_file);
+    let mut fd = std::fs::File::open(&cache_file).unwrap();
+    let mut buf = vec![];
+    fd.read_to_end(&mut buf).unwrap();
+    buf
+}
+
 pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
     params: &Params<E::G1Affine>,
     vkey: VerifyingKey<E::G1Affine>,
@@ -132,15 +143,12 @@ pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
     instances: &[&[E::Scalar]],
     cache_file_opt: Option<&Path>,
     hash: TranscriptHash,
-    do_load: bool,
+    try_load_proof: bool,
 ) -> Vec<u8> {
     if let Some(cache_file) = &cache_file_opt {
-        if do_load && Path::exists(&cache_file) {
+        if try_load_proof && Path::exists(&cache_file) {
             println!("read transcript from {:?}", cache_file);
-            let mut fd = std::fs::File::open(&cache_file).unwrap();
-            let mut buf = vec![];
-            fd.read_to_end(&mut buf).unwrap();
-            return buf;
+            return load_proof(&cache_file);
         }
     }
 
@@ -176,6 +184,19 @@ pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
             .expect("proof generation should not fail");
             transcript.finalize()
         }
+        TranscriptHash::Sha => {
+            let mut transcript = ShaWrite::<_, _, _, sha2::Sha256>::init(vec![]);
+            create_proof(
+                params,
+                &pkey,
+                &[circuit],
+                &[instances],
+                OsRng,
+                &mut transcript,
+            )
+            .expect("proof generation should not fail");
+            transcript.finalize()
+        }
     };
     end_timer!(timer);
 
@@ -197,7 +218,9 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
     instances: Vec<Vec<Vec<E::Scalar>>>,
     hash: TranscriptHash,
     commentment_check: Vec<[usize; 4]>,
+    force_create_proof: bool
 ) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)> {
+    // 1. setup params
     let params =
         load_or_build_unsafe_params::<E>(k, Some(&cache_folder.join(format!("K{}.params", k))));
 
@@ -208,12 +231,14 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
 
     let mut proofs = vec![];
     for (i, circuit) in circuits.into_iter().enumerate() {
+        // 2. setup vkey
         let vkey = load_or_build_vkey::<E, C>(
             &params,
             &circuit_without_witness[i],
             Some(&cache_folder.join(format!("{}_{}.vkey.data", prefix, i))),
         );
 
+        // 3. create proof
         let proof = load_or_create_proof::<E, C>(
             &params,
             vkey,
@@ -221,7 +246,7 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
             &instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>(),
             Some(&cache_folder.join(format!("{}_{}.transcript.data", prefix, i))),
             hash,
-            false,
+            !force_create_proof,
         );
         proofs.push(proof);
 
@@ -231,6 +256,7 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
         );
     }
 
+    // 4. many verify
     let public_inputs_size = instances.iter().fold(0usize, |acc, x| {
         usize::max(acc, x.iter().fold(0, |acc, x| usize::max(acc, x.len())))
     });
@@ -263,6 +289,13 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
                     strategy,
                     &[&instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>()[..]],
                     &mut PoseidonRead::init(&proof[..]),
+                ),
+                TranscriptHash::Sha => verify_proof(
+                    &params_verifier,
+                    &vkey,
+                    strategy,
+                    &[&instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>()[..]],
+                    &mut ShaRead::<_, _, _, sha2::Sha256>::init(&proof[..]),
                 ),
             }
             .unwrap();

@@ -36,7 +36,7 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
     circuit: &mut EccContext<E::G1Affine>,
 ) -> (
     Vec<AssignedPoint<E::G1Affine, E::Scalar>>,
-    Vec<Vec<AssignedPoint<E::G1Affine, E::Scalar>>>,
+    Vec<AssignedPoint<E::G1Affine, E::Scalar>>,
 ) {
     let mut it: Vec<(
         Option<AssignedPoint<E::G1Affine, E::Scalar>>,
@@ -69,8 +69,6 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
             })
             .collect::<Vec<_>>()
     };
-
-    let mut commitments = vec![vec![]; instance_commitments.len()];
 
     macro_rules! eval_scalar_pos {
         ($pos:expr) => {
@@ -110,7 +108,6 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
             }
             EvalOps::TranscriptReadPoint(i, _) => {
                 let p = t[*i].read_point(circuit);
-                commitments[*i].push(p.clone());
                 (Some(p), None)
             }
             EvalOps::TranscriptCommonScalar(i, _, s) => {
@@ -119,7 +116,6 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
             }
             EvalOps::TranscriptCommonPoint(i, _, p) => {
                 t[*i].common_point(circuit, eval_point_pos!(p));
-                //assert!(false);
                 (None, None)
             }
             EvalOps::TranscriptSqueeze(i, _) => (None, Some(t[*i].squeeze(circuit))),
@@ -131,7 +127,7 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
                 None,
                 Some(circuit.sub(eval_scalar_pos!(a), eval_scalar_pos!(b))),
             ),
-            EvalOps::ScalarMul(a, b) => (
+            EvalOps::ScalarMul(a, b, _) => (
                 None,
                 Some(circuit.mul(eval_scalar_pos!(a), eval_scalar_pos!(b))),
             ),
@@ -175,17 +171,12 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
             }
         });
     }
-
     (
-        vec![
-            c.finals
-                .iter()
-                .map(|x| circuit.ecc_reduce(it[*x].0.as_ref().unwrap()))
-                .collect(),
-            instance_commitments.concat(),
-        ]
-        .concat(),
-        commitments,
+        c.finals
+            .iter()
+            .map(|x| circuit.ecc_reduce(it[*x].0.as_ref().unwrap()))
+            .collect(),
+        instance_commitments.concat(),
     )
 }
 
@@ -209,13 +200,18 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop>(
 ) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>) {
     let mut ctx = Context::<_, E::Scalar>::new_with_range_info();
 
-    let (w_x, w_g, _) = verify_aggregation_proofs(params, vkey);
+    let (w_x, w_g, advices) = verify_aggregation_proofs(params, vkey);
 
     let instance_commitments = instance_to_instance_commitment(params, vkey, instances);
 
-    let c = EvalContext::translate(&[w_x.0, w_g.0]);
+    let mut targets = vec![w_x.0, w_g.0];
+    for idx in commitment_check {
+        targets.push(advices[idx[0]][idx[1]].0.clone());
+        targets.push(advices[idx[2]][idx[3]].0.clone());
+    }
 
-    let (pl, cl) = match hash {
+    let c = EvalContext::translate(&targets[..]);
+    let (pl, il) = match hash {
         TranscriptHash::Poseidon => {
             let mut t = vec![];
             for i in 0..proofs.len() {
@@ -239,8 +235,8 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop>(
         _ => unreachable!(),
     };
 
-    for check in commitment_check {
-        ctx.ecc_assert_equal(&cl[check[0]][check[1]], &cl[check[2]][check[3]]);
+    for check in pl.chunks(2).skip(1) {
+        ctx.ecc_assert_equal(&check[0], &check[1]);
     }
 
     assert!(pl[0].z.0.val == E::Scalar::zero());
@@ -259,7 +255,8 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop>(
 
     assert!(success);
 
-    let assigned_instances = pl
+    let assigned_instances = vec![&pl[0..2], &il]
+        .concat()
         .iter()
         .map(|p| ctx.ecc_encode(p))
         .collect::<Vec<_>>()
