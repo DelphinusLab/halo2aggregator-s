@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Tells the Solidity compiler to compile only from v0.8.13 to v0.9.0
 pragma solidity ^0.8.13;
 
 library AggregatorLib {
@@ -29,36 +31,45 @@ library AggregatorLib {
     function msm(
         uint256[] memory input,
         uint256 offset,
-        uint256 length
+        uint256 count
     ) internal view {
         bool ret = false;
-        uint256 start = 0;
-        uint256 end = 0;
+        offset = offset * 0x20 + 0x20;
+        uint256 start = offset + count * 0x60 - 0x60;
 
-        for (uint256 pos = length; pos > 0; pos--) {
-            start = 0x20 + offset * 0x20 + pos * 0x60 - 0x60;
-            end = start + 0x20;
+        assembly {
+            ret := staticcall(
+                gas(),
+                7,
+                add(input, start),
+                0x60,
+                add(input, start),
+                0x40
+            )
+        }
+        require(ret);
+
+        while (start != offset) {
+            start -= 0x60;
             assembly {
                 ret := staticcall(
                     gas(),
                     7,
                     add(input, start),
                     0x60,
-                    add(input, end),
+                    add(input, add(start, 0x20)),
                     0x40
                 )
             }
             require(ret);
 
-            start = end;
-            end = end - 0x20;
             assembly {
                 ret := staticcall(
                     gas(),
                     6,
-                    add(input, start),
+                    add(input, add(start, 0x20)),
                     0x80,
-                    add(input, end),
+                    add(input, start),
                     0x40
                 )
             }

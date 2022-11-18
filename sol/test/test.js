@@ -27,7 +27,8 @@ contract('AggregatorVerifier', () => {
     instance = readBnLe(
       __dirname + "/../../output/verify-circuit_0.instance.data");
 
-    const gas = await verifier.verify.estimateGas([], instance);
+    const gas = await verifier.verify.estimateGas([], instance, []);
+
     console.log("gas cost", gas);
   });
 });

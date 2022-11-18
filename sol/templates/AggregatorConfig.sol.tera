@@ -1,0 +1,26 @@
+// SPDX-License-Identifier: MIT
+// Tells the Solidity compiler to compile only from v0.8.13 to v0.9.0
+pragma solidity ^0.8.13;
+
+library AggregatorConfig {
+    function fill_target_circuit_g2(uint256[] memory s, uint256 offset) internal pure {
+        s[offset] = uint256({{target_circuit_s_g2_x0}});
+        s[offset + 1] = uint256({{target_circuit_s_g2_x1}});
+        s[offset + 2] = uint256({{target_circuit_s_g2_y0}});
+        s[offset + 3] = uint256({{target_circuit_s_g2_y1}});
+
+        s[offset + 6] = uint256({{target_circuit_n_g2_x0}});
+        s[offset + 7] = uint256({{target_circuit_n_g2_x1}});
+        s[offset + 8] = uint256({{target_circuit_n_g2_y0}});
+        s[offset + 9] = uint256({{target_circuit_n_g2_y1}});
+    }
+
+    function fill_verfiy_circuit_lagrange(uint256[] memory s, uint256 offset) internal pure {
+        {% set_global i = 0 %}
+        {% for commitment in target_circuit_lagrange_commitments -%}
+        s[offset + {{ i }}] = uint256({{ commitment[0] }});
+        s[offset + {{ i + 1 }}] = uint256({{ commitment[1] }});
+        {% set_global i = i + 3 %}
+        {% endfor %}
+    }
+}

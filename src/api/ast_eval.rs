@@ -2,6 +2,7 @@ use crate::api::arith::AstPoint;
 use crate::api::arith::AstScalar;
 use crate::api::transcript::AstTranscript;
 use halo2_proofs::arithmetic::CurveAffine;
+use halo2_proofs::arithmetic::Field;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashMap;

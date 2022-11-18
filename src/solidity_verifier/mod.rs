@@ -1,20 +1,25 @@
 use crate::circuits::utils::load_or_build_unsafe_params;
 use crate::circuits::utils::load_or_build_vkey;
+use crate::solidity_verifier::codegen::verifier_code_generator;
 use halo2_proofs::arithmetic::BaseExt;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::MultiMillerLoop;
 use halo2_proofs::plonk::VerifyingKey;
 use halo2_proofs::poly::commitment::ParamsVerifier;
+use halo2ecc_s::utils::field_to_bn;
 use num_bigint::BigUint;
 use std::fs;
 use std::fs::write;
 use tera::Tera;
 
+pub mod codegen;
+
 pub fn solidity_render<E: MultiMillerLoop>(
     path_in: &str,
     path_out: &str,
     template_name: &str,
-    params: &ParamsVerifier<E>,
+    target_circuit_params: &ParamsVerifier<E>,
+    verify_circuit_params: &ParamsVerifier<E>,
     //_vkey: &VerifyingKey<E::G1Affine>,
 ) {
     let tera = Tera::new(path_in).unwrap();
@@ -39,8 +44,42 @@ pub fn solidity_render<E: MultiMillerLoop>(
         tera_ctx.insert(format!("{}_{}", prefix, "y1"), &y.1.to_str_radix(10));
     };
 
-    insert_g2(&mut tera_ctx, "target_circuit_s_g2", params.s_g2);
-    insert_g2(&mut tera_ctx, "target_circuit_n_g2", -params.s_g2);
+    insert_g2(
+        &mut tera_ctx,
+        "target_circuit_s_g2",
+        target_circuit_params.s_g2,
+    );
+    insert_g2(
+        &mut tera_ctx,
+        "target_circuit_n_g2",
+        -target_circuit_params.s_g2,
+    );
+    insert_g2(
+        &mut tera_ctx,
+        "verify_circuit_s_g2",
+        verify_circuit_params.s_g2,
+    );
+    insert_g2(
+        &mut tera_ctx,
+        "verify_circuit_n_g2",
+        -verify_circuit_params.s_g2,
+    );
+
+    let verify_circuit_g_lagrange = verify_circuit_params
+        .g_lagrange
+        .iter()
+        .map(|g1| {
+            let c = g1.coordinates().unwrap();
+            [
+                field_to_bn(c.x()).to_str_radix(10),
+                field_to_bn(c.y()).to_str_radix(10),
+            ]
+        })
+        .collect::<Vec<_>>();
+    tera_ctx.insert(
+        "target_circuit_lagrange_commitments",
+        &verify_circuit_g_lagrange,
+    );
 
     let fd = std::fs::File::create(path_out).unwrap();
 
@@ -61,6 +100,8 @@ pub fn test_solidity_render() {
     let path = "./output";
     DirBuilder::new().recursive(true).create(path).unwrap();
 
+    let nproofs = 1;
+
     let path = Path::new(path);
     let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
     let (circuit, instances) = run_circuit_unsafe_full_pass::<Bn256, _>(
@@ -77,20 +118,26 @@ pub fn test_solidity_render() {
     let k = 8;
     let params =
         load_or_build_unsafe_params::<Bn256>(k, Some(&path.join(format!("K{}.params", k))));
-    let params_verifier: ParamsVerifier<Bn256> = params.verifier(10).unwrap();
+    let target_params_verifier: ParamsVerifier<Bn256> = params.verifier(10).unwrap();
+
+    let k = 20;
+    let params =
+        load_or_build_unsafe_params::<Bn256>(k, Some(&path.join(format!("K{}.params", k))));
+    let verifier_params_verifier: ParamsVerifier<Bn256> = params.verifier(6 + 3 * nproofs).unwrap();
 
     solidity_render(
         "sol/templates/*",
-        "sol/contracts/AggregatorVerifier.sol",
-        "AggregatorVerifier.sol.template",
-        &params_verifier,
+        "sol/contracts/AggregatorConfig.sol",
+        "AggregatorConfig.sol.tera",
+        &target_params_verifier,
+        &verifier_params_verifier,
     );
 
-    /*
     let vkey = load_or_build_vkey::<Bn256, _>(
         &params,
         &circuit,
         Some(&path.join(format!("{}_{}.vkey.data", "verify-circuit", 0))),
     );
-     */
+
+    verifier_code_generator(&verifier_params_verifier, &vkey);
 }
