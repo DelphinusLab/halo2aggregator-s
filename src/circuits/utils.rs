@@ -285,7 +285,7 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
         }
 
         // circuit single check
-        if true && hash == TranscriptHash::Poseidon {
+        if false && hash == TranscriptHash::Poseidon {
             let timer = start_timer!(|| "circuit verify single proof");
             for (i, proof) in proofs.iter().enumerate() {
                 let (circuit, instances) =
@@ -296,7 +296,7 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
                         proof.clone(),
                         hash,
                     );
-                const K: u32 = 20;
+                const K: u32 = 21;
                 let prover = MockProver::run(K, &circuit, vec![instances]).unwrap();
                 assert_eq!(prover.verify(), Ok(()));
             }
@@ -333,8 +333,8 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
         );
         end_timer!(timer);
 
-        if true {
-            const K: u32 = 20;
+        if false {
+            const K: u32 = 21;
             let prover = MockProver::run(K, &circuit, vec![instances.clone()]).unwrap();
             assert_eq!(prover.verify(), Ok(()));
         }

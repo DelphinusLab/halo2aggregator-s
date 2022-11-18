@@ -9,7 +9,7 @@ use crate::scheckpoint;
 use crate::sconst;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::Field;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::ops::Add;
 use std::ops::Mul;
 use std::rc::Rc;
@@ -163,12 +163,12 @@ impl<C: CurveAffine> EvaluationQuerySchemaRc<C> {
     fn eval_prepare(
         self,
     ) -> (
-        HashMap<String, (AstPointRc<C>, AstScalarRc<C>)>,
+        BTreeMap<String, (AstPointRc<C>, AstScalarRc<C>)>,
         AstScalarRc<C>,
     ) {
         match self.0.as_ref() {
             EvaluationQuerySchema::Commitment(cq) => (
-                HashMap::from_iter(
+                BTreeMap::from_iter(
                     vec![(
                         cq.key.clone(),
                         (
@@ -180,8 +180,8 @@ impl<C: CurveAffine> EvaluationQuerySchemaRc<C> {
                 ),
                 sconst!(C::ScalarExt::zero()),
             ),
-            EvaluationQuerySchema::Eval(cq) => (HashMap::new(), cq.eval.clone().unwrap()),
-            EvaluationQuerySchema::Scalar(s) => (HashMap::new(), s.clone()),
+            EvaluationQuerySchema::Eval(cq) => (BTreeMap::new(), cq.eval.clone().unwrap()),
+            EvaluationQuerySchema::Scalar(s) => (BTreeMap::new(), s.clone()),
             EvaluationQuerySchema::Add(l, r, _) => {
                 let evaluated_l = EvaluationQuerySchemaRc(l.clone()).eval_prepare();
                 let evaluated_r = EvaluationQuerySchemaRc(r.clone()).eval_prepare();
