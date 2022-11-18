@@ -1,10 +1,12 @@
 #[macro_use]
 
 pub mod api;
-pub mod circuit_verifier;
 pub mod circuits;
-pub mod native_verifier;
 pub mod transcript;
+
+pub mod circuit_verifier;
+pub mod native_verifier;
+pub mod solidity_verifier;
 
 pub fn main() {}
 
@@ -57,7 +59,8 @@ fn test_single_one_pass_with_verify_circuit() {
         vec![instances],
         TranscriptHash::Poseidon,
         vec![[0, 0, 0, 0]],
-    ).unwrap();
+    )
+    .unwrap();
 
     run_circuit_unsafe_full_pass::<Bn256, _>(
         path,

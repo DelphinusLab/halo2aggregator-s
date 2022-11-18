@@ -1,0 +1,44 @@
+// SPDX-License-Identifier: MIT
+// Tells the Solidity compiler to compile only from v0.8.13 to v0.9.0
+pragma solidity ^0.8.13;
+
+import "./AggregatorLib.sol";
+
+contract AggregatorVerifier {
+	function fill_target_circuit_g2(uint256[] memory s, uint256 offset) internal pure {
+        s[offset] = uint256({{target_circuit_s_g2_x0}});
+        s[offset + 1] = uint256({{target_circuit_s_g2_x1}});
+        s[offset + 2] = uint256({{target_circuit_s_g2_y0}});
+        s[offset + 3] = uint256({{target_circuit_s_g2_y1}});
+
+        s[offset + 6] = uint256({{target_circuit_n_g2_x0}});
+        s[offset + 7] = uint256({{target_circuit_n_g2_x1}});
+        s[offset + 8] = uint256({{target_circuit_n_g2_y0}});
+        s[offset + 9] = uint256({{target_circuit_n_g2_y1}});
+    }
+
+	function verify(
+        uint256[] calldata proof,
+		uint256[] calldata instance
+    ) public view {
+		uint256[] memory pairing_buf= new uint256[](12);
+
+		uint256 shift_modulus = (1 << 90) - 1;
+
+		//w_x.x
+		pairing_buf[0] = instance[0] + ((instance[1] & shift_modulus) << 180);
+		//w_x.y
+		pairing_buf[1] = (instance[2] << 90) + (instance[1] >> 90);
+		//w_g.x
+		pairing_buf[6] = instance[0] + ((instance[1] & shift_modulus) << 180);
+		//w_g.y
+		pairing_buf[7] = (instance[2] << 90) + (instance[1] >> 90);
+
+		fill_target_circuit_g2(pairing_buf, 2);
+
+		{
+        	bool checked = AggregatorLib.pairing(pairing_buf);
+        	require(checked);
+		}
+    }
+}
