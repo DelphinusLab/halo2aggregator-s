@@ -90,21 +90,22 @@ library AggregatorConfig {
         uint256[] memory absorbing = new uint256[]({{ evals * 2 + 2 }});
         uint256 pos = 0;
         uint256 transcript_pos = 0;
-        update_hash_scalar({{ init_scalar }}, absorbing, pos++);
-        update_hash_point(instance_commitment[0], instance_commitment[1], absorbing, pos);
+        absorbing[pos++] = {{ init_scalar }};
+        absorbing[pos++] = instance_commitment[0];
+        absorbing[pos++] = instance_commitment[1];
         pos += 2;
         for (uint i = 0; i < {{ nadvice }}; i ++) {
-            update_hash_point(transcript[transcript_pos], transcript[transcript_pos + 1], absorbing, pos);
-            transcript_pos += 2;
-            pos += 2;
+            AggregatorLib.check_on_curve(transcript[transcript_pos], transcript[transcript_pos + 1]);
+            absorbing[pos++] = transcript[transcript_pos++];
+            absorbing[pos++] = transcript[transcript_pos++];
         }
         // theta
         challenges[0] = squeeze_challenge(absorbing, pos);
         pos = 1;
         for (uint i = 0; i < {{ lookups * 2 }}; i ++) {
-            update_hash_point(transcript[transcript_pos], transcript[transcript_pos + 1], absorbing, pos);
-            transcript_pos += 2;
-            pos += 2;
+            AggregatorLib.check_on_curve(transcript[transcript_pos], transcript[transcript_pos + 1]);
+            absorbing[pos++] = transcript[transcript_pos++];
+            absorbing[pos++] = transcript[transcript_pos++];
         }
         // beta
         challenges[1] = squeeze_challenge(absorbing, pos);
@@ -113,23 +114,23 @@ library AggregatorConfig {
         challenges[2] = squeeze_challenge(absorbing, pos);
         pos = 1;
         for (uint i = 0; i < {{ permutaion_products + lookups + 1 }}; i ++) {
-            update_hash_point(transcript[transcript_pos], transcript[transcript_pos + 1], absorbing, pos);
-            transcript_pos += 2;
-            pos += 2;
+            AggregatorLib.check_on_curve(transcript[transcript_pos], transcript[transcript_pos + 1]);
+            absorbing[pos++] = transcript[transcript_pos++];
+            absorbing[pos++] = transcript[transcript_pos++];
         }
         // y
         challenges[3] = squeeze_challenge(absorbing, pos);
         pos = 1;
         for (uint i = 0; i < {{ degree }}; i ++) {
-            update_hash_point(transcript[transcript_pos], transcript[transcript_pos + 1], absorbing, pos);
-            transcript_pos += 2;
-            pos += 2;
+            AggregatorLib.check_on_curve(transcript[transcript_pos], transcript[transcript_pos + 1]);
+            absorbing[pos++] = transcript[transcript_pos++];
+            absorbing[pos++] = transcript[transcript_pos++];
         }
         //x
         challenges[4] = squeeze_challenge(absorbing, pos);
         pos = 1;
         for (uint i = 0; i < {{ evals }}; i ++) {
-            update_hash_scalar(transcript[transcript_pos++], absorbing, pos++);
+            absorbing[pos++] = transcript[transcript_pos++];
         }
         //v
         challenges[5] = squeeze_challenge(absorbing, pos);

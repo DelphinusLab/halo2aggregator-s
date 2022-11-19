@@ -113,21 +113,22 @@ library AggregatorConfig {
         uint256[] memory absorbing = new uint256[](94);
         uint256 pos = 0;
         uint256 transcript_pos = 0;
-        update_hash_scalar(2048239651670500713024797663709869345102297737106168056944230908238674993888, absorbing, pos++);
-        update_hash_point(instance_commitment[0], instance_commitment[1], absorbing, pos);
+        absorbing[pos++] = 2048239651670500713024797663709869345102297737106168056944230908238674993888;
+        absorbing[pos++] = instance_commitment[0];
+        absorbing[pos++] = instance_commitment[1];
         pos += 2;
         for (uint i = 0; i < 6; i ++) {
-            update_hash_point(transcript[transcript_pos], transcript[transcript_pos + 1], absorbing, pos);
-            transcript_pos += 2;
-            pos += 2;
+            AggregatorLib.check_on_curve(transcript[transcript_pos], transcript[transcript_pos + 1]);
+            absorbing[pos++] = transcript[transcript_pos++];
+            absorbing[pos++] = transcript[transcript_pos++];
         }
         // theta
         challenges[0] = squeeze_challenge(absorbing, pos);
         pos = 1;
         for (uint i = 0; i < 2; i ++) {
-            update_hash_point(transcript[transcript_pos], transcript[transcript_pos + 1], absorbing, pos);
-            transcript_pos += 2;
-            pos += 2;
+            AggregatorLib.check_on_curve(transcript[transcript_pos], transcript[transcript_pos + 1]);
+            absorbing[pos++] = transcript[transcript_pos++];
+            absorbing[pos++] = transcript[transcript_pos++];
         }
         // beta
         challenges[1] = squeeze_challenge(absorbing, pos);
@@ -136,23 +137,23 @@ library AggregatorConfig {
         challenges[2] = squeeze_challenge(absorbing, pos);
         pos = 1;
         for (uint i = 0; i < 5; i ++) {
-            update_hash_point(transcript[transcript_pos], transcript[transcript_pos + 1], absorbing, pos);
-            transcript_pos += 2;
-            pos += 2;
+            AggregatorLib.check_on_curve(transcript[transcript_pos], transcript[transcript_pos + 1]);
+            absorbing[pos++] = transcript[transcript_pos++];
+            absorbing[pos++] = transcript[transcript_pos++];
         }
         // y
         challenges[3] = squeeze_challenge(absorbing, pos);
         pos = 1;
         for (uint i = 0; i < 4; i ++) {
-            update_hash_point(transcript[transcript_pos], transcript[transcript_pos + 1], absorbing, pos);
-            transcript_pos += 2;
-            pos += 2;
+            AggregatorLib.check_on_curve(transcript[transcript_pos], transcript[transcript_pos + 1]);
+            absorbing[pos++] = transcript[transcript_pos++];
+            absorbing[pos++] = transcript[transcript_pos++];
         }
         //x
         challenges[4] = squeeze_challenge(absorbing, pos);
         pos = 1;
         for (uint i = 0; i < 46; i ++) {
-            update_hash_scalar(transcript[transcript_pos++], absorbing, pos++);
+            absorbing[pos++] = transcript[transcript_pos++];
         }
         //v
         challenges[5] = squeeze_challenge(absorbing, pos);
