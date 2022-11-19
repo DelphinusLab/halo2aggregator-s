@@ -1,9 +1,12 @@
 use crate::circuits::utils::load_or_build_unsafe_params;
 use crate::circuits::utils::load_or_build_vkey;
+use crate::circuits::utils::load_or_create_proof;
+use crate::circuits::utils::load_proof;
 use crate::solidity_verifier::codegen::verifier_code_generator;
 use halo2_proofs::arithmetic::BaseExt;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::MultiMillerLoop;
+use halo2_proofs::plonk::Circuit;
 use halo2_proofs::plonk::VerifyingKey;
 use halo2_proofs::poly::commitment::ParamsVerifier;
 use halo2ecc_s::utils::field_to_bn;
@@ -20,7 +23,7 @@ pub fn solidity_render<E: MultiMillerLoop>(
     template_name: &str,
     target_circuit_params: &ParamsVerifier<E>,
     verify_circuit_params: &ParamsVerifier<E>,
-    //_vkey: &VerifyingKey<E::G1Affine>,
+    vkey: &VerifyingKey<E::G1Affine>,
 ) {
     let tera = Tera::new(path_in).unwrap();
     let mut tera_ctx = tera::Context::new();
@@ -81,6 +84,46 @@ pub fn solidity_render<E: MultiMillerLoop>(
         &verify_circuit_g_lagrange,
     );
 
+    // vars for challenge
+
+    let mut hasher = blake2b_simd::Params::new()
+        .hash_length(64)
+        .personal(b"Halo2-Verify-Key")
+        .to_state();
+
+    let s = format!("{:?}", vkey.pinned());
+    hasher.update(&(s.len() as u64).to_le_bytes());
+    hasher.update(s.as_bytes());
+
+    let scalar = E::Scalar::from_bytes_wide(hasher.finalize().as_array());
+
+    tera_ctx.insert("init_scalar", &field_to_bn(&scalar).to_str_radix(10));
+
+    tera_ctx.insert("nadvice", &vkey.cs.num_advice_columns);
+
+    let lookups = vkey.cs.lookups.len();
+    tera_ctx.insert("lookups", &lookups);
+
+    let n_permutation_product = vkey
+        .cs
+        .permutation
+        .columns
+        .chunks(vkey.cs.degree() - 2)
+        .len();
+    tera_ctx.insert("permutaion_products", &n_permutation_product);
+
+    tera_ctx.insert("degree", &vkey.domain.get_quotient_poly_degree());
+
+    let evals = vkey.cs.instance_queries.len()
+        + vkey.cs.advice_queries.len()
+        + vkey.cs.fixed_queries.len()
+        + 1
+        + vkey.permutation.commitments.len()
+        + 3 * n_permutation_product
+        - 1
+        + 5 * lookups;
+    tera_ctx.insert("evals", &evals);
+
     let fd = std::fs::File::create(path_out).unwrap();
 
     tera.render_to(template_name, &tera_ctx, fd)
@@ -115,6 +158,18 @@ pub fn test_solidity_render() {
     )
     .unwrap();
 
+    let circuit0 = circuit.without_witnesses();
+
+    run_circuit_unsafe_full_pass::<Bn256, _>(
+        path,
+        "verify-circuit",
+        20,
+        vec![circuit],
+        vec![vec![instances]],
+        TranscriptHash::Sha,
+        vec![],
+    );
+
     let k = 8;
     let params =
         load_or_build_unsafe_params::<Bn256>(k, Some(&path.join(format!("K{}.params", k))));
@@ -125,18 +180,19 @@ pub fn test_solidity_render() {
         load_or_build_unsafe_params::<Bn256>(k, Some(&path.join(format!("K{}.params", k))));
     let verifier_params_verifier: ParamsVerifier<Bn256> = params.verifier(6 + 3 * nproofs).unwrap();
 
+    let vkey = load_or_build_vkey::<Bn256, _>(
+        &params,
+        &circuit0,
+        Some(&path.join(format!("{}_{}.vkey.data", "verify-circuit", 0))),
+    );
+
     solidity_render(
         "sol/templates/*",
         "sol/contracts/AggregatorConfig.sol",
         "AggregatorConfig.sol.tera",
         &target_params_verifier,
         &verifier_params_verifier,
-    );
-
-    let vkey = load_or_build_vkey::<Bn256, _>(
-        &params,
-        &circuit,
-        Some(&path.join(format!("{}_{}.vkey.data", "verify-circuit", 0))),
+        &vkey,
     );
 
     verifier_code_generator(&verifier_params_verifier, &vkey);

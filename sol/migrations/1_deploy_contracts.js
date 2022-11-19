@@ -4,8 +4,9 @@ const AggregatorVerifier = artifacts.require("AggregatorVerifier");
 
 module.exports = function(deployer) {
   deployer.deploy(AggregatorLib);
+  deployer.link(AggregatorLib, AggregatorConfig);
   deployer.deploy(AggregatorConfig);
-  deployer.link(AggregatorConfig, AggregatorVerifier);
   deployer.link(AggregatorLib, AggregatorVerifier);
+  deployer.link(AggregatorConfig, AggregatorVerifier);
   deployer.deploy(AggregatorVerifier);
 };

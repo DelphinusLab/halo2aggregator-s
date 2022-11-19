@@ -3,6 +3,8 @@ use crate::circuit_verifier::circuit::AggregatorCircuit;
 use crate::native_verifier::verify_proofs;
 use crate::transcript::poseidon::PoseidonRead;
 use crate::transcript::poseidon::PoseidonWrite;
+use crate::transcript::sha256::ShaRead;
+use crate::transcript::sha256::ShaWrite;
 use ark_std::end_timer;
 use ark_std::rand::rngs::OsRng;
 use ark_std::start_timer;
@@ -22,6 +24,7 @@ use halo2_proofs::poly::commitment::Params;
 use halo2_proofs::poly::commitment::ParamsVerifier;
 use halo2_proofs::transcript::Blake2bRead;
 use halo2_proofs::transcript::Blake2bWrite;
+use sha3::Sha3_256;
 use std::io::Read;
 use std::io::Write;
 use std::path::Path;
@@ -30,6 +33,7 @@ use std::path::Path;
 pub enum TranscriptHash {
     Blake2b,
     Poseidon,
+    Sha,
 }
 
 pub fn load_or_build_unsafe_params<E: MultiMillerLoop>(
@@ -125,6 +129,14 @@ pub fn instance_to_instance_commitment<E: MultiMillerLoop>(
         .collect::<Vec<_>>()
 }
 
+pub fn load_proof(cache_file: &str) -> Vec<u8> {
+    println!("read transcript from {:?}", cache_file);
+    let mut fd = std::fs::File::open(&cache_file).unwrap();
+    let mut buf = vec![];
+    fd.read_to_end(&mut buf).unwrap();
+    buf
+}
+
 pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
     params: &Params<E::G1Affine>,
     vkey: VerifyingKey<E::G1Affine>,
@@ -137,10 +149,7 @@ pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
     if let Some(cache_file) = &cache_file_opt {
         if do_load && Path::exists(&cache_file) {
             println!("read transcript from {:?}", cache_file);
-            let mut fd = std::fs::File::open(&cache_file).unwrap();
-            let mut buf = vec![];
-            fd.read_to_end(&mut buf).unwrap();
-            return buf;
+            return load_proof(&cache_file.to_str().unwrap());
         }
     }
 
@@ -165,6 +174,19 @@ pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
         }
         TranscriptHash::Poseidon => {
             let mut transcript = PoseidonWrite::init(vec![]);
+            create_proof(
+                params,
+                &pkey,
+                &[circuit],
+                &[instances],
+                OsRng,
+                &mut transcript,
+            )
+            .expect("proof generation should not fail");
+            transcript.finalize()
+        }
+        TranscriptHash::Sha => {
+            let mut transcript = ShaWrite::<_, _, _, Sha3_256>::init(vec![]);
             create_proof(
                 params,
                 &pkey,
@@ -263,6 +285,13 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
                     strategy,
                     &[&instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>()[..]],
                     &mut PoseidonRead::init(&proof[..]),
+                ),
+                TranscriptHash::Sha => verify_proof(
+                    &params_verifier,
+                    &vkey,
+                    strategy,
+                    &[&instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>()[..]],
+                    &mut ShaRead::<_, _, _, Sha3_256>::init(&proof[..]),
                 ),
             }
             .unwrap();

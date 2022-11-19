@@ -5,6 +5,7 @@ use crate::api::halo2::verify_aggregation_proofs;
 use crate::circuits::utils::instance_to_instance_commitment;
 use crate::circuits::utils::TranscriptHash;
 use crate::transcript::poseidon::PoseidonRead;
+use crate::transcript::sha256::ShaRead;
 use halo2_proofs::arithmetic::Field;
 use halo2_proofs::arithmetic::MillerLoopResult;
 use halo2_proofs::arithmetic::MultiMillerLoop;
@@ -16,6 +17,7 @@ use halo2_proofs::transcript::Blake2bRead;
 use halo2_proofs::transcript::Challenge255;
 use halo2_proofs::transcript::EncodedChallenge;
 use halo2_proofs::transcript::TranscriptRead;
+use sha3::Sha3_256;
 
 fn context_eval<
     E: MultiMillerLoop,
@@ -157,6 +159,22 @@ pub fn verify_proofs<E: MultiMillerLoop>(
             }
             let empty = vec![];
             t.push(PoseidonRead::init(&empty[..]));
+            context_eval::<E, _, _>(
+                c,
+                &instance_commitments
+                    .iter()
+                    .map(|x| &x[..])
+                    .collect::<Vec<_>>()[..],
+                &mut t.iter_mut().collect::<Vec<_>>(),
+            )
+        }
+        TranscriptHash::Sha => {
+            let mut t = vec![];
+            for i in 0..proofs.len() {
+                t.push(ShaRead::<_, _, _, Sha3_256>::init(&proofs[i][..]));
+            }
+            let empty = vec![];
+            t.push(ShaRead::init(&empty[..]));
             context_eval::<E, _, _>(
                 c,
                 &instance_commitments
