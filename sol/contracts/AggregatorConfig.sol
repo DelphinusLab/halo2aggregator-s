@@ -63,9 +63,9 @@ library AggregatorConfig {
         uint256[] memory absorbing,
         uint256 pos
     ) internal view {
-        //AggregatorLib.check_on_curve(x, y);
-        absorbing[pos++] = (x << 1) | (y & 1);
-        //absorbing[pos++] = y;
+        AggregatorLib.check_on_curve(x, y);
+        absorbing[pos++] = x;
+        absorbing[pos++] = y;
     }
 
     function to_scalar(bytes32 r) private view returns (uint256 v) {
@@ -115,11 +115,11 @@ library AggregatorConfig {
         uint256 transcript_pos = 0;
         update_hash_scalar(2048239651670500713024797663709869345102297737106168056944230908238674993888, absorbing, pos++);
         update_hash_point(instance_commitment[0], instance_commitment[1], absorbing, pos);
-        pos +=  1;
+        pos += 2;
         for (uint i = 0; i < 6; i ++) {
             update_hash_point(transcript[transcript_pos], transcript[transcript_pos + 1], absorbing, pos);
             transcript_pos += 2;
-            pos +=  1;
+            pos += 2;
         }
         // theta
         challenges[0] = squeeze_challenge(absorbing, pos);
@@ -127,7 +127,7 @@ library AggregatorConfig {
         for (uint i = 0; i < 2; i ++) {
             update_hash_point(transcript[transcript_pos], transcript[transcript_pos + 1], absorbing, pos);
             transcript_pos += 2;
-            pos +=  1;
+            pos += 2;
         }
         // beta
         challenges[1] = squeeze_challenge(absorbing, pos);
@@ -138,7 +138,7 @@ library AggregatorConfig {
         for (uint i = 0; i < 5; i ++) {
             update_hash_point(transcript[transcript_pos], transcript[transcript_pos + 1], absorbing, pos);
             transcript_pos += 2;
-            pos +=  1;
+            pos += 2;
         }
         // y
         challenges[3] = squeeze_challenge(absorbing, pos);
@@ -146,7 +146,7 @@ library AggregatorConfig {
         for (uint i = 0; i < 4; i ++) {
             update_hash_point(transcript[transcript_pos], transcript[transcript_pos + 1], absorbing, pos);
             transcript_pos += 2;
-            pos +=  1;
+            pos += 2;
         }
         //x
         challenges[4] = squeeze_challenge(absorbing, pos);

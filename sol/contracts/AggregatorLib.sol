@@ -4,9 +4,11 @@ pragma solidity ^0.8.13;
 
 library AggregatorLib {
     function check_on_curve(uint256 x, uint256 y) internal view {
-        uint256 l = fr_mul(y, y);
-        uint256 r = fr_add(fr_mul(fr_mul(x, x), x), 3);
-        assert(l == r);
+        if (x != 0 && y != 0) {
+            uint256 l = fr_mul(y, y);
+            uint256 r = fr_add(fr_mul(fr_mul(x, x), x), 3);
+            assert(l == r);
+        }
     }
 
     function pairing(uint256[] memory input) internal view returns (bool) {
