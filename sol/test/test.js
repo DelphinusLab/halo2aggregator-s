@@ -25,20 +25,21 @@ contract('AggregatorVerifier', () => {
     const verifier = await AggregatorVerifier.deployed();
 
     const target_instance0 = readBnLe(
-      __dirname + "/../../output/simple-circuit_0.instance.data");
+      __dirname + "/../../output/simple-circuit.0.instance.data");
     const target_instance1 = readBnLe(
-      __dirname + "/../../output/simple-circuit_1.instance.data");
+      __dirname + "/../../output/simple-circuit.1.instance.data");
 
     const verify_instance = readBnLe(
-      __dirname + "/../../output/verify-circuit_0.instance.data");
-
+      __dirname + "/../../output/verify-circuit.0.instance.data");
     const proof = readBnLe(
-      __dirname + "/../../output/verify-circuit_0.transcript.data");
+      __dirname + "/../../output/verify-circuit.0.transcript.data");
+    const aux = readBnLe(
+      __dirname + "/../../output/verify-circuit.0.aux.data");
 
-    const gas = await verifier.verify.estimateGas(proof, verify_instance, [target_instance0, target_instance1]);
+    const gas = await verifier.verify.estimateGas(proof, verify_instance, aux, [target_instance0, target_instance1]);
     console.log("gas cost", gas);
 
-    const xy = await verifier.verify(proof, verify_instance, [target_instance0, target_instance1]);
+    const xy = await verifier.verify(proof, verify_instance, aux, [target_instance0, target_instance1]);
     console.log(xy.toString(16));
   });
 });

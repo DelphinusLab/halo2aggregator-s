@@ -235,7 +235,7 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
         let vkey = load_or_build_vkey::<E, C>(
             &params,
             &circuit_without_witness[i],
-            Some(&cache_folder.join(format!("{}_{}.vkey.data", prefix, i))),
+            Some(&cache_folder.join(format!("{}.{}.vkey.data", prefix, i))),
         );
 
         // 3. create proof
@@ -244,7 +244,7 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
             vkey,
             circuit,
             &instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>(),
-            Some(&cache_folder.join(format!("{}_{}.transcript.data", prefix, i))),
+            Some(&cache_folder.join(format!("{}.{}.transcript.data", prefix, i))),
             hash,
             !force_create_proof,
         );
@@ -252,7 +252,7 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
 
         store_instance(
             &instances[i],
-            &cache_folder.join(format!("{}_{}.instance.data", prefix, i)),
+            &cache_folder.join(format!("{}.{}.instance.data", prefix, i)),
         );
     }
 
@@ -268,7 +268,7 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
         let vkey = load_or_build_vkey::<E, C>(
             &params,
             &circuit_without_witness[i],
-            Some(&cache_folder.join(format!("{}_{}.vkey.data", prefix, i))),
+            Some(&cache_folder.join(format!("{}.{}.vkey.data", prefix, i))),
         );
 
         // origin check

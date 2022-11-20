@@ -11,6 +11,7 @@ contract AggregatorVerifier {
     function verify(
         uint256[] calldata proof,
         uint256[] calldata verify_instance,
+        uint256[] calldata aux,
         uint256[][] calldata target_instance
     ) public view {
         // step 0: verify target_instance commitment with target_instance
@@ -26,24 +27,23 @@ contract AggregatorVerifier {
             require(y == target_instance_buf[1], "invalid instance y");
         }
 
-        // step 1: calculate verify circuit instance commitment
-        uint256[] memory verify_instance_buf = AggregatorConfig
-            .calc_verfiy_circuit_lagrange(verify_instance);
-
-        // step 2: calculate challenge
-        uint256[7] memory challenge = AggregatorConfig.get_chanllenges(
-            proof,
-            verify_instance_buf
-        );
-
-        // step 3: calculate verify circuit pair
         uint256[] memory pairing_buf = new uint256[](24);
         {
+            // step 1: calculate verify circuit instance commitment
             uint256[] memory buf = new uint256[](384);
+            AggregatorConfig
+                .calc_verfiy_circuit_lagrange(buf, verify_instance);
+
+            // step 2: calculate challenge
+            AggregatorConfig.get_challenges(
+                proof,
+                buf
+            );
+
+            // step 3: calculate verify circuit pair
             AggregatorConfig.verify_proof(
                 proof,
-                verify_instance_buf,
-                challenge,
+                aux,
                 buf
             );
             pairing_buf[12] = buf[128];

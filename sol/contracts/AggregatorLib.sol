@@ -100,14 +100,6 @@ library AggregatorLib {
         return result[0];
     }
 
-    function fr_mul_add(
-        uint256 a,
-        uint256 b,
-        uint256 c
-    ) internal pure returns (uint256) {
-        return addmod(mulmod(a, b, p_mod), c, p_mod);
-    }
-
     function fr_mul(uint256 a, uint256 b) internal pure returns (uint256) {
         return mulmod(a, b, p_mod);
     }
@@ -120,12 +112,9 @@ library AggregatorLib {
         return addmod(a, p_mod - b, p_mod);
     }
 
-    function fr_div(uint256 a, uint256 b) internal view returns (uint256) {
-        require(b != 0);
-        return mulmod(a, fr_invert(b), p_mod);
-    }
-
-    function fr_invert(uint256 a) internal view returns (uint256) {
-        return fr_pow(a, p_mod - 2);
+    function fr_div(uint256 a, uint256 b, uint256 aux) internal pure returns (uint256) {
+        uint256 r = mulmod(b, aux, p_mod);
+        require(a == r, "div fail");
+        return aux % p_mod;
     }
 }

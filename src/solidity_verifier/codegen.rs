@@ -4,6 +4,7 @@ use crate::api::ast_eval::EvalPos;
 use crate::api::halo2::verify_aggregation_proofs;
 use crate::circuits::utils::instance_to_instance_commitment;
 use crate::transcript::sha256::ShaRead;
+use halo2_proofs::arithmetic::BaseExt;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::Field;
 use halo2_proofs::arithmetic::MillerLoopResult;
@@ -19,10 +20,15 @@ use halo2_proofs::transcript::TranscriptRead;
 use halo2ecc_s::utils::field_to_bn;
 use std::collections::BTreeSet;
 use std::io::Read;
+use std::path::Path;
 
+const CHALLENGE_BUF_START: usize = 2;
+const TEMP_BUF_START: usize = 16;
 const TEMP_BUF_MAX: usize = 128;
-const SOLIDITY_DEBUG: bool = false;
 const DEEP_LIMIT: usize = 7;
+
+const SOLIDITY_DEBUG: bool = false;
+
 #[derive(Clone)]
 pub enum SolidityVar<E: MultiMillerLoop> {
     Transcript(usize),
@@ -51,8 +57,8 @@ impl<E: MultiMillerLoop> SolidityVar<E> {
                     format!("(transcript[{}], transcript[{}])", i, i + 1)
                 }
             }
-            SolidityVar::Instance(i) => format!("(instance[{}], instance[{}])", i, i + 1),
-            SolidityVar::Challenge(i) => format!("challenge[{}]", i),
+            SolidityVar::Instance(i) => format!("(buf[{}], buf[{}])", i, i + 1),
+            SolidityVar::Challenge(i) => format!("buf[{}]", i + CHALLENGE_BUF_START),
             SolidityVar::Temp(i) => {
                 assert!(is_scalar);
                 format!("buf[{}]", i)
@@ -82,12 +88,13 @@ struct SolidityEvalContext<R: Read, E: MultiMillerLoop> {
     finals: Vec<E::G1Affine>,
     lifetime: Vec<usize>,
     deps: Vec<usize>,
+    aux_index: usize,
     transcript_idx: usize,
     challenge_idx: usize,
     msm_index: usize,
     temp_idx_allocator: (BTreeSet<usize>, usize),
     constant_scalars: Vec<E::Scalar>,
-    div_aux: Vec<E::Scalar>,
+    div_res: Vec<E::Scalar>,
     challenges: Vec<E::Scalar>,
 }
 
@@ -110,9 +117,10 @@ impl<R: Read, E: MultiMillerLoop> SolidityEvalContext<R, E> {
             transcript_idx: 0,
             challenge_idx: 0,
             msm_index: 0,
-            temp_idx_allocator: (BTreeSet::new(), 0),
+            aux_index: 0,
+            temp_idx_allocator: (BTreeSet::new(), TEMP_BUF_START),
             constant_scalars: vec![],
-            div_aux: vec![],
+            div_res: vec![],
             challenges: vec![],
         }
     }
@@ -216,7 +224,7 @@ impl<R: Read, E: MultiMillerLoop> SolidityEvalContext<R, E> {
                 ),
                 EvalOps::ScalarDiv(a, b) => {
                     let t = self.eval_scalar_pos(a) * self.eval_scalar_pos(b).invert().unwrap();
-                    self.div_aux.push(t);
+                    self.div_res.push(t);
                     (None, Some(t))
                 }
                 EvalOps::ScalarPow(a, n) => {
@@ -389,12 +397,16 @@ impl<R: Read, E: MultiMillerLoop> SolidityEvalContext<R, E> {
                     }
                 }
                 EvalOps::ScalarDiv(a, b) => {
+                    let aux_index = self.aux_index;
+                    self.aux_index += 1;
+
                     let a = self.pos_to_scalar_var(a);
                     let b = self.pos_to_scalar_var(b);
                     let expr = format!(
-                        "AggregatorLib.fr_div({}, {})",
+                        "AggregatorLib.fr_div({}, {}, aux[{}])",
                         a.to_string(true),
-                        b.to_string(true)
+                        b.to_string(true),
+                        aux_index
                     );
                     if self.deps[i] == 1
                         && get_combine_degree(a.get_deep(), b.get_deep()) < DEEP_LIMIT
@@ -525,11 +537,53 @@ pub fn solidity_codegen_with_proof<E: MultiMillerLoop>(
     );
 
     if SOLIDITY_DEBUG {
-        for i in 0..7 {
-            tera_context.insert(
-                &format!("challenges{}", i),
-                &field_to_bn(&ctx.challenges[i]).to_str_radix(10),
-            );
-        }
+        tera_context.insert(
+            &format!("challenges"),
+            &ctx.challenges
+                .iter()
+                .map(|x| field_to_bn(x).to_str_radix(10))
+                .collect::<Vec<_>>(),
+        );
     }
+}
+
+pub fn solidity_aux_gen<E: MultiMillerLoop>(
+    params: &ParamsVerifier<E>,
+    vkey: &VerifyingKey<E::G1Affine>,
+    instances: &Vec<E::Scalar>,
+    proofs: Vec<u8>,
+    aux_file: &Path,
+) {
+    let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey]);
+
+    let instance_commitments =
+        instance_to_instance_commitment(params, &[vkey], vec![&vec![instances.clone()]])[0].clone();
+
+    let targets = vec![w_x.0, w_g.0];
+
+    let c = EvalContext::translate(&targets[..]);
+
+    let mut ctx = SolidityEvalContext::<_, E>::new(
+        c,
+        instance_commitments,
+        ShaRead::<_, _, _, sha2::Sha256>::init(&proofs[..]),
+    );
+
+    ctx.value_gen();
+
+    let s_g2_prepared = E::G2Prepared::from(params.s_g2);
+    let n_g2_prepared = E::G2Prepared::from(-params.g2);
+    let success = bool::from(
+        E::multi_miller_loop(&[
+            (&ctx.finals[0], &s_g2_prepared),
+            (&ctx.finals[1], &n_g2_prepared),
+        ])
+        .final_exponentiation()
+        .is_identity(),
+    );
+
+    assert!(success);
+
+    let mut fd = std::fs::File::create(&aux_file).unwrap();
+    ctx.div_res.iter().for_each(|res| res.write(&mut fd).unwrap());
 }

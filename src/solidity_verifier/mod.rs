@@ -1,4 +1,5 @@
 use self::codegen::solidity_codegen_with_proof;
+use crate::solidity_verifier::codegen::solidity_aux_gen;
 use halo2_proofs::arithmetic::BaseExt;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::MultiMillerLoop;
@@ -211,10 +212,10 @@ pub fn test_solidity_render() {
     let vkey = load_or_build_vkey::<Bn256, _>(
         &params,
         &circuit0,
-        Some(&path.join(format!("{}_{}.vkey.data", "verify-circuit", 0))),
+        Some(&path.join(format!("{}.{}.vkey.data", "verify-circuit", 0))),
     );
 
-    let proof = load_proof(&path.join(format!("{}_{}.transcript.data", "verify-circuit", 0)));
+    let proof = load_proof(&path.join(format!("{}.{}.transcript.data", "verify-circuit", 0)));
 
     solidity_render(
         "sol/templates/*",
@@ -224,6 +225,14 @@ pub fn test_solidity_render() {
         &verifier_params_verifier,
         &vkey,
         &instances,
+        proof.clone(),
+    );
+
+    solidity_aux_gen(
+        &verifier_params_verifier,
+        &vkey,
+        &instances,
         proof,
+        &path.join(format!("{}.{}.aux.data", "verify-circuit", 0)),
     );
 }
