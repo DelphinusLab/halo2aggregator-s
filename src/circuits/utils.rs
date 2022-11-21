@@ -58,6 +58,15 @@ pub fn load_or_build_unsafe_params<E: MultiMillerLoop>(
     params
 }
 
+pub fn load_vkey<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
+    params: &Params<E::G1Affine>,
+    cache_file: &Path,
+) -> VerifyingKey<E::G1Affine> {
+    println!("read vkey from {:?}", cache_file);
+    let mut fd = std::fs::File::open(&cache_file).unwrap();
+    VerifyingKey::read::<_, C>(&mut fd, params).unwrap()
+}
+
 pub fn load_or_build_vkey<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
     params: &Params<E::G1Affine>,
     circuit: &C,
@@ -65,9 +74,7 @@ pub fn load_or_build_vkey<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
 ) -> VerifyingKey<E::G1Affine> {
     if let Some(cache_file) = &cache_file_opt {
         if Path::exists(&cache_file) {
-            println!("read vkey from {:?}", cache_file);
-            let mut fd = std::fs::File::open(&cache_file).unwrap();
-            return VerifyingKey::read::<_, C>(&mut fd, params).unwrap();
+            return load_vkey::<E, C>(params, &cache_file);
         }
     }
 
@@ -218,23 +225,18 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
     instances: Vec<Vec<Vec<E::Scalar>>>,
     hash: TranscriptHash,
     commitment_check: Vec<[usize; 4]>,
-    force_create_proof: bool
+    force_create_proof: bool,
 ) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)> {
     // 1. setup params
     let params =
         load_or_build_unsafe_params::<E>(k, Some(&cache_folder.join(format!("K{}.params", k))));
-
-    let circuit_without_witness = circuits
-        .iter()
-        .map(|c| c.without_witnesses())
-        .collect::<Vec<_>>();
 
     let mut proofs = vec![];
     for (i, circuit) in circuits.into_iter().enumerate() {
         // 2. setup vkey
         let vkey = load_or_build_vkey::<E, C>(
             &params,
-            &circuit_without_witness[i],
+            &circuit,
             Some(&cache_folder.join(format!("{}.{}.vkey.data", prefix, i))),
         );
 
@@ -265,10 +267,9 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
     let mut vkeys = vec![];
 
     for (i, proof) in proofs.iter().enumerate() {
-        let vkey = load_or_build_vkey::<E, C>(
+        let vkey = load_vkey::<E, C>(
             &params,
-            &circuit_without_witness[i],
-            Some(&cache_folder.join(format!("{}.{}.vkey.data", prefix, i))),
+            &cache_folder.join(format!("{}.{}.vkey.data", prefix, i)),
         );
 
         // origin check
