@@ -16,7 +16,8 @@ cargo test test_solidity_render --release -- --nocapture
 In terminal 1:
 ```
 cd sol
-npm run start
+yarn
+yarn start
 ```
 
 In terminal 2:
