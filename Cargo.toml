@@ -18,4 +18,4 @@ sha2 = "0.10.6"
 
 [features]
 default = []
-cuda = ["halo2_proofs/cuda"]
+cuda = ["halo2_proofs/cuda", "halo2ecc-s/cuda"]
