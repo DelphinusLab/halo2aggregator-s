@@ -27,7 +27,7 @@ library AggregatorConfig {
         s[23] = {{verify_circuit_n_g2_y1}};
     }
 
-    function calc_verfiy_circuit_lagrange(uint256[] memory buf, uint256[] calldata instances) internal view {
+    function calc_verify_circuit_lagrange(uint256[] memory buf, uint256[] calldata instances) internal view {
         require(instances.length == {{ verify_circuit_lagrange_commitments | length() }}, "invalid verify instances");
 
         {% set_global i = 0 %}
@@ -106,7 +106,7 @@ library AggregatorConfig {
 
         uint256 pos = 3;
         uint256 transcript_pos = 0;
-        for (uint i = 0; i < {{ nadvice }}; i ++) {
+        for (uint i = 0; i < {{ n_advice }}; i ++) {
             AggregatorLib.check_on_curve(transcript[transcript_pos], transcript[transcript_pos + 1]);
             absorbing[pos++] = transcript[transcript_pos++];
             absorbing[pos++] = transcript[transcript_pos++];
@@ -137,7 +137,7 @@ library AggregatorConfig {
         {% endif %}
         {% set i = i + 1 %}
         pos = 1;
-        for (uint i = 0; i < {{ permutaion_products + lookups + 1 }}; i ++) {
+        for (uint i = 0; i < {{ permutation_products + lookups + 1 }}; i ++) {
             AggregatorLib.check_on_curve(transcript[transcript_pos], transcript[transcript_pos + 1]);
             absorbing[pos++] = transcript[transcript_pos++];
             absorbing[pos++] = transcript[transcript_pos++];

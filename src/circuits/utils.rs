@@ -217,7 +217,7 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
     circuits: Vec<C>,
     instances: Vec<Vec<Vec<E::Scalar>>>,
     hash: TranscriptHash,
-    commentment_check: Vec<[usize; 4]>,
+    commitment_check: Vec<[usize; 4]>,
     force_create_proof: bool
 ) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)> {
     // 1. setup params
@@ -348,7 +348,7 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
             instances.iter().collect(),
             proofs.clone(),
             hash,
-            commentment_check.clone(),
+            commitment_check.clone(),
         );
         end_timer!(timer);
     }
@@ -362,7 +362,7 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
             instances.iter().collect(),
             proofs,
             hash,
-            commentment_check,
+            commitment_check,
         );
         end_timer!(timer);
 

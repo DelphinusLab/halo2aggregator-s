@@ -147,7 +147,7 @@ impl<C: CurveAffine> Mul<EvaluationQuerySchemaRc<C>> for EvaluationQuerySchemaRc
 impl<C: CurveAffine> EvaluationQuerySchemaRc<C> {
     pub fn eval(self, g1: C) -> AstPointRc<C> {
         let (pl, s) = self.eval_prepare(sconst!(C::ScalarExt::one()));
-        AstPointRc(Rc::new(AstPoint::Multiexp(
+        AstPointRc(Rc::new(AstPoint::MultiExp(
             vec![
                 vec![(pconst!(g1).0, s.0)],
                 pl.into_values()

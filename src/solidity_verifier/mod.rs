@@ -1,5 +1,4 @@
 use self::codegen::solidity_codegen_with_proof;
-use crate::solidity_verifier::codegen::solidity_aux_gen;
 use halo2_proofs::arithmetic::BaseExt;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::MultiMillerLoop;
@@ -111,7 +110,7 @@ pub fn solidity_render<E: MultiMillerLoop>(
 
     tera_ctx.insert("init_scalar", &field_to_bn(&scalar).to_str_radix(10));
 
-    tera_ctx.insert("nadvice", &vkey.cs.num_advice_columns);
+    tera_ctx.insert("n_advice", &vkey.cs.num_advice_columns);
 
     let lookups = vkey.cs.lookups.len();
     tera_ctx.insert("lookups", &lookups);
@@ -122,7 +121,7 @@ pub fn solidity_render<E: MultiMillerLoop>(
         .columns
         .chunks(vkey.cs.degree() - 2)
         .len();
-    tera_ctx.insert("permutaion_products", &n_permutation_product);
+    tera_ctx.insert("permutation_products", &n_permutation_product);
 
     tera_ctx.insert("degree", &vkey.domain.get_quotient_poly_degree());
 
@@ -158,6 +157,7 @@ pub fn test_solidity_render() {
     use crate::circuits::utils::load_proof;
     use crate::circuits::utils::run_circuit_unsafe_full_pass;
     use crate::circuits::utils::TranscriptHash;
+    use crate::solidity_verifier::codegen::solidity_aux_gen;
     use halo2_proofs::pairing::bn256::Bn256;
     use halo2_proofs::pairing::bn256::Fr;
     use halo2_proofs::plonk::Circuit;
@@ -167,12 +167,12 @@ pub fn test_solidity_render() {
     let path = "./output";
     DirBuilder::new().recursive(true).create(path).unwrap();
 
-    let nproofs = 2;
+    let n_proofs = 2;
     let target_circuit_k = 8;
     let verify_circuit_k = 21;
 
     let path = Path::new(path);
-    let (circuit, instances) = SimpleCircuit::<Fr>::default_with_instance();
+    let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
     let (circuit, instances) = run_circuit_unsafe_full_pass::<Bn256, _>(
         path,
         "simple-circuit",
@@ -181,7 +181,7 @@ pub fn test_solidity_render() {
         vec![instances.clone(), instances],
         TranscriptHash::Poseidon,
         vec![],
-        false,
+        true,
     )
     .unwrap();
 
@@ -194,7 +194,7 @@ pub fn test_solidity_render() {
         vec![vec![instances.clone()]],
         TranscriptHash::Sha,
         vec![],
-        false,
+        true,
     );
 
     let params = load_or_build_unsafe_params::<Bn256>(
@@ -207,7 +207,8 @@ pub fn test_solidity_render() {
         verify_circuit_k,
         Some(&path.join(format!("K{}.params", verify_circuit_k))),
     );
-    let verifier_params_verifier: ParamsVerifier<Bn256> = params.verifier(6 + 3 * nproofs).unwrap();
+    let verifier_params_verifier: ParamsVerifier<Bn256> =
+        params.verifier(6 + 3 * n_proofs).unwrap();
 
     let vkey = load_or_build_vkey::<Bn256, _>(
         &params,

@@ -21,11 +21,11 @@ pub enum AstScalar<C: CurveAffine> {
 }
 
 impl<C: CurveAffine> AstScalar<C> {
-    pub fn is_chanllenge_group(&self) -> bool {
+    pub fn is_challenge_group(&self) -> bool {
         match self {
             AstScalar::FromChallenge(_) => true,
             AstScalar::Mul(_, _, x) => *x,
-            AstScalar::CheckPoint(_, x) => x.is_chanllenge_group(),
+            AstScalar::CheckPoint(_, x) => x.is_challenge_group(),
             _ => false,
         }
     }
@@ -40,7 +40,7 @@ pub enum AstPoint<C: CurveAffine> {
     FromConst(C),
     FromTranscript(Rc<AstTranscript<C>>),
     FromInstance(usize, usize),
-    Multiexp(Vec<(Rc<Self>, Rc<AstScalar<C>>)>),
+    MultiExp(Vec<(Rc<Self>, Rc<AstScalar<C>>)>),
     CheckPoint(String, Rc<Self>), // for debug
 }
 
@@ -211,7 +211,7 @@ impl<C: CurveAffine> Mul<AstScalarRc<C>> for AstScalarRc<C> {
                         * (AstScalarRc(b.clone()) * AstScalarRc(b.clone()));
                 }
                 // Challenge group
-                if !is_challenge_group && b.is_chanllenge_group() && c.is_chanllenge_group() {
+                if !is_challenge_group && b.is_challenge_group() && c.is_challenge_group() {
                     return AstScalarRc(a.clone()) * (AstScalarRc(b.clone()) * rhs);
                 }
             }
@@ -219,33 +219,33 @@ impl<C: CurveAffine> Mul<AstScalarRc<C>> for AstScalarRc<C> {
             _ => {}
         }
 
-        let is_challenge_group = self.0.is_chanllenge_group() && rhs.0.is_chanllenge_group();
+        let is_challenge_group = self.0.is_challenge_group() && rhs.0.is_challenge_group();
 
         AstScalarRc(Rc::new(AstScalar::Mul(self.0, rhs.0, is_challenge_group)))
     }
 }
 
 macro_rules! define_scalar_ops {
-    ($t:ident, $f:ident, $symbo: tt) => {
+    ($t:ident, $f:ident, $symbol: tt) => {
         impl<C: CurveAffine> $t<&AstScalarRc<C>> for AstScalarRc<C> {
             type Output = AstScalarRc<C>;
 
             fn $f(self, rhs: &AstScalarRc<C>) -> Self::Output {
-                self $symbo rhs.clone()
+                self $symbol rhs.clone()
             }
         }
         impl<C: CurveAffine> $t<AstScalarRc<C>> for &AstScalarRc<C> {
             type Output = AstScalarRc<C>;
 
             fn $f(self, rhs: AstScalarRc<C>) -> Self::Output {
-                self.clone() $symbo rhs
+                self.clone() $symbol rhs
             }
         }
         impl<C: CurveAffine> $t<&AstScalarRc<C>> for &AstScalarRc<C> {
             type Output = AstScalarRc<C>;
 
             fn $f(self, rhs: &AstScalarRc<C>) -> Self::Output {
-                self.clone() $symbo rhs.clone()
+                self.clone() $symbol rhs.clone()
             }
         }
     };

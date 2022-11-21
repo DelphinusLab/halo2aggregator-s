@@ -68,7 +68,7 @@ impl<C: CurveAffine> Evaluated<C> {
         let z_x = &self.product_eval;
         let a_x = &self.permuted_input_eval;
         let s_x = &self.permuted_table_eval;
-        let a_invwx = &self.permuted_input_inv_eval;
+        let a_inv_wx = &self.permuted_input_inv_eval;
         let product_eval = &self.product_eval;
 
         let beta = &params.beta;
@@ -100,7 +100,7 @@ impl<C: CurveAffine> Evaluated<C> {
             ((left - ((product_eval * (input_eval + beta)) * (table_eval + gamma)))
                 * (one - (l_last + l_blind))),
             (l_0 * (a_x - s_x)),
-            (((a_x - s_x) * (a_x - a_invwx)) * (one - (l_last + l_blind))),
+            (((a_x - s_x) * (a_x - a_inv_wx)) * (one - (l_last + l_blind))),
         ]
     }
 

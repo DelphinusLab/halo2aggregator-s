@@ -135,7 +135,7 @@ impl<R: Read, E: MultiMillerLoop> SolidityEvalContext<R, E> {
         }
     }
 
-    fn allocat_temp_idx(&mut self) -> usize {
+    fn alloc_temp_idx(&mut self) -> usize {
         if self.temp_idx_allocator.0.len() == 0 {
             self.temp_idx_allocator.1 += 1;
             assert!(self.temp_idx_allocator.1 <= TEMP_BUF_MAX);
@@ -323,7 +323,7 @@ impl<R: Read, E: MultiMillerLoop> SolidityEvalContext<R, E> {
                             get_combine_degree(a.get_deep(), b.get_deep()),
                         ))
                     } else {
-                        let t = self.allocat_temp_idx();
+                        let t = self.alloc_temp_idx();
                         self.statements.push(format!("buf[{}] = {};", t, expr));
 
                         if SOLIDITY_DEBUG {
@@ -353,7 +353,7 @@ impl<R: Read, E: MultiMillerLoop> SolidityEvalContext<R, E> {
                             get_combine_degree(a.get_deep(), b.get_deep()),
                         ))
                     } else {
-                        let t = self.allocat_temp_idx();
+                        let t = self.alloc_temp_idx();
                         self.statements.push(format!("buf[{}] = {};", t, expr));
                         if SOLIDITY_DEBUG {
                             self.statements.push(format!(
@@ -382,7 +382,7 @@ impl<R: Read, E: MultiMillerLoop> SolidityEvalContext<R, E> {
                             get_combine_degree(a.get_deep(), b.get_deep()),
                         ))
                     } else {
-                        let t = self.allocat_temp_idx();
+                        let t = self.alloc_temp_idx();
                         self.statements.push(format!("buf[{}] = {};", t, expr));
 
                         if SOLIDITY_DEBUG {
@@ -416,7 +416,7 @@ impl<R: Read, E: MultiMillerLoop> SolidityEvalContext<R, E> {
                             get_combine_degree(a.get_deep(), b.get_deep()),
                         ))
                     } else {
-                        let t = self.allocat_temp_idx();
+                        let t = self.alloc_temp_idx();
                         self.statements.push(format!("buf[{}] = {};", t, expr));
 
                         if SOLIDITY_DEBUG {
@@ -432,7 +432,7 @@ impl<R: Read, E: MultiMillerLoop> SolidityEvalContext<R, E> {
                 }
                 EvalOps::ScalarPow(a, n) => {
                     let a = self.pos_to_scalar_var(a).to_string(true);
-                    let t = self.allocat_temp_idx();
+                    let t = self.alloc_temp_idx();
                     self.statements
                         .push(format!("buf[{}] = AggregatorLib.fr_pow({}, {});", t, a, n));
 

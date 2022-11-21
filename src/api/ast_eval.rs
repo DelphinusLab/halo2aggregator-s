@@ -273,7 +273,7 @@ impl<C: CurveAffine> EvalContext<C> {
             }
             AstPoint::FromTranscript(t) => self.translate_ast_transcript(t),
             AstPoint::FromInstance(i, j) => EvalPos::Instance(*i, *j),
-            AstPoint::Multiexp(psl) => {
+            AstPoint::MultiExp(psl) => {
                 let mut sl = vec![];
                 let mut pl = vec![];
                 for (_, x) in psl {
