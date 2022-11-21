@@ -8,8 +8,6 @@ pub mod circuit_verifier;
 pub mod native_verifier;
 pub mod solidity_verifier;
 
-pub fn main() {}
-
 #[test]
 fn test_single_one_pass() {
     use circuits::samples::simple::SimpleCircuit;
