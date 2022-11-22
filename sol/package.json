@@ -1,8 +1,9 @@
 {
   "dependencies": {
-    "bn.js": "^5.2.1"
+    "bn.js": "^5.2.1",
+    "ganache": "^7.5.0"
   },
   "scripts": {
-    "start": "ganache-cli --gasLimit=0x1fffffffffffff --allowUnlimitedContractSize -e 1000000000"
+    "start": "ganache --gasLimit=0x1fffffffffffff --chain.allowUnlimitedContractSize -e 1000000000"
   }
 }

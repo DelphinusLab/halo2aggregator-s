@@ -1,3 +1,4 @@
 /target
 /output
 /sol/contracts/AggregatorConfig.sol
+/sol/node_modules
