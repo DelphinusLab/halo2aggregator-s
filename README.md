@@ -6,7 +6,7 @@ Aggregator for halo2 plonk circuits, including:
 
 ## Prerequisite
 1. truffle
-2. ganache-cli
+2. ganache-cli ("^6.12.2" in my test env)
 
 ## Fast Try
 ```
