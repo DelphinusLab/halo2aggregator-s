@@ -195,7 +195,7 @@ library AggregatorConfig {
     ) internal view {
         {{ main }}
         
-        AggregatorLib.msm(buf, 128, 9);
-        AggregatorLib.msm(buf, 192, 46);
+        AggregatorLib.msm(buf, 128, {{ msm_w_x_len }});
+        AggregatorLib.msm(buf, 192, {{ msm_w_g_len }});
     }
 }

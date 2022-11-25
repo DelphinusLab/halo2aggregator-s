@@ -96,6 +96,7 @@ struct SolidityEvalContext<R: Read, E: MultiMillerLoop> {
     constant_scalars: Vec<E::Scalar>,
     div_res: Vec<E::Scalar>,
     challenges: Vec<E::Scalar>,
+    msm_len: Vec<usize>,
 }
 
 impl<R: Read, E: MultiMillerLoop> SolidityEvalContext<R, E> {
@@ -122,6 +123,7 @@ impl<R: Read, E: MultiMillerLoop> SolidityEvalContext<R, E> {
             constant_scalars: vec![],
             div_res: vec![],
             challenges: vec![],
+            msm_len: vec![],
         }
     }
 
@@ -448,26 +450,44 @@ impl<R: Read, E: MultiMillerLoop> SolidityEvalContext<R, E> {
                 }
                 EvalOps::MSM(psl) => {
                     let idx = self.msm_index;
-                    let start = TEMP_BUF_MAX + idx * 64;
                     self.msm_index += 1;
-                    let psl: Vec<_> = psl
-                        .iter()
-                        .map(|(p, s)| {
-                            (
-                                self.pos_to_point_var(p).to_string(false),
-                                self.pos_to_scalar_var(s).to_string(true),
-                            )
-                        })
-                        .collect();
+                    self.msm_len.push(psl.len());
+
+                    let start = TEMP_BUF_MAX + idx * 64;
                     for (i, (p, s)) in psl.iter().enumerate() {
+                        let p_str = self.pos_to_point_var(p).to_string(false);
+                        let s_str = self.pos_to_scalar_var(s).to_string(true);
                         self.statements.push(format!(
                             "(buf[{}], buf[{}]) = {};",
                             start + i * 3,
                             start + i * 3 + 1,
-                            p
+                            p_str
                         ));
                         self.statements
-                            .push(format!("buf[{}] = {};", start + i * 3 + 2, s));
+                            .push(format!("buf[{}] = {};", start + i * 3 + 2, s_str));
+
+                        if SOLIDITY_DEBUG {
+                            let p_value = self.eval_point_pos(p).coordinates().unwrap();
+                            let s_value = self.eval_scalar_pos(s);
+                            self.statements.push(format!(
+                                "require(buf[{}] == {}, \"ops {}.0\");",
+                                start + i * 3,
+                                field_to_bn(p_value.x()).to_str_radix(10),
+                                i
+                            ));
+                            self.statements.push(format!(
+                                "require(buf[{}] == {}, \"ops {}.1\");",
+                                start + i * 3 + 1,
+                                field_to_bn(p_value.y()).to_str_radix(10),
+                                i
+                            ));
+                            self.statements.push(format!(
+                                "require(buf[{}] == {}, \"ops {}.2\");",
+                                start + i * 3 + 2,
+                                field_to_bn(&s_value).to_str_radix(10),
+                                i
+                            ));
+                        }
                     }
 
                     None
@@ -536,6 +556,16 @@ pub fn solidity_codegen_with_proof<E: MultiMillerLoop>(
             .concat(),
     );
 
+    tera_context.insert(
+        "msm_w_x_len",
+        &ctx.msm_len[0],
+    );
+
+    tera_context.insert(
+        "msm_w_g_len",
+        &ctx.msm_len[1],
+    );
+
     if SOLIDITY_DEBUG {
         tera_context.insert(
             &format!("challenges"),
@@ -585,5 +615,7 @@ pub fn solidity_aux_gen<E: MultiMillerLoop>(
     assert!(success);
 
     let mut fd = std::fs::File::create(&aux_file).unwrap();
-    ctx.div_res.iter().for_each(|res| res.write(&mut fd).unwrap());
+    ctx.div_res
+        .iter()
+        .for_each(|res| res.write(&mut fd).unwrap());
 }
