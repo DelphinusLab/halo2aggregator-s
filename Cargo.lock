@@ -588,7 +588,7 @@ dependencies = [
 [[package]]
 name = "halo2ecc-s"
 version = "0.1.0"
-source = "git+https://github.com/lanbones/halo2ecc-s.git#d2127f4f1a61a22ccc501ce516aad621c351e407"
+source = "git+https://github.com/lanbones/halo2ecc-s.git?branch=0.1.0#79e12c8909dc46b63528e81c908296adabc077a5"
 dependencies = [
  "halo2_proofs",
  "num-bigint",
