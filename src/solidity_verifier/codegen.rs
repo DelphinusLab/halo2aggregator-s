@@ -3,6 +3,7 @@ use crate::api::ast_eval::EvalOps;
 use crate::api::ast_eval::EvalPos;
 use crate::api::halo2::verify_aggregation_proofs;
 use crate::circuits::utils::instance_to_instance_commitment;
+use crate::solidity_verifier::SOLIDITY_VERIFY_STEPS;
 use crate::transcript::sha256::ShaRead;
 use halo2_proofs::arithmetic::BaseExt;
 use halo2_proofs::arithmetic::CurveAffine;
@@ -547,24 +548,23 @@ pub fn solidity_codegen_with_proof<E: MultiMillerLoop>(
             .collect::<Vec<_>>(),
     );
 
-    tera_context.insert(
-        "main",
-        &ctx.statements
-            .into_iter()
-            .map(|x| format!("{}\n", x))
-            .collect::<Vec<_>>()
-            .concat(),
-    );
+    for (i, c) in ctx
+        .statements
+        .chunks((ctx.statements.len() + SOLIDITY_VERIFY_STEPS - 1) / SOLIDITY_VERIFY_STEPS)
+        .enumerate()
+    {
+        tera_context.insert(
+            format!("step{}", i + 1),
+            &c.iter()
+                .map(|x| format!("{}\n", x))
+                .collect::<Vec<_>>()
+                .concat(),
+        );
+    }
 
-    tera_context.insert(
-        "msm_w_x_len",
-        &ctx.msm_len[0],
-    );
+    tera_context.insert("msm_w_x_len", &ctx.msm_len[0]);
 
-    tera_context.insert(
-        "msm_w_g_len",
-        &ctx.msm_len[1],
-    );
+    tera_context.insert("msm_w_g_len", &ctx.msm_len[1]);
 
     if SOLIDITY_DEBUG {
         tera_context.insert(

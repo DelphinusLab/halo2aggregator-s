@@ -6,14 +6,17 @@ use halo2_proofs::plonk::VerifyingKey;
 use halo2_proofs::poly::commitment::ParamsVerifier;
 use halo2ecc_s::utils::field_to_bn;
 use num_bigint::BigUint;
+use std::path::Path;
 use tera::Tera;
 
 pub mod codegen;
 
+const SOLIDITY_VERIFY_STEPS: usize = 2;
+
 pub fn solidity_render<E: MultiMillerLoop>(
     path_in: &str,
     path_out: &str,
-    template_name: &str,
+    template_name: Vec<String>,
     target_circuit_params: &ParamsVerifier<E>,
     verify_circuit_params: &ParamsVerifier<E>,
     vkey: &VerifyingKey<E::G1Affine>,
@@ -143,10 +146,12 @@ pub fn solidity_render<E: MultiMillerLoop>(
         &mut tera_ctx,
     );
 
-    let fd = std::fs::File::create(path_out).unwrap();
+    for t in template_name {
+        let fd = std::fs::File::create(Path::new(path_out).join(t.replace(".tera", ""))).unwrap();
 
-    tera.render_to(template_name, &tera_ctx, fd)
-        .expect("failed to render template");
+        tera.render_to(&t, &tera_ctx, fd)
+            .expect("failed to render template");
+    }
 }
 
 #[test]
@@ -220,8 +225,15 @@ pub fn test_solidity_render() {
 
     solidity_render(
         "sol/templates/*",
-        "sol/contracts/AggregatorConfig.sol",
-        "AggregatorConfig.sol.tera",
+        "sol/contracts",
+        vec![
+            vec!["AggregatorConfig.sol.tera".to_owned()],
+            (0..SOLIDITY_VERIFY_STEPS)
+                .map(|i| format!("AggregatorVerifierStep{}.sol.tera", i + 1))
+                .into_iter()
+                .collect::<Vec<String>>(),
+        ]
+        .concat(),
         &target_params_verifier,
         &verifier_params_verifier,
         &vkey,

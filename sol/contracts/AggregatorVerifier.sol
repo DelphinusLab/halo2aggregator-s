@@ -5,8 +5,27 @@ pragma solidity ^0.8.13;
 import "./AggregatorLib.sol";
 import "./AggregatorConfig.sol";
 
+interface AggregatorVerifierCoreStep {
+    function verify_proof(
+        uint256[] calldata transcript,
+        uint256[] calldata aux,
+        // instance:  0 - 2
+        // challenge: 2 - 16
+        // tmp:       16 - 128,
+        // msm_w_x:   128 - 192,
+        // msm_w_g:   192 - 256,
+        uint256[] memory buf
+    ) external view;
+}
+
 contract AggregatorVerifier {
     uint256 constant chunk_modulus = (1 << 90) - 1;
+
+    AggregatorVerifierCoreStep[] steps;
+
+    constructor(AggregatorVerifierCoreStep[] memory _steps) {
+        steps = _steps;
+    }
 
     function verify(
         uint256[] calldata proof,
@@ -31,21 +50,14 @@ contract AggregatorVerifier {
         {
             // step 1: calculate verify circuit instance commitment
             uint256[] memory buf = new uint256[](384);
-            AggregatorConfig
-                .calc_verify_circuit_lagrange(buf, verify_instance);
+            AggregatorConfig.calc_verify_circuit_lagrange(buf, verify_instance);
 
             // step 2: calculate challenge
-            AggregatorConfig.get_challenges(
-                proof,
-                buf
-            );
-
+            AggregatorConfig.get_challenges(proof, buf);
             // step 3: calculate verify circuit pair
-            AggregatorConfig.verify_proof(
-                proof,
-                aux,
-                buf
-            );
+            for (uint i = 0; i < steps.length; i++) {
+                steps[i].verify_proof(proof, aux, buf);
+            }
             pairing_buf[12] = buf[128];
             pairing_buf[13] = buf[129];
             pairing_buf[18] = buf[192];
