@@ -33,7 +33,8 @@ yarn
 
 # add INFURA_PROJECT_ID, MNEMONIC in .env file
 
-# NOTICE!!! This command would spend about 0.025 Goerli ETH for deployment
+# NOTICE!!! This command would spend about 0.025 GoerliETH for deployment
+# This command is a liitle bit slow in my test env, please wait for several minutes for complete
 truffle test --goerli
 ```
 
