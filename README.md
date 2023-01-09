@@ -7,7 +7,7 @@ Aggregator for halo2 plonk circuits, including:
 ## Prerequisite
 1. truffle
 
-## Fast Try
+## Try it on local testnet
 ```
 cargo test test_solidity_render --release -- --nocapture
 ```
@@ -22,6 +22,19 @@ yarn start
 In terminal 2:
 ```
 truffle test
+```
+
+## Try it on Goerli
+```
+cargo test test_solidity_render --release -- --nocapture
+
+cd sol
+yarn
+
+# add INFURA_PROJECT_ID, MNEMONIC in .env file
+
+# NOTICE!!! This command would spend about 0.025 Goerli ETH for deployment
+truffle test --goerli
 ```
 
 ## Use as lib
