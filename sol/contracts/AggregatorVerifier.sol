@@ -19,12 +19,22 @@ interface AggregatorVerifierCoreStep {
 }
 
 contract AggregatorVerifier {
-    uint256 constant chunk_modulus = (1 << 90) - 1;
+    uint256 constant chunk_bits = 18 * 6;
+    uint256 constant chunk_modulus = (1 << chunk_bits) - 1;
 
     AggregatorVerifierCoreStep[] steps;
 
     constructor(AggregatorVerifierCoreStep[] memory _steps) {
         steps = _steps;
+    }
+
+    function encoding_scalars_to_point(
+        uint256 a,
+        uint256 b,
+        uint256 c
+    ) internal pure returns (uint256 x, uint256 y) {
+        x = a + ((b & chunk_modulus) << (chunk_bits * 2));
+        y = (c << chunk_bits) + (b >> chunk_bits);
     }
 
     function verify(
@@ -37,16 +47,21 @@ contract AggregatorVerifier {
         for (uint256 i = 0; i < target_instance.length; i++) {
             uint256[] memory target_instance_buf = AggregatorConfig
                 .calc_target_circuit_lagrange(target_instance[i]);
+            uint256 x;
+            uint256 y;
 
-            uint256 x = verify_instance[i * 3 + 6] +
-                ((verify_instance[i * 3 + 7] & chunk_modulus) << 180);
-            uint256 y = (verify_instance[i * 3 + 8] << 90) +
-                (verify_instance[i * 3 + 7] >> 90);
+            (x, y) = encoding_scalars_to_point(
+                verify_instance[i * 3 + 6],
+                verify_instance[i * 3 + 7],
+                verify_instance[i * 3 + 8]
+            );
             require(x == target_instance_buf[0], "invalid instance x");
             require(y == target_instance_buf[1], "invalid instance y");
         }
 
-        uint256[] memory pairing_buf = new uint256[](24);
+        uint256[] memory target_circuit_pairing_buf = new uint256[](12);
+        uint256[] memory verify_circuit_pairing_buf = new uint256[](12);
+
         {
             // step 1: calculate verify circuit instance commitment
             uint256[] memory buf = new uint256[](384);
@@ -55,39 +70,53 @@ contract AggregatorVerifier {
             // step 2: calculate challenge
             AggregatorConfig.get_challenges(proof, buf);
             // step 3: calculate verify circuit pair
-            for (uint i = 0; i < steps.length; i++) {
+            for (uint256 i = 0; i < steps.length; i++) {
                 steps[i].verify_proof(proof, aux, buf);
             }
-            pairing_buf[12] = buf[128];
-            pairing_buf[13] = buf[129];
-            pairing_buf[18] = buf[192];
-            pairing_buf[19] = buf[193];
+            verify_circuit_pairing_buf[0] = buf[128];
+            verify_circuit_pairing_buf[1] = buf[129];
+            verify_circuit_pairing_buf[6] = buf[192];
+            verify_circuit_pairing_buf[7] = buf[193];
         }
 
         // step 4: calculate target circuit pair from instance
         //w_x.x
-        pairing_buf[0] =
-            verify_instance[0] +
-            ((verify_instance[1] & chunk_modulus) << 180);
-        //w_x.y
-        pairing_buf[1] =
-            (verify_instance[2] << 90) +
-            (verify_instance[1] >> 90);
-        AggregatorLib.check_on_curve(pairing_buf[0], pairing_buf[1]);
+        (
+            target_circuit_pairing_buf[0],
+            target_circuit_pairing_buf[1]
+        ) = encoding_scalars_to_point(
+            verify_instance[0],
+            verify_instance[1],
+            verify_instance[2]
+        );
+        AggregatorLib.check_on_curve(
+            target_circuit_pairing_buf[0],
+            target_circuit_pairing_buf[1]
+        );
 
         //w_g.x
-        pairing_buf[6] =
-            verify_instance[3] +
-            ((verify_instance[4] & chunk_modulus) << 180);
-        //w_g.y
-        pairing_buf[7] =
-            (verify_instance[5] << 90) +
-            (verify_instance[4] >> 90);
-        AggregatorLib.check_on_curve(pairing_buf[6], pairing_buf[7]);
+        (
+            target_circuit_pairing_buf[6],
+            target_circuit_pairing_buf[7]
+        ) = encoding_scalars_to_point(
+            verify_instance[3],
+            verify_instance[4],
+            verify_instance[5]
+        );
+        AggregatorLib.check_on_curve(
+            target_circuit_pairing_buf[0],
+            target_circuit_pairing_buf[1]
+        );
+
+        bool checked;
 
         // step 5: do pairing
-        AggregatorConfig.fill_circuits_g2(pairing_buf);
-        bool checked = AggregatorLib.pairing(pairing_buf);
-        require(checked, "pairing fail");
+        AggregatorConfig.fill_target_circuits_g2(target_circuit_pairing_buf);
+        checked = AggregatorLib.pairing(target_circuit_pairing_buf);
+        require(checked, "target circuit pairing check failed");
+
+        AggregatorConfig.fill_verify_circuits_g2(verify_circuit_pairing_buf);
+        checked = AggregatorLib.pairing(verify_circuit_pairing_buf);
+        require(checked, "verify circuit pairing check failed");
     }
 }

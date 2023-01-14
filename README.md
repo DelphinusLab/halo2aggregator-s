@@ -21,6 +21,7 @@ yarn start
 
 In terminal 2:
 ```
+cd sol
 truffle test
 ```
 

@@ -5,7 +5,7 @@ pragma solidity ^0.8.13;
 import "./AggregatorLib.sol";
 
 library AggregatorConfig {
-    function fill_circuits_g2(uint256[] memory s) internal pure {
+    function fill_target_circuits_g2(uint256[] memory s) internal pure {
         s[2] = {{target_circuit_s_g2_x0}};
         s[3] = {{target_circuit_s_g2_x1}};
         s[4] = {{target_circuit_s_g2_y0}};
@@ -15,16 +15,18 @@ library AggregatorConfig {
         s[9] = {{target_circuit_n_g2_x1}};
         s[10] = {{target_circuit_n_g2_y0}};
         s[11] = {{target_circuit_n_g2_y1}};
+    }
 
-        s[14] = {{verify_circuit_s_g2_x0}};
-        s[15] = {{verify_circuit_s_g2_x1}};
-        s[16] = {{verify_circuit_s_g2_y0}};
-        s[17] = {{verify_circuit_s_g2_y1}};
+    function fill_verify_circuits_g2(uint256[] memory s) internal pure {
+        s[2] = {{verify_circuit_s_g2_x0}};
+        s[3] = {{verify_circuit_s_g2_x1}};
+        s[4] = {{verify_circuit_s_g2_y0}};
+        s[5] = {{verify_circuit_s_g2_y1}};
 
-        s[20] = {{verify_circuit_n_g2_x0}};
-        s[21] = {{verify_circuit_n_g2_x1}};
-        s[22] = {{verify_circuit_n_g2_y0}};
-        s[23] = {{verify_circuit_n_g2_y1}};
+        s[8] = {{verify_circuit_n_g2_x0}};
+        s[9] = {{verify_circuit_n_g2_x1}};
+        s[10] = {{verify_circuit_n_g2_y0}};
+        s[11] = {{verify_circuit_n_g2_y1}};
     }
 
     function calc_verify_circuit_lagrange(uint256[] memory buf, uint256[] calldata instances) internal view {
