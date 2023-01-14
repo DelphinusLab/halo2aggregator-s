@@ -17,11 +17,13 @@ use halo2_proofs::plonk::VerifyingKey;
 use halo2_proofs::poly::commitment::ParamsVerifier;
 use halo2ecc_s::assign::AssignedPoint;
 use halo2ecc_s::assign::AssignedValue;
-use halo2ecc_s::circuit::base_chip::BaseChipOps;
-use halo2ecc_s::circuit::integer_chip::IntegerChipOps;
-use halo2ecc_s::circuit::native_ecc_chip::EccChipOps;
+use halo2ecc_s::circuit::ecc_chip::EccBaseIntegerChipWrapper;
+use halo2ecc_s::circuit::ecc_chip::EccChipBaseOps;
+use halo2ecc_s::circuit::ecc_chip::EccChipScalarOps;
 use halo2ecc_s::context::Context;
-use halo2ecc_s::context::EccContext;
+use halo2ecc_s::context::IntegerContext;
+use halo2ecc_s::context::NativeScalarEccContext;
+use std::cell::RefCell;
 use std::io;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -33,7 +35,7 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
     c: EvalContext<E::G1Affine>,
     instance_commitments: &[&[E::G1Affine]],
     t: &mut [&mut PoseidonChipRead<R, E::G1Affine>],
-    circuit: &mut EccContext<E::G1Affine>,
+    circuit: &mut NativeScalarEccContext<E::G1Affine>,
 ) -> (
     Vec<AssignedPoint<E::G1Affine, E::Scalar>>,
     Vec<AssignedPoint<E::G1Affine, E::Scalar>>,
@@ -46,7 +48,7 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
     let const_scalars = {
         c.const_scalars
             .iter()
-            .map(|c| circuit.assign_constant(*c))
+            .map(|c| circuit.base_integer_chip().base_chip().assign_constant(*c))
             .collect::<Vec<_>>()
     };
 
@@ -121,19 +123,39 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
             EvalOps::TranscriptSqueeze(i, _) => (None, Some(t[*i].squeeze(circuit))),
             EvalOps::ScalarAdd(a, b) => (
                 None,
-                Some(circuit.add(eval_scalar_pos!(a), eval_scalar_pos!(b))),
+                Some(
+                    circuit
+                        .base_integer_chip()
+                        .base_chip()
+                        .add(eval_scalar_pos!(a), eval_scalar_pos!(b)),
+                ),
             ),
             EvalOps::ScalarSub(a, b) => (
                 None,
-                Some(circuit.sub(eval_scalar_pos!(a), eval_scalar_pos!(b))),
+                Some(
+                    circuit
+                        .base_integer_chip()
+                        .base_chip()
+                        .sub(eval_scalar_pos!(a), eval_scalar_pos!(b)),
+                ),
             ),
             EvalOps::ScalarMul(a, b, _) => (
                 None,
-                Some(circuit.mul(eval_scalar_pos!(a), eval_scalar_pos!(b))),
+                Some(
+                    circuit
+                        .base_integer_chip()
+                        .base_chip()
+                        .mul(eval_scalar_pos!(a), eval_scalar_pos!(b)),
+                ),
             ),
             EvalOps::ScalarDiv(a, b) => (
                 None,
-                Some(circuit.div_unsafe(eval_scalar_pos!(a), eval_scalar_pos!(b))),
+                Some(
+                    circuit
+                        .base_integer_chip()
+                        .base_chip()
+                        .div_unsafe(eval_scalar_pos!(a), eval_scalar_pos!(b)),
+                ),
             ),
             EvalOps::ScalarPow(a, n) => {
                 let mut p = *n;
@@ -143,12 +165,12 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
                     if p & 1 == 1 {
                         c.push(acc);
                     }
-                    acc = circuit.mul(&acc, &acc);
+                    acc = circuit.base_integer_chip().base_chip().mul(&acc, &acc);
                     p >>= 1;
                 }
                 let s = c
                     .into_iter()
-                    .reduce(|acc, x| circuit.mul(&acc, &x))
+                    .reduce(|acc, x| circuit.base_integer_chip().base_chip().mul(&acc, &x))
                     .unwrap();
                 (None, Some(s))
             }
@@ -198,8 +220,9 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop>(
     hash: TranscriptHash,
     commitment_check: Vec<[usize; 4]>,
 ) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>) {
-    let mut ctx = Context::<_, E::Scalar>::new_with_range_info();
-
+    let ctx = Rc::new(RefCell::new(Context::new()));
+    let ctx = IntegerContext::<<E::G1Affine as CurveAffine>::Base, E::Scalar>::new(ctx);
+    let mut ctx = NativeScalarEccContext::<E::G1Affine>(ctx);
     let (w_x, w_g, advices) = verify_aggregation_proofs(params, vkey);
 
     let instance_commitments = instance_to_instance_commitment(params, vkey, instances);
@@ -242,8 +265,16 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop>(
     assert!(pl[0].z.0.val == E::Scalar::zero());
     assert!(pl[1].z.0.val == E::Scalar::zero());
 
-    let w_x = E::G1Affine::from_xy(ctx.get_w(&pl[0].x), ctx.get_w(&pl[0].y)).unwrap();
-    let w_g = E::G1Affine::from_xy(ctx.get_w(&pl[1].x), ctx.get_w(&pl[1].y)).unwrap();
+    let w_x = E::G1Affine::from_xy(
+        ctx.base_integer_chip().get_w(&pl[0].x),
+        ctx.base_integer_chip().get_w(&pl[0].y),
+    )
+    .unwrap();
+    let w_g = E::G1Affine::from_xy(
+        ctx.base_integer_chip().get_w(&pl[1].x),
+        ctx.base_integer_chip().get_w(&pl[1].y),
+    )
+    .unwrap();
 
     let s_g2_prepared = E::G2Prepared::from(params.s_g2);
     let n_g2_prepared = E::G2Prepared::from(-params.g2);
@@ -263,10 +294,17 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop>(
         .concat();
 
     for ai in assigned_instances.iter() {
-        ctx.records.lock().unwrap().enable_permute(&ai.cell);
+        ctx.0
+            .ctx
+            .borrow()
+            .records
+            .lock()
+            .unwrap()
+            .enable_permute(&ai.cell);
     }
 
     let instances = assigned_instances.iter().map(|x| x.val).collect::<Vec<_>>();
+    let ctx: Context<_> = ctx.into();
 
     (
         AggregatorCircuit::new(

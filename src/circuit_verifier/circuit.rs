@@ -14,7 +14,6 @@ use halo2ecc_s::circuit::base_chip::BaseChipConfig;
 use halo2ecc_s::circuit::range_chip::RangeChip;
 use halo2ecc_s::circuit::range_chip::RangeChipConfig;
 use halo2ecc_s::context::Records;
-use halo2ecc_s::range_info::RangeInfo;
 use std::rc::Rc;
 
 #[derive(Clone)]
@@ -49,7 +48,7 @@ impl<C: CurveAffine> Circuit<C::ScalarExt> for AggregatorCircuit<C> {
 
     fn configure(meta: &mut ConstraintSystem<C::ScalarExt>) -> Self::Config {
         let base_chip_config = BaseChip::configure(meta);
-        let range_chip_config = RangeChip::<C::Base, C::ScalarExt>::configure(meta);
+        let range_chip_config = RangeChip::<C::ScalarExt>::configure(meta);
         let instance_col = meta.instance_column();
         meta.enable_equality(instance_col);
         AggregatorChipConfig {
@@ -67,7 +66,7 @@ impl<C: CurveAffine> Circuit<C::ScalarExt> for AggregatorCircuit<C> {
         let timer = start_timer!(|| "synthesize");
 
         let base_chip = BaseChip::new(config.base_chip_config);
-        let range_chip = RangeChip::<C::Base, C::ScalarExt>::new(config.range_chip_config);
+        let range_chip = RangeChip::<C::ScalarExt>::new(config.range_chip_config);
 
         let mut instance_cells = None;
 
@@ -104,8 +103,7 @@ impl<C: CurveAffine> Circuit<C::ScalarExt> for AggregatorCircuit<C> {
 
         match instance_cells {
             Some(instance_cells) => {
-                range_chip
-                    .init_table(&mut layouter, &RangeInfo::<C::ScalarExt>::new::<C::Base>())?;
+                range_chip.init_table(&mut layouter)?;
 
                 for (i, cell) in instance_cells.into_iter().enumerate() {
                     layouter.constrain_instance(cell, config.instance_col, i)?;

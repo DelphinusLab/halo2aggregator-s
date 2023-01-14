@@ -5,6 +5,8 @@ use halo2_proofs::transcript::EncodedChallenge;
 use halo2_proofs::transcript::Transcript;
 use halo2_proofs::transcript::TranscriptRead;
 use halo2_proofs::transcript::TranscriptWrite;
+use halo2ecc_s::circuit::range_chip::MAX_BITS;
+use halo2ecc_s::circuit::range_chip::MAX_CHUNKS;
 use halo2ecc_s::utils::bn_to_field;
 use halo2ecc_s::utils::field_to_bn;
 use num_bigint::BigUint;
@@ -63,7 +65,6 @@ impl<R: io::Read, C: CurveAffine> Transcript<C, PoseidonEncodedChallenge<C>>
         PoseidonEncodedChallenge::new(&self.state.squeeze())
     }
 
-    // For 3 x 90bits LIMBS
     fn common_point(&mut self, point: C) -> io::Result<()> {
         self.state.update(&[C::ScalarExt::from(PREFIX_POINT)]);
         let x_y: Option<_> = point.coordinates().map(|c| (*c.x(), *c.y())).into();
@@ -71,9 +72,12 @@ impl<R: io::Read, C: CurveAffine> Transcript<C, PoseidonEncodedChallenge<C>>
         let x_bn = field_to_bn(&x);
         let y_bn = field_to_bn(&y);
 
-        let chunk0 = &x_bn & ((BigUint::from(1u64) << 180) - 1u64);
-        let chunk1 = (x_bn >> 180) + ((&y_bn & ((BigUint::from(1u64) << 90) - 1u64)) << 90u64);
-        let chunk2 = y_bn >> 90;
+        let bits = MAX_CHUNKS * MAX_BITS;
+        let chunk_bits = bits * 2;
+
+        let chunk0 = &x_bn & ((BigUint::from(1u64) << chunk_bits) - 1u64);
+        let chunk1 = (x_bn >> chunk_bits) + ((&y_bn & ((BigUint::from(1u64) << bits) - 1u64)) << bits);
+        let chunk2 = y_bn >> bits;
 
         self.state.update(
             &[chunk0, chunk1, chunk2]
@@ -150,7 +154,6 @@ impl<W: io::Write, C: CurveAffine> Transcript<C, PoseidonEncodedChallenge<C>>
         PoseidonEncodedChallenge::new(&self.state.squeeze())
     }
 
-    // For 3 x 90bits LIMBS
     fn common_point(&mut self, point: C) -> io::Result<()> {
         self.state.update(&[C::ScalarExt::from(PREFIX_POINT)]);
         let x_y: Option<_> = point.coordinates().map(|c| (*c.x(), *c.y())).into();
@@ -158,9 +161,12 @@ impl<W: io::Write, C: CurveAffine> Transcript<C, PoseidonEncodedChallenge<C>>
         let x_bn = field_to_bn(&x);
         let y_bn = field_to_bn(&y);
 
-        let chunk0 = &x_bn & ((BigUint::from(1u64) << 180) - 1u64);
-        let chunk1 = (x_bn >> 180) + ((&y_bn & ((BigUint::from(1u64) << 90) - 1u64)) << 90u64);
-        let chunk2 = y_bn >> 90;
+        let bits = MAX_CHUNKS * MAX_BITS;
+        let chunk_bits = bits * 2;
+
+        let chunk0 = &x_bn & ((BigUint::from(1u64) << chunk_bits) - 1u64);
+        let chunk1 = (x_bn >> chunk_bits) + ((&y_bn & ((BigUint::from(1u64) << bits) - 1u64)) << bits);
+        let chunk2 = y_bn >> bits;
 
         self.state.update(
             &[chunk0, chunk1, chunk2]
