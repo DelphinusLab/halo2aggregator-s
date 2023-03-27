@@ -8,16 +8,11 @@ contract AggregatorVerifierCoreStep2 {
     function verify_proof(
         uint256[] calldata transcript,
         uint256[] calldata aux,
-        // instance:  0 - 2
-        // challenge: 2 - 16
-        // tmp:       16 - 128,
-        // msm_w_x:   128 - 192,
-        // msm_w_g:   192 - 256,
         uint256[] memory buf
     ) public view {
-        {{ step2 }}
+        {{ step }}
         
-        AggregatorLib.msm(buf, 128, {{ msm_w_x_len }});
-        AggregatorLib.msm(buf, 192, {{ msm_w_g_len }});
+        AggregatorLib.msm(buf, 256, {{ msm_w_x_len }});
+        AggregatorLib.msm(buf, 384, {{ msm_w_g_len }});
     }
 }

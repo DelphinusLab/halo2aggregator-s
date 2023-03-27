@@ -9,11 +9,6 @@ interface AggregatorVerifierCoreStep {
     function verify_proof(
         uint256[] calldata transcript,
         uint256[] calldata aux,
-        // instance:  0 - 2
-        // challenge: 2 - 16
-        // tmp:       16 - 128,
-        // msm_w_x:   128 - 192,
-        // msm_w_g:   192 - 256,
         uint256[] memory buf
     ) external view;
 }
@@ -64,7 +59,7 @@ contract AggregatorVerifier {
 
         {
             // step 1: calculate verify circuit instance commitment
-            uint256[] memory buf = new uint256[](384);
+            uint256[] memory buf = new uint256[](512);
             AggregatorConfig.calc_verify_circuit_lagrange(buf, verify_instance);
 
             // step 2: calculate challenge
@@ -73,10 +68,10 @@ contract AggregatorVerifier {
             for (uint256 i = 0; i < steps.length; i++) {
                 steps[i].verify_proof(proof, aux, buf);
             }
-            verify_circuit_pairing_buf[0] = buf[128];
-            verify_circuit_pairing_buf[1] = buf[129];
-            verify_circuit_pairing_buf[6] = buf[192];
-            verify_circuit_pairing_buf[7] = buf[193];
+            verify_circuit_pairing_buf[0] = buf[256];
+            verify_circuit_pairing_buf[1] = buf[257];
+            verify_circuit_pairing_buf[6] = buf[384];
+            verify_circuit_pairing_buf[7] = buf[385];
         }
 
         // step 4: calculate target circuit pair from instance

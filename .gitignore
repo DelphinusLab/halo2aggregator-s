@@ -1,4 +1,5 @@
 /target
 /output
 /sol/contracts/AggregatorConfig.sol
+sol/contracts/AggregatorVerifierStep*.sol
 /sol/node_modules

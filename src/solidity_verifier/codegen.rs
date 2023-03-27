@@ -3,7 +3,6 @@ use crate::api::ast_eval::EvalOps;
 use crate::api::ast_eval::EvalPos;
 use crate::api::halo2::verify_aggregation_proofs;
 use crate::circuits::utils::instance_to_instance_commitment;
-use crate::solidity_verifier::SOLIDITY_VERIFY_STEPS;
 use crate::transcript::sha256::ShaRead;
 use halo2_proofs::arithmetic::BaseExt;
 use halo2_proofs::arithmetic::CurveAffine;
@@ -25,8 +24,11 @@ use std::path::Path;
 
 const CHALLENGE_BUF_START: usize = 2;
 const TEMP_BUF_START: usize = 16;
-const TEMP_BUF_MAX: usize = 128;
+const TEMP_BUF_MAX: usize = 256;
+const MSM_BUF_SIZE: usize = 128;
 const DEEP_LIMIT: usize = 7;
+
+const SOLIDITY_VERIFY_STEP_MAX_SIZE: usize = 128;
 
 const SOLIDITY_DEBUG: bool = false;
 
@@ -454,7 +456,7 @@ impl<R: Read, E: MultiMillerLoop> SolidityEvalContext<R, E> {
                     self.msm_index += 1;
                     self.msm_len.push(psl.len());
 
-                    let start = TEMP_BUF_MAX + idx * 64;
+                    let start = TEMP_BUF_MAX + idx * MSM_BUF_SIZE;
                     for (i, (p, s)) in psl.iter().enumerate() {
                         let p_str = self.pos_to_point_var(p).to_string(false);
                         let s_str = self.pos_to_scalar_var(s).to_string(true);
@@ -506,7 +508,7 @@ pub fn solidity_codegen_with_proof<E: MultiMillerLoop>(
     instances: &Vec<E::Scalar>,
     proofs: Vec<u8>,
     tera_context: &mut tera::Context,
-) {
+) -> Vec<String> {
     let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey]);
 
     let instance_commitments =
@@ -548,20 +550,6 @@ pub fn solidity_codegen_with_proof<E: MultiMillerLoop>(
             .collect::<Vec<_>>(),
     );
 
-    for (i, c) in ctx
-        .statements
-        .chunks((ctx.statements.len() + SOLIDITY_VERIFY_STEPS - 1) / SOLIDITY_VERIFY_STEPS)
-        .enumerate()
-    {
-        tera_context.insert(
-            format!("step{}", i + 1),
-            &c.iter()
-                .map(|x| format!("{}\n", x))
-                .collect::<Vec<_>>()
-                .concat(),
-        );
-    }
-
     tera_context.insert("msm_w_x_len", &ctx.msm_len[0]);
 
     tera_context.insert("msm_w_g_len", &ctx.msm_len[1]);
@@ -575,6 +563,16 @@ pub fn solidity_codegen_with_proof<E: MultiMillerLoop>(
                 .collect::<Vec<_>>(),
         );
     }
+
+    ctx.statements
+        .chunks(SOLIDITY_VERIFY_STEP_MAX_SIZE)
+        .map(|c| {
+            c.iter()
+                .map(|x| format!("{}\n", x))
+                .collect::<Vec<_>>()
+                .concat()
+        })
+        .collect()
 }
 
 pub fn solidity_aux_gen<E: MultiMillerLoop>(

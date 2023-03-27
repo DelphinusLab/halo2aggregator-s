@@ -11,12 +11,13 @@ use tera::Tera;
 
 pub mod codegen;
 
-const SOLIDITY_VERIFY_STEPS: usize = 2;
-
 pub fn solidity_render<E: MultiMillerLoop>(
     path_in: &str,
     path_out: &str,
-    template_name: Vec<String>,
+    common_template_name: Vec<(String, String)>,
+    start_step_template_name: &str,
+    end_step_template_name: &str,
+    step_out_file_name: impl Fn(usize) -> String,
     target_circuit_params: &ParamsVerifier<E>,
     verify_circuit_params: &ParamsVerifier<E>,
     vkey: &VerifyingKey<E::G1Affine>,
@@ -138,7 +139,7 @@ pub fn solidity_render<E: MultiMillerLoop>(
         + 5 * lookups;
     tera_ctx.insert("evals", &evals);
 
-    solidity_codegen_with_proof(
+    let steps = solidity_codegen_with_proof(
         &verify_circuit_params,
         &vkey,
         instances,
@@ -146,11 +147,25 @@ pub fn solidity_render<E: MultiMillerLoop>(
         &mut tera_ctx,
     );
 
-    for t in template_name {
-        let fd = std::fs::File::create(Path::new(path_out).join(t.replace(".tera", ""))).unwrap();
+    for (f_in, f_out) in common_template_name {
+        let fd = std::fs::File::create(Path::new(path_out).join(f_out)).unwrap();
 
-        tera.render_to(&t, &tera_ctx, fd)
+        tera.render_to(&f_in, &tera_ctx, fd)
             .expect("failed to render template");
+    }
+
+    for (i, step) in steps.iter().enumerate() {
+        let template = if i == steps.len() - 1 {
+            end_step_template_name
+        } else {
+            start_step_template_name
+        };
+        let fd = std::fs::File::create(Path::new(path_out).join(&step_out_file_name(i))).unwrap();
+
+        tera_ctx.insert("step", step);
+        tera.render_to(template, &tera_ctx, fd)
+            .expect("failed to render template");
+        tera_ctx.remove("step");
     }
 }
 
@@ -222,18 +237,16 @@ pub fn test_solidity_render() {
     );
 
     let proof = load_proof(&path.join(format!("{}.{}.transcript.data", "verify-circuit", 0)));
-
     solidity_render(
         "sol/templates/*",
         "sol/contracts",
-        vec![
-            vec!["AggregatorConfig.sol.tera".to_owned()],
-            (0..SOLIDITY_VERIFY_STEPS)
-                .map(|i| format!("AggregatorVerifierStep{}.sol.tera", i + 1))
-                .into_iter()
-                .collect::<Vec<String>>(),
-        ]
-        .concat(),
+        vec![(
+            "AggregatorConfig.sol.tera".to_owned(),
+            "AggregatorConfig.sol".to_owned(),
+        )],
+        "AggregatorVerifierStepStart.sol.tera",
+        "AggregatorVerifierStepEnd.sol.tera",
+        |i| format!("AggregatorVerifierStep{}.sol", i + 1),
         &target_params_verifier,
         &verifier_params_verifier,
         &vkey,
