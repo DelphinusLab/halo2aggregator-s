@@ -19,14 +19,26 @@ use halo2_proofs::transcript::Transcript;
 use halo2_proofs::transcript::TranscriptRead;
 use halo2ecc_s::utils::field_to_bn;
 use std::collections::BTreeSet;
+use std::env;
 use std::io::Read;
 use std::path::Path;
 
 const CHALLENGE_BUF_START: usize = 2;
 const TEMP_BUF_START: usize = 16;
-const TEMP_BUF_MAX: usize = 256;
-const MSM_BUF_SIZE: usize = 128;
 const DEEP_LIMIT: usize = 7;
+
+lazy_static! {
+    static ref TEMP_BUF_MAX: usize = usize::from_str_radix(
+        &env::var("HALO2_AGGREGATOR_S_TEMP_BUF_MAX").unwrap_or("160".to_owned()),
+        10
+    )
+    .unwrap();
+    static ref MSM_BUF_SIZE: usize = usize::from_str_radix(
+        &env::var("HALO2_AGGREGATOR_S_MSM_BUF_SIZE").unwrap_or("30".to_owned()),
+        10
+    )
+    .unwrap();
+}
 
 const SOLIDITY_VERIFY_STEP_MAX_SIZE: usize = 128;
 
@@ -143,7 +155,7 @@ impl<R: Read, E: MultiMillerLoop> SolidityEvalContext<R, E> {
     fn alloc_temp_idx(&mut self) -> usize {
         if self.temp_idx_allocator.0.len() == 0 {
             self.temp_idx_allocator.1 += 1;
-            assert!(self.temp_idx_allocator.1 <= TEMP_BUF_MAX);
+            assert!(self.temp_idx_allocator.1 <= *TEMP_BUF_MAX);
             self.temp_idx_allocator.1.clone() - 1
         } else {
             self.temp_idx_allocator.0.pop_first().clone().unwrap()
@@ -456,7 +468,7 @@ impl<R: Read, E: MultiMillerLoop> SolidityEvalContext<R, E> {
                     self.msm_index += 1;
                     self.msm_len.push(psl.len());
 
-                    let start = TEMP_BUF_MAX + idx * MSM_BUF_SIZE;
+                    let start = *TEMP_BUF_MAX + idx * *MSM_BUF_SIZE;
                     for (i, (p, s)) in psl.iter().enumerate() {
                         let p_str = self.pos_to_point_var(p).to_string(false);
                         let s_str = self.pos_to_scalar_var(s).to_string(true);

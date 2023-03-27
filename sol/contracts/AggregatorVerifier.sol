@@ -59,7 +59,7 @@ contract AggregatorVerifier {
 
         {
             // step 1: calculate verify circuit instance commitment
-            uint256[] memory buf = new uint256[](512);
+            uint256[] memory buf = new uint256[](370);
             AggregatorConfig.calc_verify_circuit_lagrange(buf, verify_instance);
 
             // step 2: calculate challenge
@@ -68,10 +68,10 @@ contract AggregatorVerifier {
             for (uint256 i = 0; i < steps.length; i++) {
                 steps[i].verify_proof(proof, aux, buf);
             }
-            verify_circuit_pairing_buf[0] = buf[256];
-            verify_circuit_pairing_buf[1] = buf[257];
-            verify_circuit_pairing_buf[6] = buf[384];
-            verify_circuit_pairing_buf[7] = buf[385];
+            verify_circuit_pairing_buf[0] = buf[160];
+            verify_circuit_pairing_buf[1] = buf[161];
+            verify_circuit_pairing_buf[6] = buf[190];
+            verify_circuit_pairing_buf[7] = buf[191];
         }
 
         // step 4: calculate target circuit pair from instance

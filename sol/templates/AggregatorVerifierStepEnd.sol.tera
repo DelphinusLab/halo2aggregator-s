@@ -12,7 +12,7 @@ contract AggregatorVerifierCoreStep2 {
     ) public view {
         {{ step }}
         
-        AggregatorLib.msm(buf, 256, {{ msm_w_x_len }});
-        AggregatorLib.msm(buf, 384, {{ msm_w_g_len }});
+        AggregatorLib.msm(buf, 160, {{ msm_w_x_len }});
+        AggregatorLib.msm(buf, 190, {{ msm_w_g_len }});
     }
 }

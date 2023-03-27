@@ -192,7 +192,7 @@ pub fn test_solidity_render() {
     let verify_circuit_k = 21;
 
     let path = Path::new(path);
-    let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
+    let (circuit, instances) = SimpleCircuit::<Fr>::default_with_instance();
     let (circuit, instances) = run_circuit_unsafe_full_pass::<Bn256, _>(
         path,
         "simple-circuit",
