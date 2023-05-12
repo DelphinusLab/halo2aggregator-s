@@ -28,7 +28,7 @@ pub struct AggregatorChipConfig {
 
 #[derive(Clone)]
 pub struct AggregatorCircuit<C: CurveAffine> {
-    records: Rc<Records<C::ScalarExt>>,
+    pub records: Rc<Records<C::ScalarExt>>,
     instances: Vec<AssignedValue<C::ScalarExt>>,
 }
 

@@ -170,6 +170,109 @@ pub fn solidity_render<E: MultiMillerLoop>(
 }
 
 #[test]
+pub fn test_twice_verify_circuit_diff() {
+    use crate::circuits::samples::simple::SimpleCircuit;
+    use crate::circuits::utils::run_circuit_unsafe_full_pass;
+    use crate::circuits::utils::TranscriptHash;
+    use halo2_proofs::pairing::bn256::Bn256;
+    use halo2_proofs::pairing::bn256::Fr;
+    use std::fs::DirBuilder;
+    use std::path::Path;
+
+    let path = "./output";
+    DirBuilder::new().recursive(true).create(path).unwrap();
+
+    let target_circuit_k = 8;
+
+    let path = Path::new(path);
+    let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
+    println!("circuit1 {:?} {:?}", &circuit.a, &circuit.b);
+    let (circuit1, _) = run_circuit_unsafe_full_pass::<Bn256, _>(
+        path,
+        "simple-circuit",
+        target_circuit_k,
+        vec![circuit.clone(), circuit],
+        vec![instances.clone(), instances],
+        TranscriptHash::Poseidon,
+        vec![],
+        true,
+    )
+    .unwrap();
+
+    let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
+    println!("circuit2 {:?} {:?}", &circuit.a, &circuit.b);
+    let (circuit2, _) = run_circuit_unsafe_full_pass::<Bn256, _>(
+        path,
+        "simple-circuit",
+        target_circuit_k,
+        vec![circuit.clone(), circuit],
+        vec![instances.clone(), instances],
+        TranscriptHash::Poseidon,
+        vec![],
+        true,
+    )
+    .unwrap();
+
+    for (col, (l, r)) in circuit1
+        .records
+        .as_ref()
+        .base_fix_record
+        .iter()
+        .zip(circuit2.records.as_ref().base_fix_record.iter())
+        .enumerate()
+    {
+        for (row, (l, r)) in l.iter().zip(r.iter()).enumerate() {
+            if l != r {
+                println!("different base fix {} {} {:?} {:?}", col, row, l, r);
+            }
+        }
+    }
+
+    for (col, (l, r)) in circuit1
+        .records
+        .as_ref()
+        .range_fix_record
+        .iter()
+        .zip(circuit2.records.as_ref().range_fix_record.iter())
+        .enumerate()
+    {
+        for (row, (l, r)) in l.iter().zip(r.iter()).enumerate() {
+            if l != r {
+                println!("different range fix {} {} {:?} {:?}", col, row, l, r);
+            }
+        }
+    }
+
+    for (col, (l, r)) in circuit1
+        .records
+        .as_ref()
+        .select_fix_record
+        .iter()
+        .zip(circuit2.records.as_ref().select_fix_record.iter())
+        .enumerate()
+    {
+        for (row, (l, r)) in l.iter().zip(r.iter()).enumerate() {
+            if l != r {
+                println!("different select fix {} {} {:?} {:?}", col, row, l, r);
+            }
+        }
+    }
+
+    for (i, (l, r)) in circuit1
+        .records
+        .as_ref()
+        .permutations
+        .iter()
+        .zip(circuit2.records.as_ref().permutations.iter())
+        .enumerate()
+    {
+        if l != r {
+            println!("different permutation  {} {:?} {:?}", i, l, r);
+        }
+    }
+}
+
+#[test]
 pub fn test_solidity_render() {
     use crate::circuits::samples::simple::SimpleCircuit;
     use crate::circuits::utils::load_or_build_unsafe_params;

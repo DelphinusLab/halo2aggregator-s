@@ -222,7 +222,7 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop>(
 ) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>) {
     let ctx = Rc::new(RefCell::new(Context::new()));
     let ctx = IntegerContext::<<E::G1Affine as CurveAffine>::Base, E::Scalar>::new(ctx);
-    let mut ctx = NativeScalarEccContext::<E::G1Affine>(ctx);
+    let mut ctx = NativeScalarEccContext::<E::G1Affine>(ctx, 0);
     let (w_x, w_g, advices) = verify_aggregation_proofs(params, vkey);
 
     let instance_commitments = instance_to_instance_commitment(params, vkey, instances);
