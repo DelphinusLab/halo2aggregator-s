@@ -6,7 +6,7 @@ use halo2_proofs::transcript::Transcript;
 use halo2_proofs::transcript::TranscriptRead;
 use halo2_proofs::transcript::TranscriptWrite;
 use halo2ecc_s::circuit::range_chip::MAX_BITS;
-use halo2ecc_s::circuit::range_chip::MAX_CHUNKS;
+use halo2ecc_s::circuit::range_chip::RANGE_VALUE_DECOMPOSE;
 use halo2ecc_s::utils::bn_to_field;
 use halo2ecc_s::utils::field_to_bn;
 use num_bigint::BigUint;
@@ -72,7 +72,7 @@ impl<R: io::Read, C: CurveAffine> Transcript<C, PoseidonEncodedChallenge<C>>
         let x_bn = field_to_bn(&x);
         let y_bn = field_to_bn(&y);
 
-        let bits = MAX_CHUNKS * MAX_BITS;
+        let bits = RANGE_VALUE_DECOMPOSE * MAX_BITS;
         let chunk_bits = bits * 2;
 
         let chunk0 = &x_bn & ((BigUint::from(1u64) << chunk_bits) - 1u64);
@@ -161,7 +161,7 @@ impl<W: io::Write, C: CurveAffine> Transcript<C, PoseidonEncodedChallenge<C>>
         let x_bn = field_to_bn(&x);
         let y_bn = field_to_bn(&y);
 
-        let bits = MAX_CHUNKS * MAX_BITS;
+        let bits = RANGE_VALUE_DECOMPOSE * MAX_BITS;
         let chunk_bits = bits * 2;
 
         let chunk0 = &x_bn & ((BigUint::from(1u64) << chunk_bits) - 1u64);
