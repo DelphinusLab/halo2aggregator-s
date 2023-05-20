@@ -4,7 +4,7 @@ pragma solidity ^0.8.13;
 
 import "./AggregatorLib.sol";
 
-contract AggregatorVerifierCoreStep2 {
+contract AggregatorVerifierCoreStep{{step_index}} {
     function verify_proof(
         uint256[] calldata transcript,
         uint256[] calldata aux,

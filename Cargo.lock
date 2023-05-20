@@ -602,7 +602,7 @@ dependencies = [
 [[package]]
 name = "halo2ecc-s"
 version = "0.2.0"
-source = "git+https://github.com/lanbones/halo2ecc-s.git?branch=bisect-lookup-fix#3b3ed4e6a5d4ec223c56ada9605a1a08eaaccdbf"
+source = "git+https://github.com/lanbones/halo2ecc-s.git?tag=bisect-lookup-0.2.1#11059fc86b1d9773a6ffca1a44b119c9f0841ded"
 dependencies = [
  "halo2_proofs",
  "num-bigint",

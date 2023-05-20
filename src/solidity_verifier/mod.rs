@@ -163,6 +163,7 @@ pub fn solidity_render<E: MultiMillerLoop>(
         let fd = std::fs::File::create(Path::new(path_out).join(&step_out_file_name(i))).unwrap();
 
         tera_ctx.insert("step", step);
+        tera_ctx.insert("step_index", &(i + 1));
         tera.render_to(template, &tera_ctx, fd)
             .expect("failed to render template");
         tera_ctx.remove("step");

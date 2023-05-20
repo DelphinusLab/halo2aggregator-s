@@ -19,6 +19,7 @@ module.exports = async function (deployer) {
     deployer.link(AggregatorLib, AggregatorVerifierCoreStep);
     const step = await deployer.deploy(AggregatorVerifierCoreStep);
     steps.push(step.address);
+    console.log("deployed AggregatorVerifierCoreStep", index);
     index += 1;
   }
 
