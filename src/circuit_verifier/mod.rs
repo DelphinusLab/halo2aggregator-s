@@ -20,6 +20,7 @@ use halo2ecc_s::assign::AssignedValue;
 use halo2ecc_s::circuit::ecc_chip::EccBaseIntegerChipWrapper;
 use halo2ecc_s::circuit::ecc_chip::EccChipBaseOps;
 use halo2ecc_s::circuit::ecc_chip::EccChipScalarOps;
+use halo2ecc_s::circuit::ecc_chip::UnsafeError;
 use halo2ecc_s::context::Context;
 use halo2ecc_s::context::IntegerContext;
 use halo2ecc_s::context::NativeScalarEccContext;
@@ -36,10 +37,13 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
     instance_commitments: &[&[E::G1Affine]],
     t: &mut [&mut PoseidonChipRead<R, E::G1Affine>],
     circuit: &mut NativeScalarEccContext<E::G1Affine>,
-) -> (
-    Vec<AssignedPoint<E::G1Affine, E::Scalar>>,
-    Vec<AssignedPoint<E::G1Affine, E::Scalar>>,
-) {
+) -> Result<
+    (
+        Vec<AssignedPoint<E::G1Affine, E::Scalar>>,
+        Vec<AssignedPoint<E::G1Affine, E::Scalar>>,
+    ),
+    UnsafeError,
+> {
     let mut it: Vec<(
         Option<AssignedPoint<E::G1Affine, E::Scalar>>,
         Option<AssignedValue<E::Scalar>>,
@@ -183,7 +187,14 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
                     .iter()
                     .map(|(_, s)| eval_scalar_pos!(s).clone())
                     .collect();
-                (Some(circuit.msm(&pl, &sl)), None)
+
+                #[cfg(feature = "unsafe")]
+                let res = (Some(circuit.msm_unsafe(&pl, &sl)?), None);
+
+                #[cfg(not(feature = "unsafe"))]
+                let res = (Some(circuit.msm(&pl, &sl)), None);
+
+                res
             }
             EvalOps::CheckPoint(tag, v) => {
                 if false {
@@ -193,13 +204,13 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
             }
         });
     }
-    (
+    Ok((
         c.finals
             .iter()
             .map(|x| circuit.ecc_reduce(it[*x].0.as_ref().unwrap()))
             .collect(),
         instance_commitments.concat(),
-    )
+    ))
 }
 
 pub fn build_single_proof_verify_circuit<E: MultiMillerLoop>(
@@ -220,6 +231,33 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop>(
     hash: TranscriptHash,
     commitment_check: Vec<[usize; 4]>,
 ) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>) {
+    let mut rest_tries = 100;
+    let mut res = None;
+
+    while rest_tries > 0 && res.is_none() {
+        res = _build_aggregate_verify_circuit(
+            params,
+            vkey,
+            instances.clone(),
+            &proofs,
+            hash,
+            &commitment_check,
+        )
+        .ok();
+        rest_tries -= 1;
+    }
+
+    res.unwrap()
+}
+
+pub fn _build_aggregate_verify_circuit<E: MultiMillerLoop>(
+    params: &ParamsVerifier<E>,
+    vkey: &[&VerifyingKey<E::G1Affine>],
+    instances: Vec<&Vec<Vec<E::Scalar>>>,
+    proofs: &Vec<Vec<u8>>,
+    hash: TranscriptHash,
+    commitment_check: &Vec<[usize; 4]>,
+) -> Result<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>), UnsafeError> {
     let ctx = Rc::new(RefCell::new(Context::new()));
     let ctx = IntegerContext::<<E::G1Affine as CurveAffine>::Base, E::Scalar>::new(ctx);
     let mut ctx = NativeScalarEccContext::<E::G1Affine>(ctx, 0);
@@ -253,7 +291,7 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop>(
                     .collect::<Vec<_>>()[..],
                 &mut t.iter_mut().collect::<Vec<_>>(),
                 &mut ctx,
-            )
+            )?
         }
         _ => unreachable!(),
     };
@@ -306,11 +344,11 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop>(
     let instances = assigned_instances.iter().map(|x| x.val).collect::<Vec<_>>();
     let ctx: Context<_> = ctx.into();
 
-    (
+    Ok((
         AggregatorCircuit::new(
             Rc::new(Arc::try_unwrap(ctx.records).unwrap().into_inner().unwrap()),
             assigned_instances,
         ),
         instances,
-    )
+    ))
 }

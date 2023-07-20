@@ -96,7 +96,11 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
             .permutation
             .commitments
             .iter()
-            .map(|commit| pconst!(*commit))
+            .map(|commit| {
+                let is_zero: bool = commit.is_identity().into();
+                assert!(!is_zero);
+                pconst!(*commit)
+            })
             .collect::<Vec<_>>();
         let gates = cs
             .gates
@@ -190,7 +194,11 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
             .vk
             .fixed_commitments
             .iter()
-            .map(|&p| pconst!(p))
+            .map(|&p| {
+                let is_zero: bool = p.is_identity().into();
+                assert!(!is_zero);
+                pconst!(p)
+            })
             .collect::<Vec<_>>();
 
         let v = scheckpoint!("v".to_owned(), transcript.squeeze_challenge());

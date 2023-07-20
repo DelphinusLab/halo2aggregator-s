@@ -190,6 +190,7 @@ impl<W: io::Write, C: CurveAffine> TranscriptWrite<C, PoseidonEncodedChallenge<C
     for PoseidonWrite<W, C, PoseidonEncodedChallenge<C>>
 {
     fn write_point(&mut self, point: C) -> io::Result<()> {
+        assert!(point != C::identity());
         self.common_point(point)?;
         let compressed = point.to_bytes();
         self.writer.write_all(compressed.as_ref())
