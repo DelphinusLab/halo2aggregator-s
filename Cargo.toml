@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 blake2b_simd = "1"
 halo2_proofs = { git = "https://github.com/junyu0312/halo2.git", branch = "gpu", default-features = true }
-halo2ecc-s = { git = "https://github.com/lanbones/halo2ecc-s.git", tag = "bisect-lookup-0.3.1" }
+halo2ecc-s = { git = "https://github.com/lanbones/halo2ecc-s.git", tag = "bisect-lookup-0.3.2" }
 ark-std = { version = "0.3", features = ["print-trace"] }
 poseidon = { git = "https://github.com/lanbones/poseidon" }
 num-integer = "0.1"
