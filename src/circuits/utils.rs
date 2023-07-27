@@ -1,5 +1,6 @@
 use crate::circuit_verifier::build_aggregate_verify_circuit;
 use crate::circuit_verifier::circuit::AggregatorCircuit;
+use crate::circuit_verifier::G2AffineBaseHelper;
 use crate::native_verifier::verify_proofs;
 use crate::transcript::poseidon::PoseidonRead;
 use crate::transcript::poseidon::PoseidonWrite;
@@ -24,6 +25,8 @@ use halo2_proofs::poly::commitment::Params;
 use halo2_proofs::poly::commitment::ParamsVerifier;
 use halo2_proofs::transcript::Blake2bRead;
 use halo2_proofs::transcript::Blake2bWrite;
+use halo2ecc_s::circuit::pairing_chip::PairingChipOps;
+use halo2ecc_s::context::NativeScalarEccContext;
 use std::io::Read;
 use std::io::Write;
 use std::path::Path;
@@ -217,7 +220,10 @@ pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
 }
 
 /* CARE: unsafe means that to review before used in real production */
-pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
+pub fn run_circuit_unsafe_full_pass<
+    E: MultiMillerLoop + G2AffineBaseHelper,
+    C: Circuit<E::Scalar>,
+>(
     cache_folder: &Path,
     prefix: &str,
     k: u32,
@@ -226,7 +232,10 @@ pub fn run_circuit_unsafe_full_pass<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
     hash: TranscriptHash,
     commitment_check: Vec<[usize; 4]>,
     force_create_proof: bool,
-) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)> {
+) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)>
+where
+    NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
+{
     // 1. setup params
     let params =
         load_or_build_unsafe_params::<E>(k, Some(&cache_folder.join(format!("K{}.params", k))));

@@ -11,6 +11,9 @@ use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::Field;
 use halo2_proofs::arithmetic::MillerLoopResult;
 use halo2_proofs::arithmetic::MultiMillerLoop;
+use halo2_proofs::pairing::bn256::Bn256;
+use halo2_proofs::pairing::bn256::Fq;
+use halo2_proofs::pairing::bn256::Fq2;
 use halo2_proofs::pairing::group::prime::PrimeCurveAffine;
 use halo2_proofs::pairing::group::Group;
 use halo2_proofs::plonk::VerifyingKey;
@@ -21,6 +24,7 @@ use halo2ecc_s::circuit::ecc_chip::EccBaseIntegerChipWrapper;
 use halo2ecc_s::circuit::ecc_chip::EccChipBaseOps;
 use halo2ecc_s::circuit::ecc_chip::EccChipScalarOps;
 use halo2ecc_s::circuit::ecc_chip::UnsafeError;
+use halo2ecc_s::circuit::pairing_chip::PairingChipOps;
 use halo2ecc_s::context::Context;
 use halo2ecc_s::context::IntegerContext;
 use halo2ecc_s::context::NativeScalarEccContext;
@@ -213,24 +217,30 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
     ))
 }
 
-pub fn build_single_proof_verify_circuit<E: MultiMillerLoop>(
+pub fn build_single_proof_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
     params: &ParamsVerifier<E>,
     vkey: &VerifyingKey<E::G1Affine>,
     instances: &Vec<Vec<E::Scalar>>,
     proof: Vec<u8>,
     hash: TranscriptHash,
-) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>) {
+) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)
+where
+    NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
+{
     build_aggregate_verify_circuit(params, &[vkey], vec![instances], vec![proof], hash, vec![])
 }
 
-pub fn build_aggregate_verify_circuit<E: MultiMillerLoop>(
+pub fn build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
     params: &ParamsVerifier<E>,
     vkey: &[&VerifyingKey<E::G1Affine>],
     instances: Vec<&Vec<Vec<E::Scalar>>>,
     proofs: Vec<Vec<u8>>,
     hash: TranscriptHash,
     commitment_check: Vec<[usize; 4]>,
-) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>) {
+) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)
+where
+    NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
+{
     let mut rest_tries = 100;
     let mut res = None;
 
@@ -250,14 +260,32 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop>(
     res.unwrap()
 }
 
-pub fn _build_aggregate_verify_circuit<E: MultiMillerLoop>(
+pub trait G2AffineBaseHelper: MultiMillerLoop {
+    fn decode(
+        b: <Self::G2Affine as CurveAffine>::Base,
+    ) -> (
+        <Self::G1Affine as CurveAffine>::Base,
+        <Self::G1Affine as CurveAffine>::Base,
+    );
+}
+
+impl G2AffineBaseHelper for Bn256 {
+    fn decode(b: Fq2) -> (Fq, Fq) {
+        (b.c0, b.c1)
+    }
+}
+
+pub fn _build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
     params: &ParamsVerifier<E>,
     vkey: &[&VerifyingKey<E::G1Affine>],
     instances: Vec<&Vec<Vec<E::Scalar>>>,
     proofs: &Vec<Vec<u8>>,
     hash: TranscriptHash,
     commitment_check: &Vec<[usize; 4]>,
-) -> Result<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>), UnsafeError> {
+) -> Result<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>), UnsafeError>
+where
+    NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
+{
     let ctx = Rc::new(RefCell::new(Context::new()));
     let ctx = IntegerContext::<<E::G1Affine as CurveAffine>::Base, E::Scalar>::new(ctx);
     let mut ctx = NativeScalarEccContext::<E::G1Affine>(ctx, 0);
@@ -324,7 +352,41 @@ pub fn _build_aggregate_verify_circuit<E: MultiMillerLoop>(
 
     assert!(success);
 
-    let assigned_instances = vec![&pl[0..2], &il]
+    let extra_instance = {
+        use halo2ecc_s::assign::AssignedCondition;
+        use halo2ecc_s::assign::AssignedG2Affine;
+        use halo2ecc_s::circuit::fq12::Fq2ChipOps;
+
+        let s_g2 = params.s_g2.coordinates().unwrap();
+        let s_g2_x = *s_g2.x();
+        let s_g2_y = *s_g2.y();
+        let assigned_s_g2_x = ctx.fq2_assign_constant(E::decode(s_g2_x));
+        let assigned_s_g2_y = ctx.fq2_assign_constant(E::decode(s_g2_y));
+
+        let g2 = (-params.g2).coordinates().unwrap();
+        let g2_x = *g2.x();
+        let g2_y = *g2.y();
+        let assigned_g2_x = ctx.fq2_assign_constant(E::decode(g2_x));
+        let assigned_g2_y = ctx.fq2_assign_constant(E::decode(g2_y));
+
+        let z = AssignedCondition(
+            ctx.base_integer_chip()
+                .base_chip()
+                .assign_constant(E::Scalar::zero()),
+        );
+
+        let assigned_s_g2 = AssignedG2Affine::new(assigned_s_g2_x, assigned_s_g2_y, z);
+        let assigned_g2 = AssignedG2Affine::new(assigned_g2_x, assigned_g2_y, z);
+        ctx.check_pairing(&[(&pl[0], &assigned_s_g2), (&pl[1], &assigned_g2)]);
+
+        vec![]
+    };
+
+    //let extra_instance = {
+    //    pl[0..2].to_vec()
+    //};
+
+    let assigned_instances = vec![extra_instance, il]
         .concat()
         .iter()
         .map(|p| ctx.ecc_encode(p))
