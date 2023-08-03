@@ -36,6 +36,12 @@ library AggregatorLib {
         uint256 offset,
         uint256 count
     ) internal view {
+        if (count == 0) {
+            input[offset] = 0;
+            input[offset + 1] = 0;
+            return;
+        }
+
         bool ret = false;
         offset = offset * 0x20 + 0x20;
         uint256 start = offset + count * 0x60 - 0x60;
