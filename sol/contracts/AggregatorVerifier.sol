@@ -99,8 +99,8 @@ contract AggregatorVerifier {
             verify_instance[5]
         );
         AggregatorLib.check_on_curve(
-            target_circuit_pairing_buf[0],
-            target_circuit_pairing_buf[1]
+            target_circuit_pairing_buf[6],
+            target_circuit_pairing_buf[7]
         );
 
         bool checked;
