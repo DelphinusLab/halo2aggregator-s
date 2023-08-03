@@ -40,7 +40,7 @@ truffle test --goerli
 ```
 
 ## Use as lib
-The solidity code generation depends on the `sol` folder. You can download it from `https://github.com/DelphinusLab/halo2aggregator-s/releases/download/0.1.0/halo2aggregator-s.sol-template.zip`.
+The solidity code generation depends on the `sol` folder. You can download it from `https://github.com/DelphinusLab/halo2aggregator-s/releases/download/bisect-lookup-0.3.3/halo2aggregator-s.sol-template.zip`.
 
 1. call `run_circuit_unsafe_full_pass()` for target circuit with `TranscriptHash::Poseidon` to get aggregation circuit and its instances.
 2. call `run_circuit_unsafe_full_pass()` for aggregation circuit with `TranscriptHash::Sha` to create aggregation circuit proof.
