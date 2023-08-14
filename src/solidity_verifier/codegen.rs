@@ -594,6 +594,20 @@ pub fn solidity_aux_gen<E: MultiMillerLoop>(
     proofs: Vec<u8>,
     aux_file: &Path,
 ) {
+    let div_res = solidity_aux_genv2(params, vkey, instances, proofs, true);
+    let mut fd = std::fs::File::create(&aux_file).unwrap();
+    div_res
+        .iter()
+        .for_each(|res| res.write(&mut fd).unwrap());
+}
+
+pub fn solidity_aux_genv2<E: MultiMillerLoop>(
+    params: &ParamsVerifier<E>,
+    vkey: &VerifyingKey<E::G1Affine>,
+    instances: &Vec<E::Scalar>,
+    proofs: Vec<u8>,
+    check: bool,
+)-> Vec<E::Scalar> {
     let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey]);
 
     let instance_commitments =
@@ -613,19 +627,17 @@ pub fn solidity_aux_gen<E: MultiMillerLoop>(
 
     let s_g2_prepared = E::G2Prepared::from(params.s_g2);
     let n_g2_prepared = E::G2Prepared::from(-params.g2);
-    let success = bool::from(
-        E::multi_miller_loop(&[
-            (&ctx.finals[0], &s_g2_prepared),
-            (&ctx.finals[1], &n_g2_prepared),
-        ])
-        .final_exponentiation()
-        .is_identity(),
-    );
+    if check {
+        let success = bool::from(
+            E::multi_miller_loop(&[
+                (&ctx.finals[0], &s_g2_prepared),
+                (&ctx.finals[1], &n_g2_prepared),
+            ])
+            .final_exponentiation()
+            .is_identity(),
+        );
 
-    assert!(success);
-
-    let mut fd = std::fs::File::create(&aux_file).unwrap();
+        assert!(success);
+    }
     ctx.div_res
-        .iter()
-        .for_each(|res| res.write(&mut fd).unwrap());
 }
