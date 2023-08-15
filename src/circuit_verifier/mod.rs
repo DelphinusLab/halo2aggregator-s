@@ -223,11 +223,22 @@ pub fn build_single_proof_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper
     instances: &Vec<Vec<E::Scalar>>,
     proof: Vec<u8>,
     hash: TranscriptHash,
+    expose: Vec<[usize; 2]>,
+    absorb: Vec<([usize; 3], [usize; 2])>, // the index of instance + the index of advices
 ) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
 {
-    build_aggregate_verify_circuit(params, &[vkey], vec![instances], vec![proof], hash, vec![])
+    build_aggregate_verify_circuit(
+        params,
+        &[vkey],
+        vec![instances],
+        vec![proof],
+        hash,
+        vec![],
+        expose,
+        absorb,
+    )
 }
 
 pub fn build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
@@ -237,6 +248,8 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
     proofs: Vec<Vec<u8>>,
     hash: TranscriptHash,
     commitment_check: Vec<[usize; 4]>,
+    expose: Vec<[usize; 2]>,
+    absorb: Vec<([usize; 3], [usize; 2])>, // the index of instance + the index of advices
 ) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
@@ -252,6 +265,8 @@ where
             &proofs,
             hash,
             &commitment_check,
+            &expose,
+            &absorb,
         )
         .ok();
         rest_tries -= 1;
@@ -282,6 +297,8 @@ pub fn _build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
     proofs: &Vec<Vec<u8>>,
     hash: TranscriptHash,
     commitment_check: &Vec<[usize; 4]>,
+    expose: &Vec<[usize; 2]>,
+    absorb: &Vec<([usize; 3], [usize; 2])>, // the index of instance + the index of advices
 ) -> Result<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>), UnsafeError>
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
@@ -291,16 +308,29 @@ where
     let mut ctx = NativeScalarEccContext::<E::G1Affine>(ctx, 0);
     let (w_x, w_g, advices) = verify_aggregation_proofs(params, vkey);
 
-    let instance_commitments = instance_to_instance_commitment(params, vkey, instances);
+    let instance_commitments = instance_to_instance_commitment(params, vkey, instances.clone());
 
     let mut targets = vec![w_x.0, w_g.0];
+
     for idx in commitment_check {
         targets.push(advices[idx[0]][idx[1]].0.clone());
         targets.push(advices[idx[2]][idx[3]].0.clone());
     }
 
+    let absorb_start_idx = targets.len();
+
+    for abs in absorb {
+        targets.push(advices[abs.1[0]][abs.1[1]].0.clone());
+    }
+
+    let expose_start_idx = targets.len();
+
+    for idx in expose {
+        targets.push(advices[idx[0]][idx[1]].0.clone());
+    }
+
     let c = EvalContext::translate(&targets[..]);
-    let (pl, il) = match hash {
+    let (pl, mut il) = match hash {
         TranscriptHash::Poseidon => {
             let mut t = vec![];
             for i in 0..proofs.len() {
@@ -324,8 +354,26 @@ where
         _ => unreachable!(),
     };
 
-    for check in pl.chunks(2).skip(1) {
+    for check in pl[0..absorb_start_idx].chunks(2).skip(1) {
         ctx.ecc_assert_equal(&check[0], &check[1]);
+    }
+
+    for (i, c) in pl[absorb_start_idx..expose_start_idx].iter().enumerate() {
+        let encoded_c = ctx.ecc_encode(c);
+        let [proof_index, mut instance_index, g_index] = absorb[i].0;
+        for i in instances[0..proof_index].iter() {
+            instance_index += i.len()
+        }
+
+        let instance_commit = il[instance_index].clone();
+        let g0 = ctx.assign_constant_point(&params.g_lagrange[g_index].to_curve());
+        let g1 = ctx.assign_constant_point(&params.g_lagrange[g_index + 1].to_curve());
+        let g2 = ctx.assign_constant_point(&params.g_lagrange[g_index + 2].to_curve());
+        let msm_c = ctx.msm(&vec![g0, g1, g2], &encoded_c);
+        let diff_commit = ctx.ecc_neg(&msm_c);
+        let instance_commit_curv = ctx.to_point_with_curvature(instance_commit);
+        let update_commit = ctx.ecc_add(&instance_commit_curv, &diff_commit);
+        il[instance_index] = update_commit;
     }
 
     assert!(pl[0].z.0.val == E::Scalar::zero());
@@ -352,7 +400,7 @@ where
 
     assert!(success);
 
-    let extra_instance = {
+    {
         use halo2ecc_s::assign::AssignedCondition;
         use halo2ecc_s::assign::AssignedG2Affine;
         use halo2ecc_s::circuit::fq12::Fq2ChipOps;
@@ -378,15 +426,9 @@ where
         let assigned_s_g2 = AssignedG2Affine::new(assigned_s_g2_x, assigned_s_g2_y, z);
         let assigned_g2 = AssignedG2Affine::new(assigned_g2_x, assigned_g2_y, z);
         ctx.check_pairing(&[(&pl[0], &assigned_s_g2), (&pl[1], &assigned_g2)]);
+    }
 
-        vec![]
-    };
-
-    //let extra_instance = {
-    //    pl[0..2].to_vec()
-    //};
-
-    let assigned_instances = vec![extra_instance, il]
+    let assigned_instances = vec![&il[..], &pl[2..pl.len()]]
         .concat()
         .iter()
         .map(|p| ctx.ecc_encode(p))

@@ -231,6 +231,8 @@ pub fn run_circuit_unsafe_full_pass<
     instances: Vec<Vec<Vec<E::Scalar>>>,
     hash: TranscriptHash,
     commitment_check: Vec<[usize; 4]>,
+    expose: Vec<[usize; 2]>,
+    absorb: Vec<([usize; 3], [usize; 2])>,
     force_create_proof: bool,
 ) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)>
 where
@@ -338,6 +340,8 @@ where
                         &instances[i],
                         proof.clone(),
                         hash,
+                        expose.clone(),
+                        absorb.clone(),
                     );
                 const K: u32 = 21;
                 let prover = MockProver::run(K, &circuit, vec![instances]).unwrap();
@@ -373,6 +377,8 @@ where
             proofs,
             hash,
             commitment_check,
+            expose,
+            absorb,
         );
         end_timer!(timer);
 
