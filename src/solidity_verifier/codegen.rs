@@ -594,14 +594,14 @@ pub fn solidity_aux_gen<E: MultiMillerLoop>(
     proofs: Vec<u8>,
     aux_file: &Path,
 ) {
-    let div_res = solidity_aux_genv2(params, vkey, instances, proofs, true);
+    let div_res = solidity_aux_gen_data(params, vkey, instances, proofs, true);
     let mut fd = std::fs::File::create(&aux_file).unwrap();
     div_res
         .iter()
         .for_each(|res| res.write(&mut fd).unwrap());
 }
 
-pub fn solidity_aux_genv2<E: MultiMillerLoop>(
+pub fn solidity_aux_gen_data<E: MultiMillerLoop>(
     params: &ParamsVerifier<E>,
     vkey: &VerifyingKey<E::G1Affine>,
     instances: &Vec<E::Scalar>,
