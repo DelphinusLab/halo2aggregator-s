@@ -428,7 +428,7 @@ where
         ctx.check_pairing(&[(&pl[0], &assigned_s_g2), (&pl[1], &assigned_g2)]);
     }
 
-    let assigned_instances = vec![&il[..], &pl[2..pl.len()]]
+    let assigned_instances = vec![&il[..], &pl[expose_start_idx..pl.len()]]
         .concat()
         .iter()
         .map(|p| ctx.ecc_encode(p))
