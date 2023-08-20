@@ -360,10 +360,15 @@ where
 
     for (i, c) in pl[absorb_start_idx..expose_start_idx].iter().enumerate() {
         let encoded_c = ctx.ecc_encode(c);
-        let [proof_index, mut instance_index, g_index] = absorb[i].0;
+        let [proof_index, instance_offset, g_index] = absorb[i].0;
+        let mut instance_index = instance_offset;
         for i in instances[0..proof_index].iter() {
             instance_index += i.len()
         }
+
+        assert_eq!(instances[proof_index][instance_offset][g_index], encoded_c[0].val);
+        assert_eq!(instances[proof_index][instance_offset][g_index+1], encoded_c[1].val);
+        assert_eq!(instances[proof_index][instance_offset][g_index+2], encoded_c[2].val);
 
         let instance_commit = il[instance_index].clone();
         let g0 = ctx.assign_constant_point(&params.g_lagrange[g_index].to_curve());
