@@ -46,20 +46,19 @@ contract AggregatorVerifier {
             uint256 y;
 
             (x, y) = encoding_scalars_to_point(
-                verify_instance[i * 3 + 6],
-                verify_instance[i * 3 + 7],
-                verify_instance[i * 3 + 8]
+                verify_instance[i * 3],
+                verify_instance[i * 3 + 1],
+                verify_instance[i * 3 + 2]
             );
             require(x == target_instance_buf[0], "invalid instance x");
             require(y == target_instance_buf[1], "invalid instance y");
         }
 
-        uint256[] memory target_circuit_pairing_buf = new uint256[](12);
         uint256[] memory verify_circuit_pairing_buf = new uint256[](12);
 
         {
             // step 1: calculate verify circuit instance commitment
-            uint256[] memory buf = new uint256[](400);
+            uint256[] memory buf = new uint256[](373);
             AggregatorConfig.calc_verify_circuit_lagrange(buf, verify_instance);
 
             // step 2: calculate challenge
@@ -74,44 +73,11 @@ contract AggregatorVerifier {
             verify_circuit_pairing_buf[7] = buf[191];
         }
 
-        // step 4: calculate target circuit pair from instance
-        //w_x.x
-        (
-            target_circuit_pairing_buf[0],
-            target_circuit_pairing_buf[1]
-        ) = encoding_scalars_to_point(
-            verify_instance[0],
-            verify_instance[1],
-            verify_instance[2]
-        );
-        AggregatorLib.check_on_curve(
-            target_circuit_pairing_buf[0],
-            target_circuit_pairing_buf[1]
-        );
-
-        //w_g.x
-        (
-            target_circuit_pairing_buf[6],
-            target_circuit_pairing_buf[7]
-        ) = encoding_scalars_to_point(
-            verify_instance[3],
-            verify_instance[4],
-            verify_instance[5]
-        );
-        AggregatorLib.check_on_curve(
-            target_circuit_pairing_buf[6],
-            target_circuit_pairing_buf[7]
-        );
-
         bool checked;
-
-        // step 5: do pairing
-        AggregatorConfig.fill_target_circuits_g2(target_circuit_pairing_buf);
-        checked = AggregatorLib.pairing(target_circuit_pairing_buf);
-        require(checked, "target circuit pairing check failed");
 
         AggregatorConfig.fill_verify_circuits_g2(verify_circuit_pairing_buf);
         checked = AggregatorLib.pairing(verify_circuit_pairing_buf);
         require(checked, "verify circuit pairing check failed");
     }
+
 }
