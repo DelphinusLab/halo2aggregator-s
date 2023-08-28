@@ -32,6 +32,8 @@ fn test_single_one_pass() {
         vec![instances],
         TranscriptHash::Blake2b,
         vec![],
+        vec![],
+        vec![],
         true,
     );
 }
@@ -59,6 +61,8 @@ fn test_single_one_pass_with_verify_circuit() {
         vec![instances],
         TranscriptHash::Poseidon,
         vec![[0, 0, 0, 0]],
+        vec![],
+        vec![],
         true,
     )
     .unwrap();
@@ -70,6 +74,8 @@ fn test_single_one_pass_with_verify_circuit() {
         vec![circuit],
         vec![vec![instances]],
         TranscriptHash::Blake2b,
+        vec![],
+        vec![],
         vec![],
         true,
     );
@@ -98,6 +104,8 @@ fn test_single_one_pass_poseidon() {
         vec![instances],
         TranscriptHash::Poseidon,
         vec![[0, 0, 0, 0]],
+        vec![],
+        vec![],
         true,
     );
 }
@@ -126,6 +134,8 @@ fn test_multi_one_pass() {
         vec![instance1, instance2],
         TranscriptHash::Blake2b,
         vec![],
+        vec![],
+        vec![],
         true,
     );
 }
@@ -153,6 +163,8 @@ fn test_multi_one_pass_poseidon() {
         vec![circuit1, circuit2],
         vec![instance1, instance2],
         TranscriptHash::Poseidon,
+        vec![],
+        vec![],
         vec![],
         true,
     );

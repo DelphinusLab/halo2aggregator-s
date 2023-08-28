@@ -196,6 +196,8 @@ pub fn test_twice_verify_circuit_diff() {
         vec![instances.clone(), instances],
         TranscriptHash::Poseidon,
         vec![],
+        vec![],
+        vec![],
         true,
     )
     .unwrap();
@@ -209,6 +211,8 @@ pub fn test_twice_verify_circuit_diff() {
         vec![circuit.clone(), circuit],
         vec![instances.clone(), instances],
         TranscriptHash::Poseidon,
+        vec![],
+        vec![],
         vec![],
         true,
     )
@@ -305,6 +309,8 @@ pub fn test_solidity_render() {
         vec![instances.clone(), instances],
         TranscriptHash::Poseidon,
         vec![],
+        vec![],
+        vec![],
         true,
     )
     .unwrap();
@@ -317,6 +323,8 @@ pub fn test_solidity_render() {
         vec![circuit],
         vec![vec![instances.clone()]],
         TranscriptHash::Sha,
+        vec![],
+        vec![],
         vec![],
         true,
     );
@@ -332,7 +340,7 @@ pub fn test_solidity_render() {
         Some(&path.join(format!("K{}.params", verify_circuit_k))),
     );
     let verifier_params_verifier: ParamsVerifier<Bn256> =
-        params.verifier(6 + 3 * n_proofs).unwrap();
+        params.verifier(3 * n_proofs).unwrap();
 
     let vkey = load_or_build_vkey::<Bn256, _>(
         &params,
