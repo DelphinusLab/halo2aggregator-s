@@ -196,7 +196,6 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
             .iter()
             .map(|&p| {
                 let is_zero: bool = p.is_identity().into();
-                assert!(!is_zero);
                 pconst!(p)
             })
             .collect::<Vec<_>>();
