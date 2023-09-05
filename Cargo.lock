@@ -391,7 +391,7 @@ source = "git+https://github.com/lanbones/ec-gpu#165d1dd6215f6fd1dd85c83cf430ff5
 [[package]]
 name = "ec-gpu-gen"
 version = "0.4.0"
-source = "git+https://github.com/lanbones/ec-gpu#165d1dd6215f6fd1dd85c83cf430ff511a03a00a"
+source = "git+https://github.com/lanbones/ec-gpu?branch=halo2-opt-v2#784eda53754a5344f75e4b3c533361d628ad1402"
 dependencies = [
  "ark-std",
  "bitvec",
@@ -571,9 +571,36 @@ dependencies = [
  "cfg-if 0.1.10",
  "core_affinity",
  "cuda-driver-sys",
+ "ff",
+ "group",
+ "memmap",
+ "num",
+ "num-bigint",
+ "num-derive",
+ "num-integer",
+ "num-traits",
+ "pairing_bn256",
+ "rand",
+ "rand_core",
+ "rayon",
+ "subtle",
+]
+
+[[package]]
+name = "halo2_proofs"
+version = "0.1.0-beta.1"
+source = "git+https://github.com/DelphinusLab/halo2-gpu-specific.git#64ccffddc97faff24a00d248270fe84f6693c130"
+dependencies = [
+ "ark-std",
+ "blake2b_simd",
+ "bumpalo",
+ "cfg-if 0.1.10",
+ "core_affinity",
+ "cuda-driver-sys",
  "ec-gpu-gen",
  "ff",
  "group",
+ "lazy_static",
  "memmap",
  "num",
  "num-bigint",
@@ -593,7 +620,7 @@ version = "0.1.0"
 dependencies = [
  "ark-std",
  "blake2b_simd",
- "halo2_proofs",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/DelphinusLab/halo2-gpu-specific.git)",
  "halo2ecc-s",
  "lazy_static",
  "num-bigint",
@@ -606,9 +633,9 @@ dependencies = [
 [[package]]
 name = "halo2ecc-s"
 version = "0.3.2"
-source = "git+https://github.com/lanbones/halo2ecc-s.git?tag=bisect-lookup-0.3.2#35fa5cf45810aeabdafc388d1520a01ef5244f50"
+source = "git+https://github.com/lanbones/halo2ecc-s.git?tag=bisect-lookup-0.3.3#9698edde834f0bd90a82d0ac37803f5be2b093ad"
 dependencies = [
- "halo2_proofs",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/DelphinusLab/halo2-gpu-specific.git)",
  "num-bigint",
  "num-integer",
  "rayon",
@@ -1006,7 +1033,7 @@ name = "poseidon"
 version = "0.2.0"
 source = "git+https://github.com/lanbones/poseidon#20d881c2125199749055f305d73d514084b65e02"
 dependencies = [
- "halo2_proofs",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/junyu0312/halo2.git?branch=gpu)",
  "subtle",
 ]
 
