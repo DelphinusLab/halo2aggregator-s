@@ -25,11 +25,11 @@ use std::path::Path;
 
 const CHALLENGE_BUF_START: usize = 2;
 const TEMP_BUF_START: usize = 16;
-const DEEP_LIMIT: usize = 7;
+const DEEP_LIMIT: usize = 6;
 
 lazy_static! {
     static ref TEMP_BUF_MAX: usize = usize::from_str_radix(
-        &env::var("HALO2_AGGREGATOR_S_TEMP_BUF_MAX").unwrap_or("160".to_owned()),
+        &env::var("HALO2_AGGREGATOR_S_TEMP_BUF_MAX").unwrap_or("170".to_owned()),
         10
     )
     .unwrap();
@@ -464,11 +464,14 @@ impl<R: Read, E: MultiMillerLoop> SolidityEvalContext<R, E> {
                     Some(SolidityVar::Temp(t))
                 }
                 EvalOps::MSM(psl) => {
-                    let idx = self.msm_index;
+                    let start: usize = self
+                        .msm_len
+                        .iter()
+                        .fold(*TEMP_BUF_MAX as usize, |acc, x| acc + x * 3);
+
                     self.msm_index += 1;
                     self.msm_len.push(psl.len());
 
-                    let start = *TEMP_BUF_MAX + idx * *MSM_BUF_SIZE;
                     for (i, (p, s)) in psl.iter().enumerate() {
                         let p_str = self.pos_to_point_var(p).to_string(false);
                         let s_str = self.pos_to_scalar_var(s).to_string(true);
@@ -563,8 +566,10 @@ pub fn solidity_codegen_with_proof<E: MultiMillerLoop>(
     );
 
     tera_context.insert("msm_w_x_len", &ctx.msm_len[0]);
-
     tera_context.insert("msm_w_g_len", &ctx.msm_len[1]);
+
+    tera_context.insert("msm_w_x_start", &*TEMP_BUF_MAX);
+    tera_context.insert("msm_w_g_start", &(*TEMP_BUF_MAX + &ctx.msm_len[0] * 3));
 
     if SOLIDITY_DEBUG {
         tera_context.insert(
@@ -596,9 +601,7 @@ pub fn solidity_aux_gen<E: MultiMillerLoop>(
 ) {
     let div_res = solidity_aux_gen_data(params, vkey, instances, proofs, true);
     let mut fd = std::fs::File::create(&aux_file).unwrap();
-    div_res
-        .iter()
-        .for_each(|res| res.write(&mut fd).unwrap());
+    div_res.iter().for_each(|res| res.write(&mut fd).unwrap());
 }
 
 pub fn solidity_aux_gen_data<E: MultiMillerLoop>(
@@ -607,7 +610,7 @@ pub fn solidity_aux_gen_data<E: MultiMillerLoop>(
     instances: &Vec<E::Scalar>,
     proofs: Vec<u8>,
     check: bool,
-)-> Vec<E::Scalar> {
+) -> Vec<E::Scalar> {
     let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey]);
 
     let instance_commitments =

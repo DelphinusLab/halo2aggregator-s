@@ -10,7 +10,7 @@ interface AggregatorVerifierCoreStep {
         uint256[] calldata transcript,
         uint256[] calldata aux,
         uint256[] memory buf
-    ) external view;
+    ) external view returns (uint256[] memory);
 }
 
 contract AggregatorVerifier {
@@ -58,19 +58,32 @@ contract AggregatorVerifier {
 
         {
             // step 1: calculate verify circuit instance commitment
-            uint256[] memory buf = new uint256[](373);
+            uint256[] memory buf = new uint256[](371);
             AggregatorConfig.calc_verify_circuit_lagrange(buf, verify_instance);
 
             // step 2: calculate challenge
             AggregatorConfig.get_challenges(proof, buf);
+
             // step 3: calculate verify circuit pair
             for (uint256 i = 0; i < steps.length; i++) {
-                steps[i].verify_proof(proof, aux, buf);
+                buf = steps[i].verify_proof(proof, aux, buf);
             }
-            verify_circuit_pairing_buf[0] = buf[160];
-            verify_circuit_pairing_buf[1] = buf[161];
-            verify_circuit_pairing_buf[6] = buf[190];
-            verify_circuit_pairing_buf[7] = buf[191];
+
+            verify_circuit_pairing_buf[0] = buf[0];
+            verify_circuit_pairing_buf[1] = buf[1];
+            verify_circuit_pairing_buf[6] = buf[2];
+            verify_circuit_pairing_buf[7] = buf[3];
+
+            require(
+                verify_circuit_pairing_buf[0] != 0 &&
+                    verify_circuit_pairing_buf[1] != 0,
+                "invalid w point"
+            );
+            require(
+                verify_circuit_pairing_buf[6] != 0 &&
+                    verify_circuit_pairing_buf[7] != 0,
+                "invalid g point"
+            );
         }
 
         bool checked;
@@ -79,5 +92,4 @@ contract AggregatorVerifier {
         checked = AggregatorLib.pairing(verify_circuit_pairing_buf);
         require(checked, "verify circuit pairing check failed");
     }
-
 }
