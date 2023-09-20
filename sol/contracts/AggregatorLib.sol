@@ -121,6 +121,7 @@ library AggregatorLib {
     function fr_div(uint256 a, uint256 b, uint256 aux) internal pure returns (uint256) {
         uint256 r = mulmod(b, aux, p_mod);
         require(a == r, "div fail");
+        require(b != 0, "div zero");
         return aux % p_mod;
     }
 }
