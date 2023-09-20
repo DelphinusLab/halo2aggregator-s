@@ -34,7 +34,7 @@ lazy_static! {
     )
     .unwrap();
     static ref MSM_BUF_SIZE: usize = usize::from_str_radix(
-        &env::var("HALO2_AGGREGATOR_S_MSM_BUF_SIZE").unwrap_or("30".to_owned()),
+        &env::var("HALO2_AGGREGATOR_S_MSM_BUF_SIZE").unwrap_or("5".to_owned()),
         10
     )
     .unwrap();
@@ -464,10 +464,7 @@ impl<R: Read, E: MultiMillerLoop> SolidityEvalContext<R, E> {
                     Some(SolidityVar::Temp(t))
                 }
                 EvalOps::MSM(psl) => {
-                    let start: usize = self
-                        .msm_len
-                        .iter()
-                        .fold(*TEMP_BUF_MAX as usize, |acc, x| acc + x * 3);
+                    let start: usize = *TEMP_BUF_MAX + self.msm_len.len() * *MSM_BUF_SIZE;
 
                     self.msm_index += 1;
                     self.msm_len.push(psl.len());
@@ -475,14 +472,26 @@ impl<R: Read, E: MultiMillerLoop> SolidityEvalContext<R, E> {
                     for (i, (p, s)) in psl.iter().enumerate() {
                         let p_str = self.pos_to_point_var(p).to_string(false);
                         let s_str = self.pos_to_scalar_var(s).to_string(true);
+
+                        let idx = if i == 0 { 0 } else { 2 };
+
                         self.statements.push(format!(
                             "(buf[{}], buf[{}]) = {};",
-                            start + i * 3,
-                            start + i * 3 + 1,
+                            start + idx,
+                            start + idx + 1,
                             p_str
                         ));
+
                         self.statements
-                            .push(format!("buf[{}] = {};", start + i * 3 + 2, s_str));
+                            .push(format!("buf[{}] = {};", start + idx + 2, s_str));
+
+                        if i > 0 {
+                            self.statements
+                                .push(format!("AggregatorLib.ecc_mul_add(buf, {});", start));
+                        } else {
+                            self.statements
+                                .push(format!("AggregatorLib.ecc_mul(buf, {});", start));
+                        }
 
                         if SOLIDITY_DEBUG {
                             let p_value = self.eval_point_pos(p).coordinates().unwrap();
@@ -569,7 +578,7 @@ pub fn solidity_codegen_with_proof<E: MultiMillerLoop>(
     tera_context.insert("msm_w_g_len", &ctx.msm_len[1]);
 
     tera_context.insert("msm_w_x_start", &*TEMP_BUF_MAX);
-    tera_context.insert("msm_w_g_start", &(*TEMP_BUF_MAX + &ctx.msm_len[0] * 3));
+    tera_context.insert("msm_w_g_start", &(*TEMP_BUF_MAX + *MSM_BUF_SIZE));
 
     if SOLIDITY_DEBUG {
         tera_context.insert(
