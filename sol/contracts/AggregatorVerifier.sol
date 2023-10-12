@@ -37,7 +37,7 @@ contract AggregatorVerifier {
         uint256[] calldata verify_instance,
         uint256[] calldata aux,
         uint256[][] calldata target_instance
-    ) public view {
+    ) public view returns (bool checked) {
         // step 0: verify target_instance commitment with target_instance
         for (uint256 i = 0; i < target_instance.length; i++) {
             uint256[] memory target_instance_buf = AggregatorConfig
@@ -86,10 +86,7 @@ contract AggregatorVerifier {
             );
         }
 
-        bool checked;
-
         AggregatorConfig.fill_verify_circuits_g2(verify_circuit_pairing_buf);
         checked = AggregatorLib.pairing(verify_circuit_pairing_buf);
-        require(checked, "verify circuit pairing check failed");
     }
 }
