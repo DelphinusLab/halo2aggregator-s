@@ -523,17 +523,6 @@ pub fn solidity_codegen_with_proof<E: MultiMillerLoop>(
     instances: &Vec<E::Scalar>,
     proofs: Vec<u8>,
     tera_context: &mut tera::Context,
-) -> Vec<String> {
-    solidity_codegen_with_proof_and_check(
-        params, vkey, instances, proofs, tera_context, true)
-}
-
-pub fn solidity_codegen_with_proof_and_check<E: MultiMillerLoop>(
-    params: &ParamsVerifier<E>,
-    vkey: &VerifyingKey<E::G1Affine>,
-    instances: &Vec<E::Scalar>,
-    proofs: Vec<u8>,
-    tera_context: &mut tera::Context,
     check: bool,
 ) -> Vec<String> {
     let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey]);
