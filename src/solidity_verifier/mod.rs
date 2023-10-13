@@ -22,10 +22,11 @@ pub fn solidity_render<E: MultiMillerLoop>(
     verify_circuit_params: &ParamsVerifier<E>,
     vkey: &VerifyingKey<E::G1Affine>,
     instances: &Vec<E::Scalar>,
-    proofs: Vec<u8>
-){
+    proofs: Vec<u8>,
+) {
     solidity_render_with_check_option(
-        path_in, path_out,
+        path_in,
+        path_out,
         common_template_name,
         start_step_template_name,
         end_step_template_name,
@@ -36,10 +37,8 @@ pub fn solidity_render<E: MultiMillerLoop>(
         instances,
         proofs,
         true,
-        );
+    );
 }
-
-
 
 pub fn solidity_render_with_check_option<E: MultiMillerLoop>(
     path_in: &str,
@@ -371,8 +370,7 @@ pub fn test_solidity_render() {
         verify_circuit_k,
         Some(&path.join(format!("K{}.params", verify_circuit_k))),
     );
-    let verifier_params_verifier: ParamsVerifier<Bn256> =
-        params.verifier(3 * n_proofs).unwrap();
+    let verifier_params_verifier: ParamsVerifier<Bn256> = params.verifier(3 * n_proofs).unwrap();
 
     let vkey = load_or_build_vkey::<Bn256, _>(
         &params,
