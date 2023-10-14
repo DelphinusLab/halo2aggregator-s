@@ -523,6 +523,7 @@ pub fn solidity_codegen_with_proof<E: MultiMillerLoop>(
     instances: &Vec<E::Scalar>,
     proofs: Vec<u8>,
     tera_context: &mut tera::Context,
+    check: bool,
 ) -> Vec<String> {
     let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey]);
 
@@ -542,18 +543,20 @@ pub fn solidity_codegen_with_proof<E: MultiMillerLoop>(
     ctx.value_gen();
     ctx.code_gen();
 
-    let s_g2_prepared = E::G2Prepared::from(params.s_g2);
-    let n_g2_prepared = E::G2Prepared::from(-params.g2);
-    let success = bool::from(
-        E::multi_miller_loop(&[
-            (&ctx.finals[0], &s_g2_prepared),
-            (&ctx.finals[1], &n_g2_prepared),
-        ])
-        .final_exponentiation()
-        .is_identity(),
-    );
+    if check {
+        let s_g2_prepared = E::G2Prepared::from(params.s_g2);
+        let n_g2_prepared = E::G2Prepared::from(-params.g2);
+        let success = bool::from(
+            E::multi_miller_loop(&[
+                (&ctx.finals[0], &s_g2_prepared),
+                (&ctx.finals[1], &n_g2_prepared),
+            ])
+            .final_exponentiation()
+            .is_identity(),
+        );
 
-    assert!(success);
+        assert!(success);
+    }
 
     tera_context.insert("n_constant_scalars", &ctx.constant_scalars.len());
 

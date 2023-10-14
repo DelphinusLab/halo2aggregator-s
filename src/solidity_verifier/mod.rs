@@ -24,6 +24,36 @@ pub fn solidity_render<E: MultiMillerLoop>(
     instances: &Vec<E::Scalar>,
     proofs: Vec<u8>,
 ) {
+    solidity_render_with_check_option(
+        path_in,
+        path_out,
+        common_template_name,
+        start_step_template_name,
+        end_step_template_name,
+        step_out_file_name,
+        target_circuit_params,
+        verify_circuit_params,
+        vkey,
+        instances,
+        proofs,
+        true,
+    );
+}
+
+pub fn solidity_render_with_check_option<E: MultiMillerLoop>(
+    path_in: &str,
+    path_out: &str,
+    common_template_name: Vec<(String, String)>,
+    start_step_template_name: &str,
+    end_step_template_name: &str,
+    step_out_file_name: impl Fn(usize) -> String,
+    target_circuit_params: &ParamsVerifier<E>,
+    verify_circuit_params: &ParamsVerifier<E>,
+    vkey: &VerifyingKey<E::G1Affine>,
+    instances: &Vec<E::Scalar>,
+    proofs: Vec<u8>,
+    check: bool,
+) {
     let tera = Tera::new(path_in).unwrap();
     let mut tera_ctx = tera::Context::new();
 
@@ -145,6 +175,7 @@ pub fn solidity_render<E: MultiMillerLoop>(
         instances,
         proofs,
         &mut tera_ctx,
+        check,
     );
 
     for (f_in, f_out) in common_template_name {
@@ -339,8 +370,7 @@ pub fn test_solidity_render() {
         verify_circuit_k,
         Some(&path.join(format!("K{}.params", verify_circuit_k))),
     );
-    let verifier_params_verifier: ParamsVerifier<Bn256> =
-        params.verifier(3 * n_proofs).unwrap();
+    let verifier_params_verifier: ParamsVerifier<Bn256> = params.verifier(3 * n_proofs).unwrap();
 
     let vkey = load_or_build_vkey::<Bn256, _>(
         &params,
