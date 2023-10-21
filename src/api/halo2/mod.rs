@@ -100,20 +100,21 @@ pub fn verify_aggregation_proofs<E: MultiMillerLoop>(
         })
         .unwrap();
 
+    // replace same commitments to singleton to reduce msm size
     for (from, to) in commitment_map {
         let w_x_replace_res = replace_commitment(
             pair.w_x.0,
-            &advice_commitments[from.0][from.1],
-            &advice_commitments[to.0][to.1],
+            &format_advice_commitment_key(&format_circuit_key(from.0), from.1),
             &format_advice_commitment_key(&format_circuit_key(to.0), to.1),
+            &advice_commitments[to.0][to.1],
         );
         pair.w_x = EvaluationQuerySchemaRc(w_x_replace_res.0);
 
         let w_g_replace_res = replace_commitment(
             pair.w_g.0,
-            &advice_commitments[from.0][from.1],
-            &advice_commitments[to.0][to.1],
+            &format_advice_commitment_key(&format_circuit_key(from.0), from.1),
             &format_advice_commitment_key(&format_circuit_key(to.0), to.1),
+            &advice_commitments[to.0][to.1],
         );
         pair.w_g = EvaluationQuerySchemaRc(w_g_replace_res.0);
     }
