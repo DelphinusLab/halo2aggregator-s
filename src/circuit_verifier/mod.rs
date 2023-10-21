@@ -461,6 +461,7 @@ where
 
     let instances = assigned_instances.iter().map(|x| x.val).collect::<Vec<_>>();
     let ctx: Context<_> = ctx.into();
+    println!("offset {} {} {}", ctx.base_offset, ctx. range_offset, ctx.select_offset);
 
     Ok((
         AggregatorCircuit::new(
