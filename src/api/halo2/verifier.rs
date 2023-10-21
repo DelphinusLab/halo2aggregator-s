@@ -1,3 +1,6 @@
+use super::format_advice_commitment_key;
+use super::format_fixed_commitment_key;
+use super::format_instance_commitment_key;
 use super::protocols::lookup;
 use super::protocols::permutation;
 use super::protocols::vanish;
@@ -137,7 +140,7 @@ impl<C: CurveAffine> VerifierParams<C> {
                 queries.push(EvaluationQuery::new(
                     at,
                     self.x_rotate(at),
-                    format!("{}_instance_commitments{}", self.key, column),
+                    format_instance_commitment_key(&self.key, column),
                     instance_commitments[column].clone(),
                     instance_evals[query_index].clone(),
                 ))
@@ -147,7 +150,7 @@ impl<C: CurveAffine> VerifierParams<C> {
                 queries.push(EvaluationQuery::new(
                     at,
                     self.x_rotate(at),
-                    format!("{}_advice_commitments{}", self.key, column),
+                    format_advice_commitment_key(&self.key, column),
                     advice_commitments[column].clone(),
                     advice_evals[query_index].clone(),
                 ))
@@ -161,7 +164,7 @@ impl<C: CurveAffine> VerifierParams<C> {
             queries.push(EvaluationQuery::new(
                 at,
                 self.x_rotate(at),
-                format!("{}_fixed_commitments{}", self.key, column),
+                format_fixed_commitment_key(&self.key, column),
                 self.fixed_commitments[column].clone(),
                 self.fixed_evals[query_index].clone(),
             ))
@@ -177,7 +180,7 @@ impl<C: CurveAffine> VerifierParams<C> {
                     EvaluationQuery::new(
                         0,
                         self.x.clone(),
-                        format!("{}_permutation_commitments{}", self.key, i),
+                        format!("{}_permutation_commitments_{}", self.key, i),
                         commitment.clone(),
                         eval.clone(),
                     )

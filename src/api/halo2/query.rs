@@ -25,9 +25,56 @@ pub enum EvaluationQuerySchema<C: CurveAffine> {
     Commitment(Rc<CommitQuery<C>>),
     Eval(Rc<CommitQuery<C>>),
     Scalar(AstScalarRc<C>),
-    Add(Rc<Self>, Rc<Self>, bool),
-    Mul(Rc<Self>, Rc<Self>, bool),
+    Add(Rc<Self>, Rc<Self>, bool), // bool indicates whether contains commitment
+    Mul(Rc<Self>, Rc<Self>, bool), // bool indicates whether contains commitment
     CheckPoint(String, Rc<Self>),
+}
+
+pub fn replace_commitment<C: CurveAffine>(
+    mut target: Rc<EvaluationQuerySchema<C>>,
+    from: &AstPointRc<C>,
+    to: &AstPointRc<C>,
+    key: &String,
+) -> (Rc<EvaluationQuerySchema<C>>, bool) {
+    let mut replaced = false;
+    match target.as_ref() {
+        EvaluationQuerySchema::Commitment(a) => {
+            if let Some(c) = &a.commitment {
+                if Rc::ptr_eq(&c.0, &from.0) {
+                    let mut a = Rc::as_ref(a).clone();
+                    a.commitment = Some(to.clone());
+                    a.key = key.to_owned();
+                    target = Rc::new(EvaluationQuerySchema::Commitment(Rc::new(a)));
+                    replaced = true;
+                }
+            }
+        }
+        EvaluationQuerySchema::Add(a, b, true) => {
+            let (a, ra) = replace_commitment(a.clone(), from, to, key);
+            let (b, rb) = replace_commitment(b.clone(), from, to, key);
+            if ra || rb {
+                target = Rc::new(EvaluationQuerySchema::Add(a, b, true));
+                replaced = true;
+            }
+        }
+        EvaluationQuerySchema::Mul(a, b, true) => {
+            let (a, ra) = replace_commitment(a.clone(), from, to, key);
+            let (b, rb) = replace_commitment(b.clone(), from, to, key);
+            if ra || rb {
+                target = Rc::new(EvaluationQuerySchema::Mul(a, b, true));
+                replaced = true;
+            }
+        }
+        EvaluationQuerySchema::CheckPoint(s, a) => {
+            let (a, ra) = replace_commitment(a.clone(), from, to, key);
+            if ra {
+                target = Rc::new(EvaluationQuerySchema::CheckPoint(s.to_string(), a));
+                replaced = true;
+            }
+        }
+        _ => {}
+    }
+    (target, replaced)
 }
 
 #[repr(transparent)]
