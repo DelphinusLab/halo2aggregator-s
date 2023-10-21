@@ -160,7 +160,7 @@ pub fn verify_proofs<E: MultiMillerLoop>(
     hash: TranscriptHash,
     commitment_check: Vec<[usize; 4]>,
 ) {
-    let (w_x, w_g, advices) = verify_aggregation_proofs(params, vkey);
+    let (w_x, w_g, advices) = verify_aggregation_proofs(params, vkey, &vec![]);
 
     let instance_commitments = instance_to_instance_commitment(params, vkey, instances);
 
