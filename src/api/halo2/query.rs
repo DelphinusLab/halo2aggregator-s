@@ -32,41 +32,39 @@ pub enum EvaluationQuerySchema<C: CurveAffine> {
 
 pub fn replace_commitment<C: CurveAffine>(
     mut target: Rc<EvaluationQuerySchema<C>>,
-    from: &AstPointRc<C>,
-    to: &AstPointRc<C>,
-    key: &String,
+    from_key: &String,
+    to_key: &String,
+    p: &AstPointRc<C>,
 ) -> (Rc<EvaluationQuerySchema<C>>, bool) {
     let mut replaced = false;
     match target.as_ref() {
         EvaluationQuerySchema::Commitment(a) => {
-            if let Some(c) = &a.commitment {
-                if Rc::ptr_eq(&c.0, &from.0) {
-                    let mut a = Rc::as_ref(a).clone();
-                    a.commitment = Some(to.clone());
-                    a.key = key.to_owned();
-                    target = Rc::new(EvaluationQuerySchema::Commitment(Rc::new(a)));
-                    replaced = true;
-                }
+            if from_key == &a.key {
+                let mut a = Rc::as_ref(a).clone();
+                a.commitment = Some(p.clone());
+                a.key = to_key.to_owned();
+                target = Rc::new(EvaluationQuerySchema::Commitment(Rc::new(a)));
+                replaced = true;
             }
         }
         EvaluationQuerySchema::Add(a, b, true) => {
-            let (a, ra) = replace_commitment(a.clone(), from, to, key);
-            let (b, rb) = replace_commitment(b.clone(), from, to, key);
+            let (a, ra) = replace_commitment(a.clone(), from_key, to_key, p);
+            let (b, rb) = replace_commitment(b.clone(), from_key, to_key, p);
             if ra || rb {
                 target = Rc::new(EvaluationQuerySchema::Add(a, b, true));
                 replaced = true;
             }
         }
         EvaluationQuerySchema::Mul(a, b, true) => {
-            let (a, ra) = replace_commitment(a.clone(), from, to, key);
-            let (b, rb) = replace_commitment(b.clone(), from, to, key);
+            let (a, ra) = replace_commitment(a.clone(), from_key, to_key, p);
+            let (b, rb) = replace_commitment(b.clone(), from_key, to_key, p);
             if ra || rb {
                 target = Rc::new(EvaluationQuerySchema::Mul(a, b, true));
                 replaced = true;
             }
         }
         EvaluationQuerySchema::CheckPoint(s, a) => {
-            let (a, ra) = replace_commitment(a.clone(), from, to, key);
+            let (a, ra) = replace_commitment(a.clone(), from_key, to_key, p);
             if ra {
                 target = Rc::new(EvaluationQuerySchema::CheckPoint(s.to_string(), a));
                 replaced = true;

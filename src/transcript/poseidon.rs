@@ -76,7 +76,8 @@ impl<R: io::Read, C: CurveAffine> Transcript<C, PoseidonEncodedChallenge<C>>
         let chunk_bits = bits * 2;
 
         let chunk0 = &x_bn & ((BigUint::from(1u64) << chunk_bits) - 1u64);
-        let chunk1 = (x_bn >> chunk_bits) + ((&y_bn & ((BigUint::from(1u64) << bits) - 1u64)) << bits);
+        let chunk1 =
+            (x_bn >> chunk_bits) + ((&y_bn & ((BigUint::from(1u64) << bits) - 1u64)) << bits);
         let chunk2 = y_bn >> bits;
 
         self.state.update(
@@ -165,7 +166,8 @@ impl<W: io::Write, C: CurveAffine> Transcript<C, PoseidonEncodedChallenge<C>>
         let chunk_bits = bits * 2;
 
         let chunk0 = &x_bn & ((BigUint::from(1u64) << chunk_bits) - 1u64);
-        let chunk1 = (x_bn >> chunk_bits) + ((&y_bn & ((BigUint::from(1u64) << bits) - 1u64)) << bits);
+        let chunk1 =
+            (x_bn >> chunk_bits) + ((&y_bn & ((BigUint::from(1u64) << bits) - 1u64)) << bits);
         let chunk2 = y_bn >> bits;
 
         self.state.update(
