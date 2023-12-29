@@ -215,7 +215,7 @@ pub fn solidity_render_with_check_option<E: MultiMillerLoop, D: Digest + Clone>(
 #[test]
 pub fn test_twice_verify_circuit_diff() {
     use crate::circuits::samples::simple::SimpleCircuit;
-    use crate::circuits::utils::run_circuit_unsafe_full_pass;
+    use crate::circuits::utils::run_circuit_unsafe_full_pass_no_rec;
     use crate::circuits::utils::TranscriptHash;
     use halo2_proofs::pairing::bn256::Bn256;
     use halo2_proofs::pairing::bn256::Fr;
@@ -230,7 +230,7 @@ pub fn test_twice_verify_circuit_diff() {
     let path = Path::new(path);
     let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
     println!("circuit1 {:?} {:?}", &circuit.a, &circuit.b);
-    let (circuit1, _) = run_circuit_unsafe_full_pass::<Bn256, _>(
+    let (circuit1, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
         path,
         "simple-circuit",
         target_circuit_k,
@@ -239,17 +239,14 @@ pub fn test_twice_verify_circuit_diff() {
         TranscriptHash::Poseidon,
         vec![],
         vec![],
-        vec![],
         true,
-        vec![],
         &mut vec![],
-        0,
     )
     .unwrap();
 
     let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
     println!("circuit2 {:?} {:?}", &circuit.a, &circuit.b);
-    let (circuit2, _) = run_circuit_unsafe_full_pass::<Bn256, _>(
+    let (circuit2, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
         path,
         "simple-circuit",
         target_circuit_k,
@@ -258,11 +255,8 @@ pub fn test_twice_verify_circuit_diff() {
         TranscriptHash::Poseidon,
         vec![],
         vec![],
-        vec![],
         true,
-        vec![],
         &mut vec![],
-        0,
     )
     .unwrap();
 
@@ -325,8 +319,18 @@ pub fn test_twice_verify_circuit_diff() {
     }
 }
 
+<<<<<<< HEAD
 #[cfg(test)]
 mod tests {
+=======
+#[test]
+pub fn test_solidity_render() {
+    use crate::circuits::samples::simple::SimpleCircuit;
+    use crate::circuits::utils::load_or_build_unsafe_params;
+    use crate::circuits::utils::load_or_build_vkey;
+    use crate::circuits::utils::load_proof;
+    use crate::circuits::utils::run_circuit_unsafe_full_pass_no_rec;
+>>>>>>> 01dcc7d (fix interface)
     use crate::circuits::utils::TranscriptHash;
     use crate::solidity_verifier::solidity_render;
     use halo2_proofs::poly::commitment::ParamsVerifier;
