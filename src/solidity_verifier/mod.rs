@@ -230,6 +230,9 @@ pub fn test_twice_verify_circuit_diff() {
         vec![],
         vec![],
         true,
+        vec![],
+        &mut vec![],
+        0,
     )
     .unwrap();
 
@@ -246,6 +249,9 @@ pub fn test_twice_verify_circuit_diff() {
         vec![],
         vec![],
         true,
+        vec![],
+        &mut vec![],
+        0,
     )
     .unwrap();
 
@@ -344,6 +350,9 @@ pub fn test_solidity_render() {
         vec![],
         vec![],
         true,
+        vec![],
+        &mut vec![],
+        0,
     )
     .unwrap();
 
@@ -359,6 +368,9 @@ pub fn test_solidity_render() {
         vec![],
         vec![],
         true,
+        vec![],
+        &mut vec![],
+        0,
     );
 
     let params = load_or_build_unsafe_params::<Bn256>(
