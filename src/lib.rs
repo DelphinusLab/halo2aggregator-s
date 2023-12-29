@@ -35,6 +35,9 @@ fn test_single_one_pass() {
         vec![],
         vec![],
         true,
+        vec![],
+        &mut vec![],
+        0,
     );
 }
 
@@ -64,6 +67,9 @@ fn test_single_one_pass_with_verify_circuit() {
         vec![],
         vec![],
         true,
+        vec![],
+        &mut vec![],
+        0,
     )
     .unwrap();
 
@@ -78,6 +84,9 @@ fn test_single_one_pass_with_verify_circuit() {
         vec![],
         vec![],
         true,
+        vec![],
+        &mut vec![],
+        0,
     );
 }
 
@@ -107,6 +116,9 @@ fn test_single_one_pass_poseidon() {
         vec![],
         vec![],
         true,
+        vec![],
+        &mut vec![],
+        0,
     );
 }
 
@@ -137,6 +149,9 @@ fn test_multi_one_pass() {
         vec![],
         vec![],
         true,
+        vec![],
+        &mut vec![],
+        0,
     );
 }
 
@@ -167,5 +182,8 @@ fn test_multi_one_pass_poseidon() {
         vec![],
         vec![],
         true,
+        vec![],
+        &mut vec![],
+        0,
     );
 }

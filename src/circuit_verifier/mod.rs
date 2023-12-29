@@ -41,10 +41,13 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
     instance_commitments: &[&[E::G1Affine]],
     t: &mut [&mut PoseidonChipRead<R, E::G1Affine>],
     circuit: &mut NativeScalarEccContext<E::G1Affine>,
+    // Expose hash of constant value to instance to uniform the aggregator circuit
+    constants_hasher: &mut PoseidonChipRead<R, E::G1Affine>,
 ) -> Result<
     (
         Vec<AssignedPoint<E::G1Affine, E::Scalar>>,
         Vec<AssignedPoint<E::G1Affine, E::Scalar>>,
+        AssignedValue<E::Scalar>,
     ),
     UnsafeError,
 > {
@@ -52,20 +55,29 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
         Option<AssignedPoint<E::G1Affine, E::Scalar>>,
         Option<AssignedValue<E::Scalar>>,
     )> = vec![];
-
     let const_scalars = {
         c.const_scalars
             .iter()
-            .map(|c| circuit.base_integer_chip().base_chip().assign_constant(*c))
+            .map(|c| circuit.base_integer_chip().base_chip().assign(*c))
             .collect::<Vec<_>>()
     };
+
+    for c in const_scalars.iter() {
+        constants_hasher.common_scalar(circuit, c);
+    }
 
     let const_points = {
         c.const_points
             .iter()
-            .map(|c| circuit.assign_constant_point(&c.to_curve()))
+            .map(|c| circuit.assign_point(&c.to_curve()))
             .collect::<Vec<_>>()
     };
+
+    for c in const_points.iter() {
+        constants_hasher.common_point(circuit, c);
+    }
+
+    let constants_hash = constants_hasher.squeeze(circuit);
 
     let instance_commitments = {
         instance_commitments
@@ -214,6 +226,7 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
             .map(|x| circuit.ecc_reduce(it[*x].0.as_ref().unwrap()))
             .collect(),
         instance_commitments.concat(),
+        constants_hash,
     ))
 }
 
@@ -225,6 +238,9 @@ pub fn build_single_proof_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper
     hash: TranscriptHash,
     expose: Vec<[usize; 2]>,
     absorb: Vec<([usize; 3], [usize; 2])>, // the index of instance + the index of advices
+    target_aggregator_constant_hash_instance_offset: Vec<([usize; 4])>, // (proof_index, layer_idx, instance_col, instance_row)
+    all_constant_hash: &mut Vec<E::Scalar>,
+    layer_idx: usize,
 ) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
@@ -238,6 +254,9 @@ where
         vec![],
         expose,
         absorb,
+        target_aggregator_constant_hash_instance_offset,
+        all_constant_hash,
+        layer_idx,
     )
 }
 
@@ -249,7 +268,10 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
     hash: TranscriptHash,
     commitment_check: Vec<[usize; 4]>,
     expose: Vec<[usize; 2]>,
-    absorb: Vec<([usize; 3], [usize; 2])>, // the index of instance + the index of advices
+    absorb: Vec<([usize; 3], [usize; 2])>, // the index of instance + the index of advices,
+    target_aggregator_constant_hash_instance_offset: Vec<([usize; 4])>, // (proof_index, layer_idx, instance_col, instance_row)
+    all_constant_hash: &mut Vec<E::Scalar>,
+    layer_idx: usize,
 ) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
@@ -267,6 +289,9 @@ where
             &commitment_check,
             &expose,
             &absorb,
+            &target_aggregator_constant_hash_instance_offset,
+            all_constant_hash,
+            layer_idx,
         )
         .ok();
         rest_tries -= 1;
@@ -290,6 +315,12 @@ impl G2AffineBaseHelper for Bn256 {
     }
 }
 
+/* expose: expose target circuits' commitments to current aggregator circuits' instance
+ * absorb: absorb target circuits' commitments to target aggregator circuits' instance
+ * target_aggregator_constant_hash_instance: instance_offset of target_aggregator for constant_hash
+ * prev_constant_hash: all previous constant_hash (hash of all circuits' constant values) of aggregators layer
+ * layer_idx: current aggregator's layer index
+ */
 pub fn _build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
     params: &ParamsVerifier<E>,
     vkey: &[&VerifyingKey<E::G1Affine>],
@@ -299,6 +330,9 @@ pub fn _build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
     commitment_check: &Vec<[usize; 4]>,
     expose: &Vec<[usize; 2]>,
     absorb: &Vec<([usize; 3], [usize; 2])>, // the index of instance + the index of advices
+    target_aggregator_constant_hash_instance_offset: &Vec<([usize; 4])>, // (proof_index, layer_idx, instance_col, instance_row)
+    all_constant_hash: &mut Vec<E::Scalar>,
+    layer_idx: usize,
 ) -> Result<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>), UnsafeError>
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
@@ -330,7 +364,7 @@ where
     }
 
     let c = EvalContext::translate(&targets[..]);
-    let (pl, mut il) = match hash {
+    let (pl, mut il, assigned_constant_hash) = match hash {
         TranscriptHash::Poseidon => {
             let mut t = vec![];
             for i in 0..proofs.len() {
@@ -341,6 +375,9 @@ where
             let it = PoseidonRead::init(&empty[..]);
             t.push(PoseidonChipRead::init(it, &mut ctx));
 
+            let mut constant_hasher =
+                PoseidonChipRead::init(PoseidonRead::init(&empty[..]), &mut ctx);
+
             context_eval::<E, _>(
                 c,
                 &instance_commitments
@@ -349,13 +386,55 @@ where
                     .collect::<Vec<_>>()[..],
                 &mut t.iter_mut().collect::<Vec<_>>(),
                 &mut ctx,
+                &mut constant_hasher,
             )?
         }
         _ => unreachable!(),
     };
 
+    let mut hashes = vec![];
+    // assign for constant_hashes
+    for h in all_constant_hash.iter() {
+        let v = ctx.base_integer_chip().base_chip().assign(*h);
+        hashes.push(v);
+    }
+
+    if layer_idx < hashes.len() {
+        ctx.base_integer_chip()
+            .base_chip()
+            .assert_equal(&hashes[layer_idx], &assigned_constant_hash);
+    } else {
+        all_constant_hash.push(assigned_constant_hash.val);
+        hashes.push(assigned_constant_hash);
+    }
+
     for check in pl[0..absorb_start_idx].chunks(2).skip(1) {
         ctx.ecc_assert_equal(&check[0], &check[1]);
+    }
+
+    // il[target_aggregator_circuit's hash instance col] -= msm(params[?..? + target_layer_index + 1], hashes[0..target_aggregator_circuit_layer_index + 1])
+    for [proof_index, layer_idx, instance_col, instance_row_start] in
+        target_aggregator_constant_hash_instance_offset
+    {
+        let mut instance_index = *instance_col;
+        for i in instances[0..*proof_index].iter() {
+            instance_index += i.len()
+        }
+        let mut points = vec![];
+        let mut scalars = vec![];
+        for i in 0..*layer_idx {
+            points.push(
+                ctx.assign_constant_point(&params.g_lagrange[i + instance_row_start].to_curve()),
+            );
+            scalars.push(hashes[i]);
+        }
+
+        let msm_c = ctx.msm(&points, &scalars);
+        let diff_commit = ctx.ecc_neg(&msm_c);
+        let instance_commit = il[instance_index].clone();
+        let instance_commit_curv = ctx.to_point_with_curvature(instance_commit);
+        let update_commit = ctx.ecc_add(&instance_commit_curv, &diff_commit);
+        il[instance_index] = update_commit;
     }
 
     for (i, c) in pl[absorb_start_idx..expose_start_idx].iter().enumerate() {
@@ -442,12 +521,16 @@ where
         ctx.check_pairing(&[(&pl[0], &assigned_s_g2), (&pl[1], &assigned_g2)]);
     }
 
-    let assigned_instances = vec![&il[..], &pl[expose_start_idx..pl.len()]]
+    let mut assigned_instances = vec![&il[..], &pl[expose_start_idx..pl.len()]]
         .concat()
         .iter()
         .map(|p| ctx.ecc_encode(p))
         .collect::<Vec<_>>()
         .concat();
+
+    assigned_instances.append(&mut hashes);
+
+    assigned_instances.push(assigned_constant_hash);
 
     for ai in assigned_instances.iter() {
         ctx.0
@@ -461,7 +544,10 @@ where
 
     let instances = assigned_instances.iter().map(|x| x.val).collect::<Vec<_>>();
     let ctx: Context<_> = ctx.into();
-    println!("offset {} {} {}", ctx.base_offset, ctx. range_offset, ctx.select_offset);
+    println!(
+        "offset {} {} {}",
+        ctx.base_offset, ctx.range_offset, ctx.select_offset
+    );
 
     Ok((
         AggregatorCircuit::new(

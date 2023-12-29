@@ -241,6 +241,9 @@ pub fn test_twice_verify_circuit_diff() {
         vec![],
         vec![],
         true,
+        vec![],
+        &mut vec![],
+        0,
     )
     .unwrap();
 
@@ -257,6 +260,9 @@ pub fn test_twice_verify_circuit_diff() {
         vec![],
         vec![],
         true,
+        vec![],
+        &mut vec![],
+        0,
     )
     .unwrap();
 

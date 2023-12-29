@@ -243,6 +243,9 @@ pub fn run_circuit_unsafe_full_pass<
     expose: Vec<[usize; 2]>,
     absorb: Vec<([usize; 3], [usize; 2])>,
     force_create_proof: bool,
+    target_aggregator_constant_hash_instance_offset: Vec<([usize; 4])>, // (circuit_idx, layer_idx, instance_col, instance_row)
+    all_constant_hash: &mut Vec<E::Scalar>,
+    layer_idx: usize,
 ) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)>
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
@@ -358,6 +361,9 @@ where
                         hash,
                         expose.clone(),
                         absorb.clone(),
+                        target_aggregator_constant_hash_instance_offset.clone(),
+                        all_constant_hash,
+                        layer_idx.clone(),
                     );
                 const K: u32 = 21;
                 let prover = MockProver::run(K, &circuit, vec![instances]).unwrap();
@@ -395,6 +401,9 @@ where
             commitment_check,
             expose,
             absorb,
+            target_aggregator_constant_hash_instance_offset,
+            all_constant_hash,
+            layer_idx,
         );
         end_timer!(timer);
 
