@@ -12,7 +12,7 @@ pub mod solidity_verifier;
 #[test]
 fn test_single_one_pass() {
     use circuits::samples::simple::SimpleCircuit;
-    use circuits::utils::run_circuit_unsafe_full_pass;
+    use circuits::utils::run_circuit_unsafe_full_pass_no_rec;
     use circuits::utils::TranscriptHash;
     use halo2_proofs::pairing::bn256::Bn256;
     use halo2_proofs::pairing::bn256::Fr;
@@ -24,7 +24,7 @@ fn test_single_one_pass() {
 
     let path = Path::new(path);
     let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
-    run_circuit_unsafe_full_pass::<Bn256, _>(
+    run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
         path,
         "simple-circuit",
         8,
@@ -33,18 +33,15 @@ fn test_single_one_pass() {
         TranscriptHash::Blake2b,
         vec![],
         vec![],
-        vec![],
         true,
-        vec![],
         &mut vec![],
-        0,
     );
 }
 
 #[test]
 fn test_single_one_pass_with_verify_circuit() {
     use circuits::samples::simple::SimpleCircuit;
-    use circuits::utils::run_circuit_unsafe_full_pass;
+    use circuits::utils::run_circuit_unsafe_full_pass_no_rec;
     use circuits::utils::TranscriptHash;
     use halo2_proofs::pairing::bn256::Bn256;
     use halo2_proofs::pairing::bn256::Fr;
@@ -56,7 +53,7 @@ fn test_single_one_pass_with_verify_circuit() {
 
     let path = Path::new(path);
     let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
-    let (circuit, instances) = run_circuit_unsafe_full_pass::<Bn256, _>(
+    let (circuit, instances) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
         path,
         "simple-circuit",
         8,
@@ -65,15 +62,12 @@ fn test_single_one_pass_with_verify_circuit() {
         TranscriptHash::Poseidon,
         vec![[0, 0, 0, 0]],
         vec![],
-        vec![],
         true,
-        vec![],
         &mut vec![],
-        0,
     )
     .unwrap();
 
-    run_circuit_unsafe_full_pass::<Bn256, _>(
+    run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
         path,
         "verify-circuit",
         20,
@@ -82,18 +76,15 @@ fn test_single_one_pass_with_verify_circuit() {
         TranscriptHash::Blake2b,
         vec![],
         vec![],
-        vec![],
         true,
-        vec![],
         &mut vec![],
-        0,
     );
 }
 
 #[test]
 fn test_single_one_pass_poseidon() {
     use circuits::samples::simple::SimpleCircuit;
-    use circuits::utils::run_circuit_unsafe_full_pass;
+    use circuits::utils::run_circuit_unsafe_full_pass_no_rec;
     use circuits::utils::TranscriptHash;
     use halo2_proofs::pairing::bn256::Bn256;
     use halo2_proofs::pairing::bn256::Fr;
@@ -105,7 +96,7 @@ fn test_single_one_pass_poseidon() {
 
     let path = Path::new(path);
     let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
-    run_circuit_unsafe_full_pass::<Bn256, _>(
+    run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
         path,
         "simple-circuit",
         8,
@@ -114,18 +105,15 @@ fn test_single_one_pass_poseidon() {
         TranscriptHash::Poseidon,
         vec![[0, 0, 0, 0]],
         vec![],
-        vec![],
         true,
-        vec![],
         &mut vec![],
-        0,
     );
 }
 
 #[test]
 fn test_multi_one_pass() {
     use circuits::samples::simple::SimpleCircuit;
-    use circuits::utils::run_circuit_unsafe_full_pass;
+    use circuits::utils::run_circuit_unsafe_full_pass_no_rec;
     use circuits::utils::TranscriptHash;
     use halo2_proofs::pairing::bn256::Bn256;
     use halo2_proofs::pairing::bn256::Fr;
@@ -138,7 +126,7 @@ fn test_multi_one_pass() {
     let path = Path::new(path);
     let (circuit1, instance1) = SimpleCircuit::<Fr>::random_new_with_instance();
     let (circuit2, instance2) = SimpleCircuit::<Fr>::random_new_with_instance();
-    run_circuit_unsafe_full_pass::<Bn256, _>(
+    run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
         path,
         "simple-circuit",
         8,
@@ -147,18 +135,15 @@ fn test_multi_one_pass() {
         TranscriptHash::Blake2b,
         vec![],
         vec![],
-        vec![],
         true,
-        vec![],
         &mut vec![],
-        0,
     );
 }
 
 #[test]
 fn test_multi_one_pass_poseidon() {
     use circuits::samples::simple::SimpleCircuit;
-    use circuits::utils::run_circuit_unsafe_full_pass;
+    use circuits::utils::run_circuit_unsafe_full_pass_no_rec;
     use circuits::utils::TranscriptHash;
     use halo2_proofs::pairing::bn256::Bn256;
     use halo2_proofs::pairing::bn256::Fr;
@@ -171,7 +156,7 @@ fn test_multi_one_pass_poseidon() {
     let path = Path::new(path);
     let (circuit1, instance1) = SimpleCircuit::<Fr>::random_new_with_instance();
     let (circuit2, instance2) = SimpleCircuit::<Fr>::random_new_with_instance();
-    run_circuit_unsafe_full_pass::<Bn256, _>(
+    run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
         path,
         "simple-circuit",
         8,
@@ -180,10 +165,7 @@ fn test_multi_one_pass_poseidon() {
         TranscriptHash::Poseidon,
         vec![],
         vec![],
-        vec![],
         true,
-        vec![],
         &mut vec![],
-        0,
     );
 }

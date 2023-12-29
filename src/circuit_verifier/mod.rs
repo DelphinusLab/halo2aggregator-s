@@ -238,9 +238,12 @@ pub fn build_single_proof_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper
     hash: TranscriptHash,
     expose: Vec<[usize; 2]>,
     absorb: Vec<([usize; 3], [usize; 2])>, // the index of instance + the index of advices
-    target_aggregator_constant_hash_instance_offset: Vec<([usize; 4])>, // (proof_index, layer_idx, instance_col, instance_row)
+    target_aggregator_constant_hash_instance_offset: Vec<([usize; 2])>, // (proof_index, instance_col)
     all_constant_hash: &mut Vec<E::Scalar>,
     layer_idx: usize,
+    jump_agg_idx: usize,
+    agg_idx: usize,
+    max_layer: usize,
 ) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
@@ -257,6 +260,9 @@ where
         target_aggregator_constant_hash_instance_offset,
         all_constant_hash,
         layer_idx,
+        jump_agg_idx,
+        agg_idx,
+        max_layer,
     )
 }
 
@@ -269,9 +275,12 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
     commitment_check: Vec<[usize; 4]>,
     expose: Vec<[usize; 2]>,
     absorb: Vec<([usize; 3], [usize; 2])>, // the index of instance + the index of advices,
-    target_aggregator_constant_hash_instance_offset: Vec<([usize; 4])>, // (proof_index, layer_idx, instance_col, instance_row)
+    target_aggregator_constant_hash_instance_offset: Vec<([usize; 2])>, // (proof_index, instance_col)
     all_constant_hash: &mut Vec<E::Scalar>,
     layer_idx: usize,
+    jump_agg_idx: usize,
+    agg_idx: usize,
+    max_layer: usize,
 ) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
@@ -292,6 +301,9 @@ where
             &target_aggregator_constant_hash_instance_offset,
             all_constant_hash,
             layer_idx,
+            jump_agg_idx,
+            agg_idx,
+            max_layer,
         )
         .ok();
         rest_tries -= 1;
@@ -330,7 +342,7 @@ pub fn _build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
     commitment_check: &Vec<[usize; 4]>,
     expose: &Vec<[usize; 2]>,
     absorb: &Vec<([usize; 3], [usize; 2])>, // the index of instance + the index of advices
-    target_aggregator_constant_hash_instance_offset: &Vec<([usize; 3])>, // (proof_index, layer_idx, instance_col)
+    target_aggregator_constant_hash_instance_offset: &Vec<([usize; 2])>, // (proof_index, instance_col)
     all_constant_hash: &mut Vec<E::Scalar>,
     layer_idx: usize,
     jump_agg_idx: usize,
@@ -441,7 +453,7 @@ where
      *  params[?..]
      * )
      */
-    for [proof_index, layer_idx, instance_col] in target_aggregator_constant_hash_instance_offset {
+    for [proof_index, instance_col] in target_aggregator_constant_hash_instance_offset {
         let mut instance_index = *instance_col;
         for i in instances[0..*proof_index].iter() {
             instance_index += i.len()

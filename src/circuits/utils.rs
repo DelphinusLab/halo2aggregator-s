@@ -220,6 +220,45 @@ pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
 }
 
 /* CARE: unsafe means that to review before used in real production */
+pub fn run_circuit_unsafe_full_pass_no_rec<
+    E: MultiMillerLoop + G2AffineBaseHelper,
+    C: Circuit<E::Scalar>,
+>(
+    cache_folder: &Path,
+    prefix: &str,
+    k: u32,
+    circuits: Vec<C>,
+    instances: Vec<Vec<Vec<E::Scalar>>>,
+    hash: TranscriptHash,
+    commitment_check: Vec<[usize; 4]>,
+    expose: Vec<[usize; 2]>,
+    force_create_proof: bool,
+    all_constant_hash: &mut Vec<E::Scalar>,
+) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)>
+where
+    NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
+{
+    run_circuit_unsafe_full_pass::<E, C>(
+        cache_folder,
+        prefix,
+        k,
+        circuits,
+        instances,
+        hash,
+        commitment_check,
+        expose,
+        vec![],
+        force_create_proof,
+        vec![],
+        all_constant_hash,
+        0,
+        0,
+        0,
+        1,
+    )
+}
+
+/* CARE: unsafe means that to review before used in real production */
 pub fn run_circuit_unsafe_full_pass<
     E: MultiMillerLoop + G2AffineBaseHelper,
     C: Circuit<E::Scalar>,
@@ -234,9 +273,12 @@ pub fn run_circuit_unsafe_full_pass<
     expose: Vec<[usize; 2]>,
     absorb: Vec<([usize; 3], [usize; 2])>,
     force_create_proof: bool,
-    target_aggregator_constant_hash_instance_offset: Vec<([usize; 4])>, // (circuit_idx, layer_idx, instance_col, instance_row)
+    target_aggregator_constant_hash_instance_offset: Vec<([usize; 2])>, // (proof_index, instance_col)
     all_constant_hash: &mut Vec<E::Scalar>,
     layer_idx: usize,
+    jump_agg_idx: usize,
+    agg_idx: usize,
+    max_layer: usize,
 ) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)>
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
@@ -276,7 +318,7 @@ where
     let public_inputs_size = instances.iter().fold(0usize, |acc, x| {
         usize::max(acc, x.iter().fold(0, |acc, x| usize::max(acc, x.len())))
     });
-    let params_verifier: ParamsVerifier<E> = params.verifier(public_inputs_size).unwrap();
+    let params_verifier: ParamsVerifier<E> = params.verifier(public_inputs_size + 10).unwrap();
 
     let mut vkeys = vec![];
 
@@ -347,7 +389,10 @@ where
                         absorb.clone(),
                         target_aggregator_constant_hash_instance_offset.clone(),
                         all_constant_hash,
-                        layer_idx.clone(),
+                        layer_idx,
+                        jump_agg_idx,
+                        agg_idx,
+                        max_layer,
                     );
                 const K: u32 = 21;
                 let prover = MockProver::run(K, &circuit, vec![instances]).unwrap();
@@ -388,6 +433,9 @@ where
             target_aggregator_constant_hash_instance_offset,
             all_constant_hash,
             layer_idx,
+            jump_agg_idx,
+            agg_idx,
+            max_layer,
         );
         end_timer!(timer);
 
