@@ -338,6 +338,8 @@ pub fn test_solidity_render() {
 
     let path = Path::new(path);
     let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
+
+    let mut hash = vec![];
     let (circuit, instances) = run_circuit_unsafe_full_pass::<Bn256, _>(
         path,
         "simple-circuit",
@@ -351,10 +353,12 @@ pub fn test_solidity_render() {
         vec![],
         true,
         vec![],
-        &mut vec![],
+        &mut hash,
         0,
     )
     .unwrap();
+
+    println!("hash is {:?}", hash);
 
     let circuit0 = circuit.without_witnesses();
     run_circuit_unsafe_full_pass::<Bn256, _>(

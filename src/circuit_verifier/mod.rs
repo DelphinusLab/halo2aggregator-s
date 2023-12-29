@@ -330,9 +330,12 @@ pub fn _build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
     commitment_check: &Vec<[usize; 4]>,
     expose: &Vec<[usize; 2]>,
     absorb: &Vec<([usize; 3], [usize; 2])>, // the index of instance + the index of advices
-    target_aggregator_constant_hash_instance_offset: &Vec<([usize; 4])>, // (proof_index, layer_idx, instance_col, instance_row)
+    target_aggregator_constant_hash_instance_offset: &Vec<([usize; 3])>, // (proof_index, layer_idx, instance_col)
     all_constant_hash: &mut Vec<E::Scalar>,
     layer_idx: usize,
+    jump_agg_idx: usize,
+    agg_idx: usize,
+    max_layer: usize,
 ) -> Result<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>), UnsafeError>
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
@@ -392,6 +395,13 @@ where
         _ => unreachable!(),
     };
 
+    all_constant_hash.resize(max_layer, E::Scalar::zero());
+
+    let assigned_agg_idx = ctx
+        .base_integer_chip()
+        .base_chip()
+        .assign(E::Scalar::from(agg_idx as u64));
+
     let mut hashes = vec![];
     // assign for constant_hashes
     for h in all_constant_hash.iter() {
@@ -399,33 +409,56 @@ where
         hashes.push(v);
     }
 
-    if layer_idx < hashes.len() {
+    if layer_idx == 0 {
         ctx.base_integer_chip()
             .base_chip()
             .assert_equal(&hashes[layer_idx], &assigned_constant_hash);
     } else {
-        all_constant_hash.push(assigned_constant_hash.val);
-        hashes.push(assigned_constant_hash);
+        let candidate_hash0 = hashes[layer_idx - 1];
+        let candidate_hash1 = hashes[layer_idx];
+
+        let diff = ctx.base_integer_chip().base_chip().sum_with_constant(
+            vec![(&assigned_agg_idx, E::Scalar::one())],
+            Some(-E::Scalar::from(jump_agg_idx as u64)),
+        );
+
+        let is_jump = ctx.base_integer_chip().base_chip().is_zero(&diff);
+        let expected_hash =
+            ctx.base_integer_chip()
+                .base_chip()
+                .bisec(&is_jump, &candidate_hash0, &candidate_hash1);
+        ctx.base_integer_chip()
+            .base_chip()
+            .assert_equal(&expected_hash, &assigned_constant_hash);
     }
 
     for check in pl[0..absorb_start_idx].chunks(2).skip(1) {
         ctx.ecc_assert_equal(&check[0], &check[1]);
     }
 
-    // il[target_aggregator_circuit's hash instance col] -= msm(params[?..? + target_layer_index + 1], hashes[0..target_aggregator_circuit_layer_index + 1])
-    for [proof_index, layer_idx, instance_col, instance_row_start] in
-        target_aggregator_constant_hash_instance_offset
-    {
+    /* il[target_aggregator_circuit's hash instance col] -= msm(
+     *  [agg_idx - 1, hash[..]],
+     *  params[?..]
+     * )
+     */
+    for [proof_index, layer_idx, instance_col] in target_aggregator_constant_hash_instance_offset {
         let mut instance_index = *instance_col;
         for i in instances[0..*proof_index].iter() {
             instance_index += i.len()
         }
+
         let mut points = vec![];
         let mut scalars = vec![];
-        for i in 0..*layer_idx {
-            points.push(
-                ctx.assign_constant_point(&params.g_lagrange[i + instance_row_start].to_curve()),
-            );
+
+        let last_agg_idx = ctx.base_integer_chip().base_chip().sum_with_constant(
+            vec![(&assigned_agg_idx, E::Scalar::one())],
+            Some(-E::Scalar::one()),
+        );
+
+        points.push(ctx.assign_constant_point(&params.g_lagrange[0].to_curve()));
+        scalars.push(last_agg_idx);
+        for i in 0..max_layer {
+            points.push(ctx.assign_constant_point(&params.g_lagrange[i + 1].to_curve()));
             scalars.push(hashes[i]);
         }
 
@@ -521,16 +554,16 @@ where
         ctx.check_pairing(&[(&pl[0], &assigned_s_g2), (&pl[1], &assigned_g2)]);
     }
 
-    let mut assigned_instances = vec![&il[..], &pl[expose_start_idx..pl.len()]]
-        .concat()
-        .iter()
-        .map(|p| ctx.ecc_encode(p))
-        .collect::<Vec<_>>()
-        .concat();
-
+    let mut assigned_instances = vec![assigned_agg_idx];
     assigned_instances.append(&mut hashes);
-
-    assigned_instances.push(assigned_constant_hash);
+    assigned_instances.append(
+        &mut vec![&il[..], &pl[expose_start_idx..pl.len()]]
+            .concat()
+            .iter()
+            .map(|p| ctx.ecc_encode(p))
+            .collect::<Vec<_>>()
+            .concat(),
+    );
 
     for ai in assigned_instances.iter() {
         ctx.0
