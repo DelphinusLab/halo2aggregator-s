@@ -28,20 +28,20 @@ pub struct AggregatorChipConfig {
 
 #[derive(Clone)]
 pub struct AggregatorCircuit<C: CurveAffine> {
-    pub records: Rc<Records<C::ScalarExt>>,
-    instances: Vec<AssignedValue<C::ScalarExt>>,
+    pub records: Rc<Records<C::Scalar>>,
+    instances: Vec<AssignedValue<C::Scalar>>,
 }
 
 impl<C: CurveAffine> AggregatorCircuit<C> {
     pub fn new(
-        records: Rc<Records<C::ScalarExt>>,
-        instances: Vec<AssignedValue<C::ScalarExt>>,
+        records: Rc<Records<C::Scalar>>,
+        instances: Vec<AssignedValue<C::Scalar>>,
     ) -> Self {
         Self { records, instances }
     }
 }
 
-impl<C: CurveAffine> Circuit<C::ScalarExt> for AggregatorCircuit<C> {
+impl<C: CurveAffine> Circuit<C::Scalar> for AggregatorCircuit<C> {
     type Config = AggregatorChipConfig;
     type FloorPlanner = V1;
 
@@ -49,10 +49,10 @@ impl<C: CurveAffine> Circuit<C::ScalarExt> for AggregatorCircuit<C> {
         self.clone()
     }
 
-    fn configure(meta: &mut ConstraintSystem<C::ScalarExt>) -> Self::Config {
+    fn configure(meta: &mut ConstraintSystem<C::Scalar>) -> Self::Config {
         let base_chip_config = BaseChip::configure(meta);
         let select_chip_config = SelectChip::configure(meta);
-        let range_chip_config = RangeChip::<C::ScalarExt>::configure(meta);
+        let range_chip_config = RangeChip::<C::Scalar>::configure(meta);
         let instance_col = meta.instance_column();
         meta.enable_equality(instance_col);
         AggregatorChipConfig {
@@ -66,13 +66,13 @@ impl<C: CurveAffine> Circuit<C::ScalarExt> for AggregatorCircuit<C> {
     fn synthesize(
         &self,
         config: Self::Config,
-        mut layouter: impl Layouter<C::ScalarExt>,
+        mut layouter: impl Layouter<C::Scalar>,
     ) -> Result<(), Error> {
         let timer = start_timer!(|| "synthesize");
 
         let base_chip = BaseChip::new(config.base_chip_config);
         let select_chip = SelectChip::new(config.select_chip_config);
-        let range_chip = RangeChip::<C::ScalarExt>::new(config.range_chip_config);
+        let range_chip = RangeChip::<C::Scalar>::new(config.range_chip_config);
 
         let mut instance_cells = None;
 
