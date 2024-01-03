@@ -21,3 +21,6 @@ lazy_static = "1.4.0"
 default = []
 cuda = ["halo2_proofs/cuda", "halo2ecc-s/cuda"]
 unsafe = []
+
+[patch."https://github.com/DelphinusLab/halo2-gpu-specific.git"]
+halo2_proofs = { git = "https://github.com/mooreland/halo2-gpu-specific.git", branch = "add_shuffle" }
