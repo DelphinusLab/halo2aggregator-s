@@ -278,7 +278,7 @@ pub fn run_circuit_unsafe_full_pass<
     layer_idx: usize,
     jump_agg_idx: usize,
     agg_idx: usize,
-    max_layer: usize,
+    max_agg: usize,
 ) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)>
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
@@ -392,7 +392,7 @@ where
                         layer_idx,
                         jump_agg_idx,
                         agg_idx,
-                        max_layer,
+                        max_agg,
                     );
                 const K: u32 = 21;
                 let prover = MockProver::run(K, &circuit, vec![instances]).unwrap();
@@ -435,7 +435,125 @@ where
             layer_idx,
             jump_agg_idx,
             agg_idx,
-            max_layer,
+            max_agg,
+        );
+        end_timer!(timer);
+
+        if false {
+            const K: u32 = 21;
+            let prover = MockProver::run(K, &circuit, vec![instances.clone()]).unwrap();
+            assert_eq!(prover.verify(), Ok(()));
+        }
+
+        Some((circuit, instances))
+    } else {
+        None
+    }
+}
+
+/* CARE: unsafe means that to review before used in real production */
+pub fn run_circuit_with_agg_unsafe_full_pass<
+    E: MultiMillerLoop + G2AffineBaseHelper,
+    C: Circuit<E::Scalar>,
+>(
+    cache_folder: &Path,
+    prefix: &str,
+    k: u32,
+    circuits: Vec<C>,
+    instances: Vec<Vec<Vec<E::Scalar>>>,
+    agg_circuit: AggregatorCircuit<E::G1Affine>,
+    last_agg_instance: Vec<E::Scalar>,
+    hash: TranscriptHash,
+    commitment_check: Vec<[usize; 4]>,
+    expose: Vec<[usize; 2]>,
+    absorb: Vec<([usize; 3], [usize; 2])>,
+    force_create_proof: bool,
+    target_aggregator_constant_hash_instance_offset: Vec<([usize; 2])>, // (proof_index, instance_col)
+    all_constant_hash: &mut Vec<E::Scalar>,
+    layer_idx: usize,
+    jump_agg_idx: usize,
+    agg_idx: usize,
+    max_agg: usize,
+) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)>
+where
+    NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
+{
+    // 1. setup params
+    let params =
+        load_or_build_unsafe_params::<E>(k, Some(&cache_folder.join(format!("K{}.params", k))));
+
+    let mut vkeys = vec![];
+    let mut proofs = vec![];
+
+    for (i, circuit) in circuits.into_iter().enumerate() {
+        // 2. setup vkey
+        let vkey = load_or_build_vkey::<E, C>(
+            &params,
+            &circuit,
+            Some(&cache_folder.join(format!("{}.{}.vkey.data", prefix, i))),
+        );    
+        vkeys.push(vkey.clone());
+    
+        // 3. create proof
+        let proof = load_or_create_proof::<E, C>(
+            &params,
+            vkey,
+            circuit,
+            &instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>(),
+            Some(&cache_folder.join(format!("{}.{}.transcript.data", prefix, i))),
+            hash,
+            !force_create_proof,
+        );
+        proofs.push(proof);
+
+        store_instance(
+            &instances[i],
+            &cache_folder.join(format!("{}.{}.instance.data", prefix, i)),
+        );
+    }
+
+    let agg_vkey = load_or_build_vkey::<E, _>(
+        &params,
+        &agg_circuit,
+        Some(&cache_folder.join(format!("{}.agg.{}.vkey.data", prefix, agg_idx))),
+    );
+    vkeys.push(agg_vkey.clone());
+
+    let agg_proof = load_or_create_proof::<E, _>(
+        &params,
+        agg_vkey,
+        agg_circuit,
+        &[&last_agg_instance[..]][..],
+        Some(&cache_folder.join(format!("{}.agg.{}.transcript.data", prefix, agg_idx))),
+        hash,
+        !force_create_proof,
+    );
+    proofs.push(agg_proof);
+
+    // 4. many verify
+    let public_inputs_size = instances.iter().fold(0usize, |acc, x| {
+        usize::max(acc, x.iter().fold(0, |acc, x| usize::max(acc, x.len())))
+    });
+    let params_verifier: ParamsVerifier<E> = params.verifier(public_inputs_size + max_agg).unwrap();
+
+    // circuit multi check
+    if hash == TranscriptHash::Poseidon {
+        let timer = start_timer!(|| "circuit verify single proof");
+        let (circuit, instances) = build_aggregate_verify_circuit::<E>(
+            &params_verifier,
+            &vkeys[..].iter().collect::<Vec<_>>(),
+            instances.iter().collect(),
+            proofs,
+            hash,
+            commitment_check,
+            expose,
+            absorb,
+            target_aggregator_constant_hash_instance_offset,
+            all_constant_hash,
+            layer_idx,
+            jump_agg_idx,
+            agg_idx,
+            max_agg,
         );
         end_timer!(timer);
 
