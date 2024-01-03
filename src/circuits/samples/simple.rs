@@ -87,6 +87,12 @@ impl<F: FieldExt> Circuit<F> for SimpleCircuit<F> {
         meta.enable_equality(advices[0]);
         meta.enable_equality(advices[1]);
 
+        meta.shuffle("shuffle", |meta| {
+            let a = meta.query_advice(advices[0], Rotation(0));
+            let b = meta.query_advice(advices[1], Rotation(0));
+            vec![(a, b)]
+        });
+
         SimpleConfig { advices, sel }
     }
 

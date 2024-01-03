@@ -73,7 +73,7 @@ impl<C: CurveAffine> Evaluated<C> {
         vec![
             l_0 * (one - z_x),
             (l_last * ((z_x * z_x) - z_x)),
-            (((z_wx * (input_eval + gamma)) - (z_x * (table_eval + gamma)))
+            (((z_wx * (table_eval + gamma)) - (z_x * (input_eval + gamma)))
                 * (one - (l_last + l_blind))),
         ]
     }
