@@ -407,7 +407,16 @@ where
         _ => unreachable!(),
     };
 
+    for check in pl[0..absorb_start_idx].chunks(2).skip(1) {
+        ctx.ecc_assert_equal(&check[0], &check[1]);
+    }
+
     all_constant_hash.resize(max_layer, E::Scalar::zero());
+    if layer_idx > 0 && agg_idx == jump_agg_idx {
+        all_constant_hash[layer_idx - 1] = assigned_constant_hash.val;
+    } else {
+        all_constant_hash[layer_idx] = assigned_constant_hash.val;
+    }
 
     let assigned_agg_idx = ctx
         .base_integer_chip()
@@ -442,44 +451,77 @@ where
         ctx.base_integer_chip()
             .base_chip()
             .assert_equal(&expected_hash, &assigned_constant_hash);
-    }
 
-    for check in pl[0..absorb_start_idx].chunks(2).skip(1) {
-        ctx.ecc_assert_equal(&check[0], &check[1]);
-    }
+        /* il[target_aggregator_circuit's hash instance col] -= msm(
+         *  [agg_idx - 1, hash[..]],
+         *  params[?..]
+         * )
+         */
+        for [proof_index, instance_col] in target_aggregator_constant_hash_instance_offset {
+            let mut instance_index = *instance_col;
+            for i in instances[0..*proof_index].iter() {
+                instance_index += i.len()
+            }
 
-    /* il[target_aggregator_circuit's hash instance col] -= msm(
-     *  [agg_idx - 1, hash[..]],
-     *  params[?..]
-     * )
-     */
-    for [proof_index, instance_col] in target_aggregator_constant_hash_instance_offset {
-        let mut instance_index = *instance_col;
-        for i in instances[0..*proof_index].iter() {
-            instance_index += i.len()
+            let mut points = vec![];
+            let mut scalars = vec![];
+
+            let last_agg_idx = ctx.base_integer_chip().base_chip().sum_with_constant(
+                vec![(&assigned_agg_idx, E::Scalar::one())],
+                Some(-E::Scalar::one()),
+            );
+
+            points.push(ctx.assign_constant_point(&params.g_lagrange[0].to_curve()));
+            scalars.push(last_agg_idx);
+
+            let diff_of_jump_agg_follower = ctx.base_integer_chip().base_chip().sum_with_constant(
+                vec![(&assigned_agg_idx, E::Scalar::one())],
+                Some(-E::Scalar::from(jump_agg_idx as u64 + 1)),
+            );
+            let is_jump_follower = ctx
+                .base_integer_chip()
+                .base_chip()
+                .is_zero(&diff_of_jump_agg_follower);
+
+            let is_jump_or_jump_follower = ctx
+                .base_integer_chip()
+                .base_chip()
+                .and(&is_jump, &is_jump_follower);
+
+            let zero = ctx
+                .base_integer_chip()
+                .base_chip()
+                .assign_constant(E::Scalar::zero());
+
+            for i in 0..=layer_idx {
+                points.push(ctx.assign_constant_point(&params.g_lagrange[i + 1].to_curve()));
+                if i <= layer_idx - 2 {
+                    scalars.push(hashes[i]);
+                } else if i == layer_idx - 1 {
+                    // Jump aggregator excludes its layer (each layer has two hashes)
+                    let scalar = ctx
+                        .base_integer_chip()
+                        .base_chip()
+                        .bisec(&is_jump, &zero, &hashes[i]);
+                    scalars.push(scalar);
+                } else {
+                    // Jump follower aggregator only include jump layer hash
+                    let scalar = ctx.base_integer_chip().base_chip().bisec(
+                        &is_jump_or_jump_follower,
+                        &zero,
+                        &hashes[i],
+                    );
+                    scalars.push(scalar);
+                }
+            }
+
+            let msm_c = ctx.msm(&points, &scalars);
+            let diff_commit = ctx.ecc_neg(&msm_c);
+            let instance_commit = il[instance_index].clone();
+            let instance_commit_curv = ctx.to_point_with_curvature(instance_commit);
+            let update_commit = ctx.ecc_add(&instance_commit_curv, &diff_commit);
+            il[instance_index] = update_commit;
         }
-
-        let mut points = vec![];
-        let mut scalars = vec![];
-
-        let last_agg_idx = ctx.base_integer_chip().base_chip().sum_with_constant(
-            vec![(&assigned_agg_idx, E::Scalar::one())],
-            Some(-E::Scalar::one()),
-        );
-
-        points.push(ctx.assign_constant_point(&params.g_lagrange[0].to_curve()));
-        scalars.push(last_agg_idx);
-        for i in 0..max_layer {
-            points.push(ctx.assign_constant_point(&params.g_lagrange[i + 1].to_curve()));
-            scalars.push(hashes[i]);
-        }
-
-        let msm_c = ctx.msm(&points, &scalars);
-        let diff_commit = ctx.ecc_neg(&msm_c);
-        let instance_commit = il[instance_index].clone();
-        let instance_commit_curv = ctx.to_point_with_curvature(instance_commit);
-        let update_commit = ctx.ecc_add(&instance_commit_curv, &diff_commit);
-        il[instance_index] = update_commit;
     }
 
     for (i, c) in pl[absorb_start_idx..expose_start_idx].iter().enumerate() {

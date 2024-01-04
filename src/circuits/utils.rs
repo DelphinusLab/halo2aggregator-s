@@ -278,7 +278,7 @@ pub fn run_circuit_unsafe_full_pass<
     layer_idx: usize,
     jump_agg_idx: usize,
     agg_idx: usize,
-    max_agg: usize,
+    max_agg_layer: usize,
 ) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)>
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
@@ -392,7 +392,7 @@ where
                         layer_idx,
                         jump_agg_idx,
                         agg_idx,
-                        max_agg,
+                        max_agg_layer,
                     );
                 const K: u32 = 21;
                 let prover = MockProver::run(K, &circuit, vec![instances]).unwrap();
@@ -435,7 +435,7 @@ where
             layer_idx,
             jump_agg_idx,
             agg_idx,
-            max_agg,
+            max_agg_layer,
         );
         end_timer!(timer);
 
@@ -460,7 +460,7 @@ pub fn run_circuit_with_agg_unsafe_full_pass<
     prefix: &str,
     k: u32,
     circuits: Vec<C>,
-    instances: Vec<Vec<Vec<E::Scalar>>>,
+    mut instances: Vec<Vec<Vec<E::Scalar>>>,
     agg_circuit: AggregatorCircuit<E::G1Affine>,
     last_agg_instance: Vec<E::Scalar>,
     hash: TranscriptHash,
@@ -473,7 +473,7 @@ pub fn run_circuit_with_agg_unsafe_full_pass<
     layer_idx: usize,
     jump_agg_idx: usize,
     agg_idx: usize,
-    max_agg: usize,
+    max_agg_layer: usize,
 ) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)>
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
@@ -491,9 +491,9 @@ where
             &params,
             &circuit,
             Some(&cache_folder.join(format!("{}.{}.vkey.data", prefix, i))),
-        );    
+        );
         vkeys.push(vkey.clone());
-    
+
         // 3. create proof
         let proof = load_or_create_proof::<E, C>(
             &params,
@@ -530,11 +530,12 @@ where
     );
     proofs.push(agg_proof);
 
+    instances.push(vec![last_agg_instance]);
     // 4. many verify
     let public_inputs_size = instances.iter().fold(0usize, |acc, x| {
         usize::max(acc, x.iter().fold(0, |acc, x| usize::max(acc, x.len())))
     });
-    let params_verifier: ParamsVerifier<E> = params.verifier(public_inputs_size + max_agg).unwrap();
+    let params_verifier: ParamsVerifier<E> = params.verifier(public_inputs_size).unwrap();
 
     // circuit multi check
     if hash == TranscriptHash::Poseidon {
@@ -553,7 +554,7 @@ where
             layer_idx,
             jump_agg_idx,
             agg_idx,
-            max_agg,
+            max_agg_layer,
         );
         end_timer!(timer);
 
