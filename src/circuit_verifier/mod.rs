@@ -431,9 +431,13 @@ where
     }
 
     if layer_idx == 0 {
+        assert_eq!(agg_idx, 0);
         ctx.base_integer_chip()
             .base_chip()
             .assert_equal(&hashes[layer_idx], &assigned_constant_hash);
+        ctx.base_integer_chip()
+            .base_chip()
+            .assert_constant(&assigned_agg_idx, E::Scalar::zero());
     } else {
         let candidate_hash0 = hashes[layer_idx - 1];
         let candidate_hash1 = hashes[layer_idx];
