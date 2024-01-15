@@ -9,7 +9,7 @@ edition = "2021"
 blake2b_simd = "1"
 halo2_proofs = { git = "https://github.com/DelphinusLab/halo2-gpu-specific.git", default-features = true }
 halo2ecc-s = { git = "https://github.com/lanbones/halo2ecc-s.git", tag = "bisect-lookup-0.3.3" }
-ark-std = { version = "0.3", features = ["print-trace"] }
+ark-std = { version = "0.4.0" }
 poseidon = { git = "https://github.com/lanbones/poseidon" }
 num-integer = "0.1"
 num-bigint = { version = "0.4", features = ["rand"] }
@@ -19,5 +19,6 @@ lazy_static = "1.4.0"
 
 [features]
 default = []
+profile = ["ark-std/print-trace"]
 cuda = ["halo2_proofs/cuda", "halo2ecc-s/cuda"]
 unsafe = []

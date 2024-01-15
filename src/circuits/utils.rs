@@ -84,7 +84,6 @@ pub fn load_or_build_vkey<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
     let verify_circuit_vk = keygen_vk(&params, circuit).expect("keygen_vk should not fail");
 
     if let Some(cache_file) = &cache_file_opt {
-        println!("write vkey to {:?}", cache_file);
         let mut fd = std::fs::File::create(&cache_file).unwrap();
         verify_circuit_vk.write(&mut fd).unwrap();
     };
@@ -94,7 +93,6 @@ pub fn load_or_build_vkey<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
 
 pub fn load_instance<E: MultiMillerLoop>(n_rows: &[u32], cache_file: &Path) -> Vec<Vec<E::Scalar>> {
     assert!(Path::exists(&cache_file));
-    println!("read instance from {:?}", cache_file);
     let mut fd = std::fs::File::open(&cache_file).unwrap();
     let mut instances = vec![];
     for n_row in n_rows {
@@ -108,7 +106,6 @@ pub fn load_instance<E: MultiMillerLoop>(n_rows: &[u32], cache_file: &Path) -> V
 }
 
 pub fn store_instance<F: FieldExt>(instances: &Vec<Vec<F>>, cache_file: &Path) {
-    println!("write instance to {:?}", cache_file);
     let mut fd = std::fs::File::create(&cache_file).unwrap();
     for instance_col in instances.iter() {
         for instance in instance_col {
@@ -139,7 +136,6 @@ pub fn instance_to_instance_commitment<E: MultiMillerLoop>(
 }
 
 pub fn load_proof(cache_file: &Path) -> Vec<u8> {
-    println!("read transcript from {:?}", cache_file);
     let mut fd = std::fs::File::open(&cache_file).unwrap();
     let mut buf = vec![];
     fd.read_to_end(&mut buf).unwrap();
@@ -157,7 +153,6 @@ pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
 ) -> Vec<u8> {
     if let Some(cache_file) = &cache_file_opt {
         if try_load_proof && Path::exists(&cache_file) {
-            println!("read transcript from {:?}", cache_file);
             return load_proof(&cache_file);
         }
     }
