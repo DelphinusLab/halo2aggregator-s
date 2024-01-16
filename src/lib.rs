@@ -166,10 +166,14 @@ fn test_multi_one_pass_poseidon() {
 
 #[test]
 fn test_rec_aggregator() {
+    use crate::circuits::utils::calc_hash;
+    use ark_std::end_timer;
+    use ark_std::start_timer;
     use circuits::samples::simple::SimpleCircuit;
     use circuits::utils::run_circuit_unsafe_full_pass;
     use circuits::utils::run_circuit_with_agg_unsafe_full_pass;
     use circuits::utils::TranscriptHash;
+    use halo2_proofs::pairing::bn256;
     use halo2_proofs::pairing::bn256::Bn256;
     use halo2_proofs::pairing::bn256::Fr;
     use std::fs::DirBuilder;
@@ -203,85 +207,52 @@ fn test_rec_aggregator() {
         hash, agg_l0_instances
     );
 
-    println!("build agg 1");
-    let (agg_l1_jump, agg_l1_jump_instances, hash) =
-        run_circuit_with_agg_unsafe_full_pass::<Bn256, _>(
+    let mut hashes = vec![hash];
+    let mut final_hashes = vec![hash];
+
+    let mut last_agg = agg_l0;
+    let mut last_agg_instances = agg_l0_instances;
+    for i in 1..5 {
+        let (agg, instances, hash) = run_circuit_with_agg_unsafe_full_pass::<Bn256, _>(
             path,
             "simple-circuit",
             k,
             vec![circuit.clone()],
             vec![target_instances.clone()],
-            agg_l0,
-            agg_l0_instances,
+            last_agg,
+            last_agg_instances,
             TranscriptHash::Poseidon,
             vec![[0, 0, 0, 0]],
             vec![],
             vec![],
             false,
-            &vec![(1, 0, hash)],
-            1,
+            &vec![(1, 0, *final_hashes.last().unwrap())],
+            i,
         )
         .unwrap();
+        println!(
+            "build agg {} done, hash is {:?}, instance is {:?}",
+            i, hash, instances
+        );
+        hashes.push(hash);
+        final_hashes.push(instances[0]);
+        last_agg = agg;
+        last_agg_instances = instances;
+    }
 
-    println!("build agg 2");
-    let (agg_l1_non_jump0, agg_l1_non_jump_instances0, hash) =
-        run_circuit_with_agg_unsafe_full_pass::<Bn256, _>(
-            path,
-            "simple-circuit",
-            k,
-            vec![circuit.clone()],
-            vec![target_instances.clone()],
-            agg_l1_jump,
-            agg_l1_jump_instances,
-            TranscriptHash::Poseidon,
-            vec![[0, 0, 0, 0]],
-            vec![],
-            vec![],
-            false,
-            &vec![(1, 0, hash)],
-            2,
-        )
-        .unwrap();
+    let t0_hash = hashes[0];
+    let t1_hash = hashes[0];
+    let t0_a0_hash = hashes[1];
+    let t1_a0_hash = hashes[1];
+    let t0_a1_hash = hashes[2];
+    let t1_a1_hash = hashes[2];
 
-    println!("build agg 3");
-    let (agg_l1_non_jump1, agg_l1_non_jump_instances1, hash) =
-        run_circuit_with_agg_unsafe_full_pass::<Bn256, _>(
-            path,
-            "simple-circuit",
-            k,
-            vec![circuit.clone()],
-            vec![target_instances.clone()],
-            agg_l1_non_jump0,
-            agg_l1_non_jump_instances0,
-            TranscriptHash::Poseidon,
-            vec![[0, 0, 0, 0]],
-            vec![],
-            vec![],
-            false,
-            &vec![(1, 0, hash)],
-            3,
-        )
-        .unwrap();
+    let timer = start_timer!(|| "calc final hashes");
+    let final_hashes_expected = calc_hash::<bn256::G1Affine>(
+        t1_hash, t0_hash, t1_a0_hash, t0_a0_hash, t1_a1_hash, t0_a1_hash, 16,
+    );
+    end_timer!(timer);
 
-    println!("build agg 4");
-    let (_, _, hash) =
-        run_circuit_with_agg_unsafe_full_pass::<Bn256, _>(
-            path,
-            "simple-circuit",
-            k,
-            vec![circuit.clone()],
-            vec![target_instances.clone()],
-            agg_l1_non_jump1,
-            agg_l1_non_jump_instances1,
-            TranscriptHash::Poseidon,
-            vec![[0, 0, 0, 0]],
-            vec![],
-            vec![],
-            false,
-            &vec![(1, 0, hash)],
-            4,
-        )
-        .unwrap();
-
-    println!("constant hash {:?}", hash);
+    println!("final_hashes_expected is {:?}", final_hashes_expected);
+    assert_eq!(final_hashes_expected[0..5], final_hashes[0..5]);
 }

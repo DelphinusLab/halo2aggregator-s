@@ -2,6 +2,7 @@ use crate::circuit_verifier::build_aggregate_verify_circuit;
 use crate::circuit_verifier::circuit::AggregatorCircuit;
 use crate::circuit_verifier::G2AffineBaseHelper;
 use crate::native_verifier::verify_proofs;
+use crate::transcript::poseidon::PoseidonPure;
 use crate::transcript::poseidon::PoseidonRead;
 use crate::transcript::poseidon::PoseidonWrite;
 use crate::transcript::sha256::ShaRead;
@@ -10,6 +11,7 @@ use ark_std::end_timer;
 use ark_std::rand::rngs::OsRng;
 use ark_std::start_timer;
 use halo2_proofs::arithmetic::BaseExt;
+use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::arithmetic::MultiMillerLoop;
 use halo2_proofs::dev::MockProver;
@@ -25,6 +27,7 @@ use halo2_proofs::poly::commitment::Params;
 use halo2_proofs::poly::commitment::ParamsVerifier;
 use halo2_proofs::transcript::Blake2bRead;
 use halo2_proofs::transcript::Blake2bWrite;
+use halo2_proofs::transcript::Transcript;
 use halo2ecc_s::circuit::pairing_chip::PairingChipOps;
 use halo2ecc_s::context::NativeScalarEccContext;
 use std::io::Read;
@@ -261,6 +264,44 @@ where
     )
 }
 
+// t: target circuits, t0 means non-end circuit, t1 means end circuit
+// a: aggregatore circuits
+pub fn calc_hash<C: CurveAffine>(
+    t1_hash: C::Scalar, // end on first
+    t0_hash: C::Scalar,
+    t1_a0_hash: C::Scalar, // end on second
+    t0_a0_hash: C::Scalar,
+    t1_a1_hash: C::Scalar, // end on third
+    t0_a1_hash: C::Scalar,
+    max: usize,
+) -> Vec<C::Scalar> {
+    let mut res = vec![t1_hash];
+    let mut last = t0_hash;
+
+    let hasher_default = PoseidonPure::<C>::default();
+
+    for i in 1..max {
+        let mut hasher = hasher_default.clone();
+        hasher.common_scalar(last).unwrap();
+
+        let mut hasher_end = hasher.clone();
+        let mut hasher_next = hasher;
+
+        if i == 1 {
+            hasher_end.common_scalar(t1_a0_hash).unwrap();
+            hasher_next.common_scalar(t0_a0_hash).unwrap();
+        } else {
+            hasher_end.common_scalar(t1_a1_hash).unwrap();
+            hasher_next.common_scalar(t0_a1_hash).unwrap();
+        }
+
+        res.push(*hasher_end.squeeze_challenge_scalar::<()>());
+        last = *hasher_next.squeeze_challenge_scalar::<()>();
+    }
+
+    res
+}
+
 /* CARE: unsafe means that to review before used in real production */
 pub fn run_circuit_unsafe_full_pass<
     E: MultiMillerLoop + G2AffineBaseHelper,
@@ -464,7 +505,7 @@ pub fn run_circuit_with_agg_unsafe_full_pass<
     absorb: Vec<([usize; 3], [usize; 2])>,
     force_create_proof: bool,
     target_aggregator_constant_hash_instance_offset: &Vec<(usize, usize, E::Scalar)>, // (proof_index, instance_col, hash)
-    agg_idx: usize
+    agg_idx: usize,
 ) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>, E::Scalar)>
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,

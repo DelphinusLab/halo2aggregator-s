@@ -204,3 +204,55 @@ impl<W: io::Write, C: CurveAffine> TranscriptWrite<C, PoseidonEncodedChallenge<C
         self.writer.write_all(data.as_ref())
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct PoseidonPure<C: CurveAffine> {
+    state: Poseidon<C::ScalarExt, T, RATE>,
+}
+
+impl<C: CurveAffine> Default for PoseidonPure<C> {
+    fn default() -> Self {
+        Self {
+            state: Poseidon::new(R_F, R_P),
+        }
+    }
+}
+
+impl<C: CurveAffine> Transcript<C, PoseidonEncodedChallenge<C>> for PoseidonPure<C> {
+    fn squeeze_challenge(&mut self) -> PoseidonEncodedChallenge<C> {
+        self.state.update(&[C::ScalarExt::from(PREFIX_CHALLENGE)]);
+        PoseidonEncodedChallenge::new(&self.state.squeeze())
+    }
+
+    fn common_point(&mut self, point: C) -> io::Result<()> {
+        self.state.update(&[C::ScalarExt::from(PREFIX_POINT)]);
+        let x_y: Option<_> = point.coordinates().map(|c| (*c.x(), *c.y())).into();
+        let (x, y) = x_y.unwrap_or((C::Base::zero(), C::Base::zero()));
+        let x_bn = field_to_bn(&x);
+        let y_bn = field_to_bn(&y);
+
+        let bits = RANGE_VALUE_DECOMPOSE * MAX_BITS;
+        let chunk_bits = bits * 2;
+
+        let chunk0 = &x_bn & ((BigUint::from(1u64) << chunk_bits) - 1u64);
+        let chunk1 =
+            (x_bn >> chunk_bits) + ((&y_bn & ((BigUint::from(1u64) << bits) - 1u64)) << bits);
+        let chunk2 = y_bn >> bits;
+
+        self.state.update(
+            &[chunk0, chunk1, chunk2]
+                .iter()
+                .map(|x| bn_to_field(&x))
+                .collect::<Vec<_>>(),
+        );
+
+        Ok(())
+    }
+
+    fn common_scalar(&mut self, scalar: <C>::Scalar) -> io::Result<()> {
+        self.state.update(&[C::ScalarExt::from(PREFIX_SCALAR)]);
+        self.state.update(&[scalar]);
+
+        Ok(())
+    }
+}
