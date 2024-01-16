@@ -34,7 +34,6 @@ fn test_single_one_pass() {
         vec![],
         vec![],
         true,
-        &mut vec![],
     );
 }
 
@@ -53,7 +52,7 @@ fn test_single_one_pass_with_verify_circuit() {
 
     let path = Path::new(path);
     let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
-    let (circuit, instances) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
+    let (circuit, instances, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
         path,
         "simple-circuit",
         8,
@@ -63,7 +62,6 @@ fn test_single_one_pass_with_verify_circuit() {
         vec![[0, 0, 0, 0]],
         vec![],
         true,
-        &mut vec![],
     )
     .unwrap();
 
@@ -77,7 +75,6 @@ fn test_single_one_pass_with_verify_circuit() {
         vec![],
         vec![],
         true,
-        &mut vec![],
     );
 }
 
@@ -106,7 +103,6 @@ fn test_single_one_pass_poseidon() {
         vec![[0, 0, 0, 0]],
         vec![],
         true,
-        &mut vec![],
     );
 }
 
@@ -136,7 +132,6 @@ fn test_multi_one_pass() {
         vec![],
         vec![],
         true,
-        &mut vec![],
     );
 }
 
@@ -166,7 +161,6 @@ fn test_multi_one_pass_poseidon() {
         vec![],
         vec![],
         true,
-        &mut vec![],
     );
 }
 
@@ -187,12 +181,10 @@ fn test_rec_aggregator() {
     let path = Path::new(path);
     let k = 22;
 
-    const MAX_AGG: usize = 3;
-    let mut hashes = vec![Fr::zero(); MAX_AGG];
     let (circuit, target_instances) = SimpleCircuit::<Fr>::default_with_instance();
 
     println!("build agg 0");
-    let (agg_l0, agg_l0_instances) = run_circuit_unsafe_full_pass::<Bn256, _>(
+    let (agg_l0, agg_l0_instances, hash) = run_circuit_unsafe_full_pass::<Bn256, _>(
         path,
         "simple-circuit",
         k,
@@ -203,107 +195,93 @@ fn test_rec_aggregator() {
         vec![],
         vec![],
         false,
-        vec![],
-        &mut hashes,
-        0,
-        0,
-        0,
-        3,
+        &vec![],
     )
     .unwrap();
-    println!("build agg 0 done, hashes is {:?}, instance is {:?}", hashes, agg_l0_instances);
+    println!(
+        "build agg 0 done, hash is {:?}, instance is {:?}",
+        hash, agg_l0_instances
+    );
 
     println!("build agg 1");
-    let (agg_l1_jump, agg_l1_jump_instances) = run_circuit_with_agg_unsafe_full_pass::<Bn256, _>(
-        path,
-        "simple-circuit",
-        k,
-        vec![circuit.clone()],
-        vec![target_instances.clone()],
-        agg_l0,
-        agg_l0_instances,
-        TranscriptHash::Poseidon,
-        vec![[0, 0, 0, 0]],
-        vec![],
-        vec![],
-        false,
-        vec![[1, 0]],
-        &mut hashes,
-        2,
-        1,
-        1,
-        3,
-    )
-    .unwrap();
+    let (agg_l1_jump, agg_l1_jump_instances, hash) =
+        run_circuit_with_agg_unsafe_full_pass::<Bn256, _>(
+            path,
+            "simple-circuit",
+            k,
+            vec![circuit.clone()],
+            vec![target_instances.clone()],
+            agg_l0,
+            agg_l0_instances,
+            TranscriptHash::Poseidon,
+            vec![[0, 0, 0, 0]],
+            vec![],
+            vec![],
+            false,
+            &vec![(1, 0, hash)],
+            1,
+        )
+        .unwrap();
 
     println!("build agg 2");
-    let (agg_l1_non_jump0, agg_l1_non_jump_instances0) = run_circuit_with_agg_unsafe_full_pass::<Bn256, _>(
-        path,
-        "simple-circuit",
-        k,
-        vec![circuit.clone()],
-        vec![target_instances.clone()],
-        agg_l1_jump,
-        agg_l1_jump_instances,
-        TranscriptHash::Poseidon,
-        vec![[0, 0, 0, 0]],
-        vec![],
-        vec![],
-        false,
-        vec![[1, 0]],
-        &mut hashes,
-        2,
-        1,
-        2,
-        3,
-    )
-    .unwrap();
+    let (agg_l1_non_jump0, agg_l1_non_jump_instances0, hash) =
+        run_circuit_with_agg_unsafe_full_pass::<Bn256, _>(
+            path,
+            "simple-circuit",
+            k,
+            vec![circuit.clone()],
+            vec![target_instances.clone()],
+            agg_l1_jump,
+            agg_l1_jump_instances,
+            TranscriptHash::Poseidon,
+            vec![[0, 0, 0, 0]],
+            vec![],
+            vec![],
+            false,
+            &vec![(1, 0, hash)],
+            2,
+        )
+        .unwrap();
 
     println!("build agg 3");
-    let (agg_l1_non_jump1, agg_l1_non_jump_instances1) = run_circuit_with_agg_unsafe_full_pass::<Bn256, _>(
-        path,
-        "simple-circuit",
-        k,
-        vec![circuit.clone()],
-        vec![target_instances.clone()],
-        agg_l1_non_jump0,
-        agg_l1_non_jump_instances0,
-        TranscriptHash::Poseidon,
-        vec![[0, 0, 0, 0]],
-        vec![],
-        vec![],
-        false,
-        vec![[1, 0]],
-        &mut hashes,
-        2,
-        1,
-        3,
-        3,
-    )
-    .unwrap();
+    let (agg_l1_non_jump1, agg_l1_non_jump_instances1, hash) =
+        run_circuit_with_agg_unsafe_full_pass::<Bn256, _>(
+            path,
+            "simple-circuit",
+            k,
+            vec![circuit.clone()],
+            vec![target_instances.clone()],
+            agg_l1_non_jump0,
+            agg_l1_non_jump_instances0,
+            TranscriptHash::Poseidon,
+            vec![[0, 0, 0, 0]],
+            vec![],
+            vec![],
+            false,
+            &vec![(1, 0, hash)],
+            3,
+        )
+        .unwrap();
 
     println!("build agg 4");
-    let (agg_l1_non_jump2, agg_l1_non_jump_instances2) = run_circuit_with_agg_unsafe_full_pass::<Bn256, _>(
-        path,
-        "simple-circuit",
-        k,
-        vec![circuit.clone()],
-        vec![target_instances.clone()],
-        agg_l1_non_jump1,
-        agg_l1_non_jump_instances1,
-        TranscriptHash::Poseidon,
-        vec![[0, 0, 0, 0]],
-        vec![],
-        vec![],
-        false,
-        vec![[1, 0]],
-        &mut hashes,
-        2,
-        1,
-        4,
-        3,
-    )
-    .unwrap();
+    let (_, _, hash) =
+        run_circuit_with_agg_unsafe_full_pass::<Bn256, _>(
+            path,
+            "simple-circuit",
+            k,
+            vec![circuit.clone()],
+            vec![target_instances.clone()],
+            agg_l1_non_jump1,
+            agg_l1_non_jump_instances1,
+            TranscriptHash::Poseidon,
+            vec![[0, 0, 0, 0]],
+            vec![],
+            vec![],
+            false,
+            &vec![(1, 0, hash)],
+            4,
+        )
+        .unwrap();
 
-    println!("constant hashes {:?}", hashes);
+    println!("constant hash {:?}", hash);
 }

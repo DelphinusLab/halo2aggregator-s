@@ -242,8 +242,7 @@ pub fn run_circuit_unsafe_full_pass_no_rec<
     commitment_check: Vec<[usize; 4]>,
     expose: Vec<[usize; 2]>,
     force_create_proof: bool,
-    all_constant_hash: &mut Vec<E::Scalar>,
-) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)>
+) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>, E::Scalar)>
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
 {
@@ -258,12 +257,7 @@ where
         expose,
         vec![],
         force_create_proof,
-        vec![],
-        all_constant_hash,
-        0,
-        0,
-        0,
-        1,
+        &vec![],
     )
 }
 
@@ -282,13 +276,8 @@ pub fn run_circuit_unsafe_full_pass<
     expose: Vec<[usize; 2]>,
     absorb: Vec<([usize; 3], [usize; 2])>,
     force_create_proof: bool,
-    target_aggregator_constant_hash_instance_offset: Vec<([usize; 2])>, // (proof_index, instance_col)
-    all_constant_hash: &mut Vec<E::Scalar>,
-    layer_idx: usize,
-    jump_agg_idx: usize,
-    agg_idx: usize,
-    max_agg_layer: usize,
-) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)>
+    target_aggregator_constant_hash_instance_offset: &Vec<(usize, usize, E::Scalar)>, // (proof_index, instance_col, hash)
+) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>, E::Scalar)>
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
 {
@@ -394,7 +383,7 @@ where
         if false && hash == TranscriptHash::Poseidon {
             let timer = start_timer!(|| "circuit verify single proof");
             for (i, proof) in proofs.iter().enumerate() {
-                let (circuit, instances) =
+                let (circuit, instances, _) =
                     crate::circuit_verifier::build_single_proof_verify_circuit::<E>(
                         &params_verifier,
                         &vkey,
@@ -403,12 +392,7 @@ where
                         hash,
                         expose.clone(),
                         absorb.clone(),
-                        target_aggregator_constant_hash_instance_offset.clone(),
-                        all_constant_hash,
-                        layer_idx,
-                        jump_agg_idx,
-                        agg_idx,
-                        max_agg_layer,
+                        target_aggregator_constant_hash_instance_offset,
                     );
                 const K: u32 = 21;
                 let prover = MockProver::run(K, &circuit, vec![instances]).unwrap();
@@ -437,7 +421,7 @@ where
     // circuit multi check
     if hash == TranscriptHash::Poseidon {
         let timer = start_timer!(|| "circuit verify single proof");
-        let (circuit, instances) = build_aggregate_verify_circuit::<E>(
+        let (circuit, instances, hash) = build_aggregate_verify_circuit::<E>(
             &params_verifier,
             &vkeys[..].iter().collect::<Vec<_>>(),
             instances.iter().collect(),
@@ -447,11 +431,6 @@ where
             expose,
             absorb,
             target_aggregator_constant_hash_instance_offset,
-            all_constant_hash,
-            layer_idx,
-            jump_agg_idx,
-            agg_idx,
-            max_agg_layer,
         );
         end_timer!(timer);
 
@@ -461,7 +440,7 @@ where
             assert_eq!(prover.verify(), Ok(()));
         }
 
-        Some((circuit, instances))
+        Some((circuit, instances, hash))
     } else {
         None
     }
@@ -484,13 +463,9 @@ pub fn run_circuit_with_agg_unsafe_full_pass<
     expose: Vec<[usize; 2]>,
     absorb: Vec<([usize; 3], [usize; 2])>,
     force_create_proof: bool,
-    target_aggregator_constant_hash_instance_offset: Vec<([usize; 2])>, // (proof_index, instance_col)
-    all_constant_hash: &mut Vec<E::Scalar>,
-    layer_idx: usize,
-    jump_agg_idx: usize,
-    agg_idx: usize,
-    max_agg_layer: usize,
-) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)>
+    target_aggregator_constant_hash_instance_offset: &Vec<(usize, usize, E::Scalar)>, // (proof_index, instance_col, hash)
+    agg_idx: usize
+) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>, E::Scalar)>
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
 {
@@ -556,7 +531,7 @@ where
     // circuit multi check
     if hash == TranscriptHash::Poseidon {
         let timer = start_timer!(|| "circuit verify single proof");
-        let (circuit, instances) = build_aggregate_verify_circuit::<E>(
+        let (circuit, instances, hash) = build_aggregate_verify_circuit::<E>(
             &params_verifier,
             &vkeys[..].iter().collect::<Vec<_>>(),
             instances.iter().collect(),
@@ -566,11 +541,6 @@ where
             expose,
             absorb,
             target_aggregator_constant_hash_instance_offset,
-            all_constant_hash,
-            layer_idx,
-            jump_agg_idx,
-            agg_idx,
-            max_agg_layer,
         );
         end_timer!(timer);
 
@@ -580,7 +550,7 @@ where
             assert_eq!(prover.verify(), Ok(()));
         }
 
-        Some((circuit, instances))
+        Some((circuit, instances, hash))
     } else {
         None
     }

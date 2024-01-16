@@ -238,13 +238,8 @@ pub fn build_single_proof_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper
     hash: TranscriptHash,
     expose: Vec<[usize; 2]>,
     absorb: Vec<([usize; 3], [usize; 2])>, // the index of instance + the index of advices
-    target_aggregator_constant_hash_instance_offset: Vec<([usize; 2])>, // (proof_index, instance_col)
-    all_constant_hash: &mut Vec<E::Scalar>,
-    layer_idx: usize,
-    jump_agg_idx: usize,
-    agg_idx: usize,
-    max_layer: usize,
-) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)
+    target_aggregator_constant_hash_instance_offset: &Vec<(usize, usize, E::Scalar)>, // (proof_index, instance_col, hash)
+) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>, E::Scalar)
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
 {
@@ -258,11 +253,6 @@ where
         expose,
         absorb,
         target_aggregator_constant_hash_instance_offset,
-        all_constant_hash,
-        layer_idx,
-        jump_agg_idx,
-        agg_idx,
-        max_layer,
     )
 }
 
@@ -275,13 +265,8 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
     commitment_check: Vec<[usize; 4]>,
     expose: Vec<[usize; 2]>,
     absorb: Vec<([usize; 3], [usize; 2])>, // the index of instance + the index of advices,
-    target_aggregator_constant_hash_instance_offset: Vec<([usize; 2])>, // (proof_index, instance_col)
-    all_constant_hash: &mut Vec<E::Scalar>,
-    layer_idx: usize,
-    jump_agg_idx: usize,
-    agg_idx: usize,
-    max_layer: usize,
-) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>)
+    target_aggregator_constant_hash_instance_offset: &Vec<(usize, usize, E::Scalar)>, // (proof_index, instance_col, hash)
+) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>, E::Scalar)
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
 {
@@ -299,11 +284,6 @@ where
             &expose,
             &absorb,
             &target_aggregator_constant_hash_instance_offset,
-            all_constant_hash,
-            layer_idx,
-            jump_agg_idx,
-            agg_idx,
-            max_layer,
         )
         .ok();
         rest_tries -= 1;
@@ -342,13 +322,8 @@ pub fn _build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
     commitment_check: &Vec<[usize; 4]>,
     expose: &Vec<[usize; 2]>,
     absorb: &Vec<([usize; 3], [usize; 2])>, // the index of instance + the index of advices
-    target_aggregator_constant_hash_instance_offset: &Vec<([usize; 2])>, // (proof_index, instance_col)
-    all_constant_hash: &mut Vec<E::Scalar>,
-    layer_idx: usize,
-    jump_agg_idx: usize,
-    agg_idx: usize,
-    max_layer: usize,
-) -> Result<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>), UnsafeError>
+    target_aggregator_constant_hash_instance_offset: &Vec<(usize, usize, E::Scalar)>, // (proof_index, instance_col, hash)
+) -> Result<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>, E::Scalar), UnsafeError>
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
 {
@@ -411,57 +386,17 @@ where
         ctx.ecc_assert_equal(&check[0], &check[1]);
     }
 
-    all_constant_hash.resize(max_layer, E::Scalar::zero());
-    if layer_idx > 0 && agg_idx == jump_agg_idx {
-        all_constant_hash[layer_idx - 1] = assigned_constant_hash.val;
-    } else {
-        all_constant_hash[layer_idx] = assigned_constant_hash.val;
-    }
+    let assigned_final_hash = {
+        let empty = vec![];
+        let mut hasher = PoseidonChipRead::init(PoseidonRead::init(&empty[..]), &mut ctx);
 
-    let assigned_agg_idx = ctx
-        .base_integer_chip()
-        .base_chip()
-        .assign(E::Scalar::from(agg_idx as u64));
+        hasher.common_scalar(&mut ctx, &assigned_constant_hash);
 
-    let mut hashes = vec![];
-    // assign for constant_hashes
-    for h in all_constant_hash.iter() {
-        let v = ctx.base_integer_chip().base_chip().assign(*h);
-        hashes.push(v);
-    }
+        // il[target_aggregator_circuit's hash instance col] -= params[0] * hash
+        for (proof_index, instance_col, hash) in target_aggregator_constant_hash_instance_offset {
+            let assigned_hash = ctx.base_integer_chip().base_chip().assign(*hash);
+            hasher.common_scalar(&mut ctx, &assigned_hash);
 
-    if layer_idx == 0 {
-        assert_eq!(agg_idx, 0);
-        ctx.base_integer_chip()
-            .base_chip()
-            .assert_equal(&hashes[layer_idx], &assigned_constant_hash);
-        ctx.base_integer_chip()
-            .base_chip()
-            .assert_constant(&assigned_agg_idx, E::Scalar::zero());
-    } else {
-        let candidate_hash0 = hashes[layer_idx - 1];
-        let candidate_hash1 = hashes[layer_idx];
-
-        let diff = ctx.base_integer_chip().base_chip().sum_with_constant(
-            vec![(&assigned_agg_idx, E::Scalar::one())],
-            Some(-E::Scalar::from(jump_agg_idx as u64)),
-        );
-
-        let is_jump = ctx.base_integer_chip().base_chip().is_zero(&diff);
-        let expected_hash =
-            ctx.base_integer_chip()
-                .base_chip()
-                .bisec(&is_jump, &candidate_hash0, &candidate_hash1);
-        ctx.base_integer_chip()
-            .base_chip()
-            .assert_equal(&expected_hash, &assigned_constant_hash);
-
-        /* il[target_aggregator_circuit's hash instance col] -= msm(
-         *  [agg_idx - 1, hash[..]],
-         *  params[?..]
-         * )
-         */
-        for [proof_index, instance_col] in target_aggregator_constant_hash_instance_offset {
             let mut instance_index = *instance_col;
             for i in instances[0..*proof_index].iter() {
                 instance_index += i.len()
@@ -469,64 +404,18 @@ where
 
             let mut points = vec![];
             let mut scalars = vec![];
+            points.push(ctx.assign_constant_point(&(-params.g_lagrange[0]).to_curve()));
+            scalars.push(assigned_hash);
 
-            let last_agg_idx = ctx.base_integer_chip().base_chip().sum_with_constant(
-                vec![(&assigned_agg_idx, E::Scalar::one())],
-                Some(-E::Scalar::one()),
-            );
-
-            points.push(ctx.assign_constant_point(&params.g_lagrange[0].to_curve()));
-            scalars.push(last_agg_idx);
-
-            let diff_of_jump_agg_follower = ctx.base_integer_chip().base_chip().sum_with_constant(
-                vec![(&assigned_agg_idx, E::Scalar::one())],
-                Some(-E::Scalar::from(jump_agg_idx as u64 + 1)),
-            );
-            let is_jump_follower = ctx
-                .base_integer_chip()
-                .base_chip()
-                .is_zero(&diff_of_jump_agg_follower);
-
-            let is_jump_or_jump_follower = ctx
-                .base_integer_chip()
-                .base_chip()
-                .and(&is_jump, &is_jump_follower);
-
-            let zero = ctx
-                .base_integer_chip()
-                .base_chip()
-                .assign_constant(E::Scalar::zero());
-
-            for i in 0..=layer_idx {
-                points.push(ctx.assign_constant_point(&params.g_lagrange[i + 1].to_curve()));
-                if i <= layer_idx - 2 {
-                    scalars.push(hashes[i]);
-                } else if i == layer_idx - 1 {
-                    // Jump aggregator excludes its layer (each layer has two hashes)
-                    let scalar = ctx
-                        .base_integer_chip()
-                        .base_chip()
-                        .bisec(&is_jump, &zero, &hashes[i]);
-                    scalars.push(scalar);
-                } else {
-                    // Jump follower aggregator only include jump layer hash
-                    let scalar = ctx.base_integer_chip().base_chip().bisec(
-                        &is_jump_or_jump_follower,
-                        &zero,
-                        &hashes[i],
-                    );
-                    scalars.push(scalar);
-                }
-            }
-
-            let msm_c = ctx.msm(&points, &scalars);
-            let diff_commit = ctx.ecc_neg(&msm_c);
+            let diff_commitment = ctx.msm(&points, &scalars);
             let instance_commit = il[instance_index].clone();
             let instance_commit_curv = ctx.to_point_with_curvature(instance_commit);
-            let update_commit = ctx.ecc_add(&instance_commit_curv, &diff_commit);
+            let update_commit = ctx.ecc_add(&instance_commit_curv, &diff_commitment);
             il[instance_index] = update_commit;
         }
-    }
+
+        hasher.squeeze(&mut ctx)
+    };
 
     for (i, c) in pl[absorb_start_idx..expose_start_idx].iter().enumerate() {
         let encoded_c = ctx.ecc_encode(c);
@@ -612,8 +501,7 @@ where
         ctx.check_pairing(&[(&pl[0], &assigned_s_g2), (&pl[1], &assigned_g2)]);
     }
 
-    let mut assigned_instances = vec![assigned_agg_idx];
-    assigned_instances.append(&mut hashes);
+    let mut assigned_instances = vec![assigned_final_hash.clone()];
     assigned_instances.append(
         &mut vec![&il[..], &pl[expose_start_idx..pl.len()]]
             .concat()
@@ -646,5 +534,6 @@ where
             assigned_instances,
         ),
         instances,
+        assigned_final_hash.val,
     ))
 }

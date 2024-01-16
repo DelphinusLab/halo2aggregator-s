@@ -230,7 +230,7 @@ pub fn test_twice_verify_circuit_diff() {
     let path = Path::new(path);
     let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
     println!("circuit1 {:?} {:?}", &circuit.a, &circuit.b);
-    let (circuit1, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
+    let (circuit1, _, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
         path,
         "simple-circuit",
         target_circuit_k,
@@ -240,13 +240,12 @@ pub fn test_twice_verify_circuit_diff() {
         vec![],
         vec![],
         true,
-        &mut vec![],
     )
     .unwrap();
 
     let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
     println!("circuit2 {:?} {:?}", &circuit.a, &circuit.b);
-    let (circuit2, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
+    let (circuit2, _, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
         path,
         "simple-circuit",
         target_circuit_k,
@@ -256,7 +255,6 @@ pub fn test_twice_verify_circuit_diff() {
         vec![],
         vec![],
         true,
-        &mut vec![],
     )
     .unwrap();
 
