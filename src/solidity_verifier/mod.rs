@@ -219,7 +219,7 @@ pub fn test_twice_verify_circuit_diff() {
     let path = Path::new(path);
     let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
     println!("circuit1 {:?} {:?}", &circuit.a, &circuit.b);
-    let (circuit1, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
+    let (circuit1, _, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
         path,
         "simple-circuit",
         target_circuit_k,
@@ -229,13 +229,12 @@ pub fn test_twice_verify_circuit_diff() {
         vec![],
         vec![],
         true,
-        &mut vec![],
     )
     .unwrap();
 
     let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
     println!("circuit2 {:?} {:?}", &circuit.a, &circuit.b);
-    let (circuit2, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
+    let (circuit2, _, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
         path,
         "simple-circuit",
         target_circuit_k,
@@ -245,7 +244,6 @@ pub fn test_twice_verify_circuit_diff() {
         vec![],
         vec![],
         true,
-        &mut vec![],
     )
     .unwrap();
 
@@ -333,8 +331,7 @@ pub fn test_solidity_render() {
     let path = Path::new(path);
     let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
 
-    let mut hash = vec![];
-    let (circuit, instances) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
+    let (circuit, instances, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
         path,
         "simple-circuit",
         target_circuit_k,
@@ -345,11 +342,8 @@ pub fn test_solidity_render() {
         vec![[0, 0, 1, 0]],
         vec![],
         true,
-        &mut hash,
     )
     .unwrap();
-
-    println!("hash is {:?}", hash);
 
     let circuit0 = circuit.without_witnesses();
     run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
@@ -362,7 +356,6 @@ pub fn test_solidity_render() {
         vec![],
         vec![],
         true,
-        &mut vec![],
     );
 
     let params = load_or_build_unsafe_params::<Bn256>(
