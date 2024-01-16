@@ -390,8 +390,6 @@ where
         let empty = vec![];
         let mut hasher = PoseidonChipRead::init(PoseidonRead::init(&empty[..]), &mut ctx);
 
-        hasher.common_scalar(&mut ctx, &assigned_constant_hash);
-
         // il[target_aggregator_circuit's hash instance col] -= params[0] * hash
         for (proof_index, instance_col, hash) in target_aggregator_constant_hash_instance_offset {
             let assigned_hash = ctx.base_integer_chip().base_chip().assign(*hash);
@@ -413,6 +411,8 @@ where
             let update_commit = ctx.ecc_add(&instance_commit_curv, &diff_commitment);
             il[instance_index] = update_commit;
         }
+        
+        hasher.common_scalar(&mut ctx, &assigned_constant_hash);
 
         hasher.squeeze(&mut ctx)
     };
@@ -534,6 +534,6 @@ where
             assigned_instances,
         ),
         instances,
-        assigned_final_hash.val,
+        assigned_constant_hash.val,
     ))
 }
