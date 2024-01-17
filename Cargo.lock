@@ -37,7 +37,10 @@ version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94893f1e0c6eeab764ade8dc4c0db24caf4fe7cbbaafc0eba0a9030f447b5185"
 dependencies = [
+<<<<<<< HEAD
  "colored",
+=======
+>>>>>>> ae1d1a5 (optimize calc_hash)
  "num-traits",
  "rand",
 ]
@@ -402,7 +405,7 @@ source = "git+https://github.com/lanbones/ec-gpu#165d1dd6215f6fd1dd85c83cf430ff5
 [[package]]
 name = "ec-gpu-gen"
 version = "0.4.0"
-source = "git+https://github.com/lanbones/ec-gpu?branch=halo2-opt-v2#784eda53754a5344f75e4b3c533361d628ad1402"
+source = "git+https://github.com/lanbones/ec-gpu?branch=halo2-opt-v2#5481be558da026bb9bddcd5807f973f6b1a8346e"
 dependencies = [
  "ark-std 0.3.0",
  "bitvec",
@@ -574,7 +577,7 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.1.0-beta.1"
-source = "git+https://github.com/DelphinusLab/halo2-gpu-specific.git#3d92486eac82722f0519c6f25387e5019abaa8ce"
+source = "git+https://github.com/DelphinusLab/halo2-gpu-specific.git#d78196de96c2e937a0fa5db1f3b16d2cdd54aa5c"
 dependencies = [
  "ark-std 0.3.0",
  "blake2b_simd",
@@ -586,6 +589,7 @@ dependencies = [
  "ff",
  "group",
  "lazy_static",
+ "log",
  "memmap",
  "num",
  "num-bigint",
@@ -1026,7 +1030,7 @@ dependencies = [
 [[package]]
 name = "poseidon"
 version = "0.2.0"
-source = "git+https://github.com/lanbones/poseidon#df8891073182c5c6cc1e2e7f9d2f4297d3c1565d"
+source = "git+https://github.com/lanbones/poseidon#58835e054512ad7833df6d20479e9e0e034a073b"
 dependencies = [
  "halo2_proofs",
  "subtle",

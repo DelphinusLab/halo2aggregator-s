@@ -218,6 +218,13 @@ impl<C: CurveAffine> Default for PoseidonPure<C> {
     }
 }
 
+
+impl<C: CurveAffine> PoseidonPure<C> {
+    pub fn reset(&mut self) {
+        self.state.reset()
+    }
+}
+
 impl<C: CurveAffine> Transcript<C, PoseidonEncodedChallenge<C>> for PoseidonPure<C> {
     fn squeeze_challenge(&mut self) -> PoseidonEncodedChallenge<C> {
         self.state.update(&[C::ScalarExt::from(PREFIX_CHALLENGE)]);
