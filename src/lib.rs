@@ -249,7 +249,7 @@ fn test_rec_aggregator() {
 
     let timer = start_timer!(|| "calc final hashes");
     let final_hashes_expected = calc_hash::<bn256::G1Affine>(
-        t1_hash, t0_hash, t1_a0_hash, t0_a0_hash, t1_a1_hash, t0_a1_hash, 16,
+        t1_hash, t0_hash, t1_a0_hash, t0_a0_hash, t1_a1_hash, t0_a1_hash, 1024,
     );
     end_timer!(timer);
 

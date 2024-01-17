@@ -270,13 +270,12 @@ pub fn calc_hash<C: CurveAffine>(
     let mut last = t0_hash;
 
     let hasher_default = PoseidonPure::<C>::default();
+    let mut hasher_end = hasher_default.clone();
+    let mut hasher_next = hasher_default;
 
     for i in 1..max {
-        let mut hasher = hasher_default.clone();
-        hasher.common_scalar(last).unwrap();
-
-        let mut hasher_end = hasher.clone();
-        let mut hasher_next = hasher;
+        hasher_next.common_scalar(last).unwrap();
+        hasher_end.common_scalar(last).unwrap();
 
         if i == 1 {
             hasher_end.common_scalar(t1_a0_hash).unwrap();
@@ -288,6 +287,9 @@ pub fn calc_hash<C: CurveAffine>(
 
         res.push(*hasher_end.squeeze_challenge_scalar::<()>());
         last = *hasher_next.squeeze_challenge_scalar::<()>();
+
+        hasher_next.reset();
+        hasher_end.reset();
     }
 
     res
