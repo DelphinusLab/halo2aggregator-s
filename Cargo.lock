@@ -32,6 +32,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ark-std"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94893f1e0c6eeab764ade8dc4c0db24caf4fe7cbbaafc0eba0a9030f447b5185"
+dependencies = [
+ "colored",
+ "num-traits",
+ "rand",
+]
+
+[[package]]
 name = "arrayref"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -393,7 +404,7 @@ name = "ec-gpu-gen"
 version = "0.4.0"
 source = "git+https://github.com/lanbones/ec-gpu?branch=halo2-opt-v2#784eda53754a5344f75e4b3c533361d628ad1402"
 dependencies = [
- "ark-std",
+ "ark-std 0.3.0",
  "bitvec",
  "crossbeam-channel",
  "ec-gpu",
@@ -563,9 +574,8 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.1.0-beta.1"
-source = "git+https://github.com/DelphinusLab/halo2-gpu-specific.git#3d92486eac82722f0519c6f25387e5019abaa8ce"
 dependencies = [
- "ark-std",
+ "ark-std 0.3.0",
  "blake2b_simd",
  "bumpalo",
  "cfg-if 0.1.10",
@@ -592,7 +602,7 @@ dependencies = [
 name = "halo2aggregator-s"
 version = "0.1.0"
 dependencies = [
- "ark-std",
+ "ark-std 0.4.0",
  "blake2b_simd",
  "halo2_proofs",
  "halo2ecc-s",
@@ -607,7 +617,6 @@ dependencies = [
 [[package]]
 name = "halo2ecc-s"
 version = "0.3.2"
-source = "git+https://github.com/lanbones/halo2ecc-s.git?tag=bisect-lookup-0.3.3#9698edde834f0bd90a82d0ac37803f5be2b093ad"
 dependencies = [
  "halo2_proofs",
  "num-bigint",

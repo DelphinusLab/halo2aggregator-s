@@ -74,22 +74,20 @@ impl<C: CurveAffine> Circuit<C::ScalarExt> for AggregatorCircuit<C> {
         let select_chip = SelectChip::new(config.select_chip_config);
         let range_chip = RangeChip::<C::ScalarExt>::new(config.range_chip_config);
 
-        let mut instance_cells = None;
-
-        layouter.assign_region(
+        let instance_cells = layouter.assign_region(
             || "base",
-            |mut region| {
+            |region| {
                 let timer = start_timer!(|| "assign");
                 let cells = self.records.assign_all_opt(
-                    &mut region,
+                    &region,
                     &base_chip,
                     &range_chip,
                     &select_chip,
                 )?;
 
-                match cells {
+                let instance_cells = match cells {
                     Some(cells) => {
-                        instance_cells = Some(
+                        Some(
                             self.instances
                                 .iter()
                                 .map(|instance| {
@@ -103,10 +101,10 @@ impl<C: CurveAffine> Circuit<C::ScalarExt> for AggregatorCircuit<C> {
                                 .collect::<Vec<_>>(),
                         )
                     }
-                    None => {}
-                }
+                    None => None
+                };
                 end_timer!(timer);
-                Ok(())
+                Ok(instance_cells)
             },
         )?;
 

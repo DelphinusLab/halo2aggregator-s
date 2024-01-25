@@ -22,3 +22,11 @@ default = []
 profile = ["ark-std/print-trace"]
 cuda = ["halo2_proofs/cuda", "halo2ecc-s/cuda"]
 unsafe = []
+
+
+[patch."https://github.com/DelphinusLab/halo2-gpu-specific.git"]
+halo2_proofs = { path = "../halo2/halo2_proofs" }
+
+
+[patch."https://github.com/lanbones/halo2ecc-s.git"]
+halo2ecc-s = { path = "../halo2ecc-s" }
