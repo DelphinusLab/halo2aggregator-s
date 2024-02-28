@@ -43,8 +43,8 @@ truffle test --goerli
 The solidity code generation depends on the `sol` folder. You can download it from source code or release according to the version.
 
 1. call `run_circuit_unsafe_full_pass()` for target circuit with `TranscriptHash::Poseidon` to get aggregation circuit and its instances.
-2. call `run_circuit_unsafe_full_pass()` for aggregation circuit with `TranscriptHash::Sha` to create aggregation circuit proof.
-3. call `solidity_render()` with `TranscriptHash::Sha` to generate solidity code.
+2. call `run_circuit_unsafe_full_pass()` for aggregation circuit with `TranscriptHash::Sha` or `TranscriptHash::Keccak` to create aggregation circuit proof.
+3. call `solidity_render()` with `TranscriptHash::Sha` or `TranscriptHash::Keccak` to generate solidity code.
 4. call `solidity_aux_gen()` to prepare aux input for solidity verify. It will prepare scalar division result used by the verification to reduce gas.
 
 See test `test_solidity_render` for sample.

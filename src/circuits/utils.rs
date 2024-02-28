@@ -36,6 +36,7 @@ pub enum TranscriptHash {
     Blake2b,
     Poseidon,
     Sha,
+    Keccak,
 }
 
 pub fn load_or_build_unsafe_params<E: MultiMillerLoop>(
@@ -202,6 +203,19 @@ pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
             .expect("proof generation should not fail");
             transcript.finalize()
         }
+        TranscriptHash::Keccak => {
+            let mut transcript = ShaWrite::<_, _, _, sha3::Keccak256>::init(vec![]);
+            create_proof(
+                params,
+                &pkey,
+                &[circuit],
+                &[instances],
+                OsRng,
+                &mut transcript,
+            )
+            .expect("proof generation should not fail");
+            transcript.finalize()
+        }
     };
     end_timer!(timer);
 
@@ -303,6 +317,13 @@ where
                     strategy,
                     &[&instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>()[..]],
                     &mut ShaRead::<_, _, _, sha2::Sha256>::init(&proof[..]),
+                ),
+                TranscriptHash::Keccak => verify_proof(
+                    &params_verifier,
+                    &vkey,
+                    strategy,
+                    &[&instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>()[..]],
+                    &mut ShaRead::<_, _, _, sha3::Keccak256>::init(&proof[..]),
                 ),
             }
             .unwrap();

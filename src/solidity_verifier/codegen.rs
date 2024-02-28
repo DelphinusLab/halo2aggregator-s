@@ -18,6 +18,7 @@ use halo2_proofs::transcript::EncodedChallenge;
 use halo2_proofs::transcript::Transcript;
 use halo2_proofs::transcript::TranscriptRead;
 use halo2ecc_s::utils::field_to_bn;
+use sha2::Digest;
 use std::collections::BTreeSet;
 use std::env;
 use std::io::Read;
@@ -92,10 +93,10 @@ impl<E: MultiMillerLoop> SolidityVar<E> {
     }
 }
 
-struct SolidityEvalContext<R: Read, E: MultiMillerLoop> {
+struct SolidityEvalContext<R: Read, E: MultiMillerLoop, D: Digest> {
     c: EvalContext<E::G1Affine>,
     instance_commitments: Vec<E::G1Affine>,
-    t: ShaRead<R, E::G1Affine, Challenge255<E::G1Affine>, sha2::Sha256>,
+    t: ShaRead<R, E::G1Affine, Challenge255<E::G1Affine>, D>,
 
     statements: Vec<String>,
     exprs: Vec<Option<SolidityVar<E>>>,
@@ -114,11 +115,11 @@ struct SolidityEvalContext<R: Read, E: MultiMillerLoop> {
     msm_len: Vec<usize>,
 }
 
-impl<R: Read, E: MultiMillerLoop> SolidityEvalContext<R, E> {
+impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D> {
     pub fn new(
         c: EvalContext<E::G1Affine>,
         instance_commitments: Vec<E::G1Affine>,
-        t: ShaRead<R, E::G1Affine, Challenge255<E::G1Affine>, sha2::Sha256>,
+        t: ShaRead<R, E::G1Affine, Challenge255<E::G1Affine>, D>,
     ) -> Self {
         Self {
             c,
@@ -526,7 +527,7 @@ impl<R: Read, E: MultiMillerLoop> SolidityEvalContext<R, E> {
     }
 }
 
-pub fn solidity_codegen_with_proof<E: MultiMillerLoop>(
+pub fn solidity_codegen_with_proof<E: MultiMillerLoop, D: Digest + Clone>(
     params: &ParamsVerifier<E>,
     vkey: &VerifyingKey<E::G1Affine>,
     instances: &Vec<E::Scalar>,
@@ -543,10 +544,10 @@ pub fn solidity_codegen_with_proof<E: MultiMillerLoop>(
 
     let c = EvalContext::translate(&targets[..]);
 
-    let mut ctx = SolidityEvalContext::<_, E>::new(
+    let mut ctx = SolidityEvalContext::<_, E, D>::new(
         c,
         instance_commitments,
-        ShaRead::<_, _, _, sha2::Sha256>::init(&proofs[..]),
+        ShaRead::<_, _, _, D>::init(&proofs[..]),
     );
 
     ctx.value_gen();
@@ -604,19 +605,19 @@ pub fn solidity_codegen_with_proof<E: MultiMillerLoop>(
         .collect()
 }
 
-pub fn solidity_aux_gen<E: MultiMillerLoop>(
+pub fn solidity_aux_gen<E: MultiMillerLoop, D: Digest + Clone>(
     params: &ParamsVerifier<E>,
     vkey: &VerifyingKey<E::G1Affine>,
     instances: &Vec<E::Scalar>,
     proofs: Vec<u8>,
     aux_file: &Path,
 ) {
-    let div_res = solidity_aux_gen_data(params, vkey, instances, proofs, true);
+    let div_res = solidity_aux_gen_data::<_, D>(params, vkey, instances, proofs, true);
     let mut fd = std::fs::File::create(&aux_file).unwrap();
     div_res.iter().for_each(|res| res.write(&mut fd).unwrap());
 }
 
-pub fn solidity_aux_gen_data<E: MultiMillerLoop>(
+pub fn solidity_aux_gen_data<E: MultiMillerLoop, D: Digest + Clone>(
     params: &ParamsVerifier<E>,
     vkey: &VerifyingKey<E::G1Affine>,
     instances: &Vec<E::Scalar>,
@@ -632,10 +633,10 @@ pub fn solidity_aux_gen_data<E: MultiMillerLoop>(
 
     let c = EvalContext::translate(&targets[..]);
 
-    let mut ctx = SolidityEvalContext::<_, E>::new(
+    let mut ctx = SolidityEvalContext::<_, E, D>::new(
         c,
         instance_commitments,
-        ShaRead::<_, _, _, sha2::Sha256>::init(&proofs[..]),
+        ShaRead::<_, _, _, D>::init(&proofs[..]),
     );
 
     ctx.value_gen();

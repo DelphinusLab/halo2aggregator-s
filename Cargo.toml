@@ -15,6 +15,7 @@ num-integer = "0.1"
 num-bigint = { version = "0.4", features = ["rand"] }
 tera = "1.15.0"
 sha2 = "0.10.6"
+sha3 = "0.10.8"
 lazy_static = "1.4.0"
 
 [features]
