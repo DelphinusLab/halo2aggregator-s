@@ -1,4 +1,5 @@
 use self::codegen::solidity_codegen_with_proof;
+use crate::circuits::utils::TranscriptHash;
 use halo2_proofs::arithmetic::BaseExt;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::MultiMillerLoop;
@@ -6,31 +7,34 @@ use halo2_proofs::plonk::VerifyingKey;
 use halo2_proofs::poly::commitment::ParamsVerifier;
 use halo2ecc_s::utils::field_to_bn;
 use num_bigint::BigUint;
+use sha2::Digest;
 use std::path::Path;
 use tera::Tera;
 
 pub mod codegen;
 
-pub fn solidity_render<E: MultiMillerLoop>(
+pub fn solidity_render<E: MultiMillerLoop, D: Digest + Clone>(
     path_in: &str,
     path_out: &str,
     common_template_name: Vec<(String, String)>,
     start_step_template_name: &str,
     end_step_template_name: &str,
     step_out_file_name: impl Fn(usize) -> String,
+    hasher: TranscriptHash,
     target_circuit_params: &ParamsVerifier<E>,
     verify_circuit_params: &ParamsVerifier<E>,
     vkey: &VerifyingKey<E::G1Affine>,
     instances: &Vec<E::Scalar>,
     proofs: Vec<u8>,
 ) {
-    solidity_render_with_check_option(
+    solidity_render_with_check_option::<_, D>(
         path_in,
         path_out,
         common_template_name,
         start_step_template_name,
         end_step_template_name,
         step_out_file_name,
+        hasher,
         target_circuit_params,
         verify_circuit_params,
         vkey,
@@ -40,13 +44,14 @@ pub fn solidity_render<E: MultiMillerLoop>(
     );
 }
 
-pub fn solidity_render_with_check_option<E: MultiMillerLoop>(
+pub fn solidity_render_with_check_option<E: MultiMillerLoop, D: Digest + Clone>(
     path_in: &str,
     path_out: &str,
     common_template_name: Vec<(String, String)>,
     start_step_template_name: &str,
     end_step_template_name: &str,
     step_out_file_name: impl Fn(usize) -> String,
+    hasher: TranscriptHash,
     target_circuit_params: &ParamsVerifier<E>,
     verify_circuit_params: &ParamsVerifier<E>,
     vkey: &VerifyingKey<E::G1Affine>,
@@ -56,6 +61,12 @@ pub fn solidity_render_with_check_option<E: MultiMillerLoop>(
 ) {
     let tera = Tera::new(path_in).unwrap();
     let mut tera_ctx = tera::Context::new();
+
+    match hasher {
+        TranscriptHash::Sha => tera_ctx.insert("hasher", "sha256"),
+        TranscriptHash::Keccak => tera_ctx.insert("hasher", "keccak"),
+        _ => unreachable!(),
+    }
 
     let g2field_to_bn = |f: &<E::G2Affine as CurveAffine>::Base| {
         let mut bytes: Vec<u8> = Vec::new();
@@ -169,7 +180,7 @@ pub fn solidity_render_with_check_option<E: MultiMillerLoop>(
         + 5 * lookups;
     tera_ctx.insert("evals", &evals);
 
-    let steps = solidity_codegen_with_proof(
+    let steps = solidity_codegen_with_proof::<_, D>(
         &verify_circuit_params,
         &vkey,
         instances,
@@ -308,100 +319,124 @@ pub fn test_twice_verify_circuit_diff() {
     }
 }
 
-#[test]
-pub fn test_solidity_render() {
-    use crate::circuits::samples::simple::SimpleCircuit;
-    use crate::circuits::utils::load_or_build_unsafe_params;
-    use crate::circuits::utils::load_or_build_vkey;
-    use crate::circuits::utils::load_proof;
-    use crate::circuits::utils::run_circuit_unsafe_full_pass;
+#[cfg(test)]
+mod tests {
     use crate::circuits::utils::TranscriptHash;
-    use crate::solidity_verifier::codegen::solidity_aux_gen;
-    use halo2_proofs::pairing::bn256::Bn256;
-    use halo2_proofs::pairing::bn256::Fr;
-    use halo2_proofs::plonk::Circuit;
-    use std::fs::DirBuilder;
-    use std::path::Path;
+    use crate::solidity_verifier::solidity_render;
+    use halo2_proofs::poly::commitment::ParamsVerifier;
+    use sha2::Digest;
 
-    let path = "./output";
-    DirBuilder::new().recursive(true).create(path).unwrap();
+    fn test_solidity_render<D: Digest + Clone>(aggregator_circuit_hasher: TranscriptHash) {
+        assert!(
+            aggregator_circuit_hasher == TranscriptHash::Sha
+                || aggregator_circuit_hasher == TranscriptHash::Keccak,
+            "aggregator circuit only support sha or keccak."
+        );
 
-    let n_proofs = 2;
-    let target_circuit_k = 8;
-    let verify_circuit_k = 21;
+        use crate::circuits::samples::simple::SimpleCircuit;
+        use crate::circuits::utils::load_or_build_unsafe_params;
+        use crate::circuits::utils::load_or_build_vkey;
+        use crate::circuits::utils::load_proof;
+        use crate::circuits::utils::run_circuit_unsafe_full_pass;
+        use crate::solidity_verifier::codegen::solidity_aux_gen;
+        use halo2_proofs::pairing::bn256::Bn256;
+        use halo2_proofs::pairing::bn256::Fr;
+        use halo2_proofs::plonk::Circuit;
+        use std::fs::DirBuilder;
+        use std::path::Path;
 
-    let path = Path::new(path);
-    let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
-    let (circuit, instances) = run_circuit_unsafe_full_pass::<Bn256, _>(
-        path,
-        "simple-circuit",
-        target_circuit_k,
-        vec![circuit.clone(), circuit],
-        vec![instances.clone(), instances],
-        TranscriptHash::Poseidon,
-        //vec![],
-        vec![[0, 0, 1, 0]],
-        vec![],
-        vec![],
-        true,
-    )
-    .unwrap();
+        let path = "./output";
+        DirBuilder::new().recursive(true).create(path).unwrap();
 
-    let circuit0 = circuit.without_witnesses();
-    run_circuit_unsafe_full_pass::<Bn256, _>(
-        path,
-        "verify-circuit",
-        verify_circuit_k,
-        vec![circuit],
-        vec![vec![instances.clone()]],
-        TranscriptHash::Sha,
-        vec![],
-        vec![],
-        vec![],
-        true,
-    );
+        let n_proofs = 2;
+        let target_circuit_k = 8;
+        let verify_circuit_k = 21;
 
-    let params = load_or_build_unsafe_params::<Bn256>(
-        target_circuit_k,
-        Some(&path.join(format!("K{}.params", target_circuit_k))),
-    );
-    let target_params_verifier: ParamsVerifier<Bn256> = params.verifier(1).unwrap();
+        let path = Path::new(path);
+        let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
+        let (circuit, instances) = run_circuit_unsafe_full_pass::<Bn256, _>(
+            path,
+            "simple-circuit",
+            target_circuit_k,
+            vec![circuit.clone(), circuit],
+            vec![instances.clone(), instances],
+            TranscriptHash::Poseidon,
+            //vec![],
+            vec![[0, 0, 1, 0]],
+            vec![],
+            vec![],
+            true,
+        )
+        .unwrap();
 
-    let params = load_or_build_unsafe_params::<Bn256>(
-        verify_circuit_k,
-        Some(&path.join(format!("K{}.params", verify_circuit_k))),
-    );
-    let verifier_params_verifier: ParamsVerifier<Bn256> = params.verifier(3 * n_proofs).unwrap();
+        let circuit0 = circuit.without_witnesses();
+        run_circuit_unsafe_full_pass::<Bn256, _>(
+            path,
+            "verify-circuit",
+            verify_circuit_k,
+            vec![circuit],
+            vec![vec![instances.clone()]],
+            aggregator_circuit_hasher,
+            vec![],
+            vec![],
+            vec![],
+            true,
+        );
 
-    let vkey = load_or_build_vkey::<Bn256, _>(
-        &params,
-        &circuit0,
-        Some(&path.join(format!("{}.{}.vkey.data", "verify-circuit", 0))),
-    );
+        let params = load_or_build_unsafe_params::<Bn256>(
+            target_circuit_k,
+            Some(&path.join(format!("K{}.params", target_circuit_k))),
+        );
+        let target_params_verifier: ParamsVerifier<Bn256> = params.verifier(1).unwrap();
 
-    let proof = load_proof(&path.join(format!("{}.{}.transcript.data", "verify-circuit", 0)));
-    solidity_render(
-        "sol/templates/*",
-        "sol/contracts",
-        vec![(
-            "AggregatorConfig.sol.tera".to_owned(),
-            "AggregatorConfig.sol".to_owned(),
-        )],
-        "AggregatorVerifierStepStart.sol.tera",
-        "AggregatorVerifierStepEnd.sol.tera",
-        |i| format!("AggregatorVerifierStep{}.sol", i + 1),
-        &target_params_verifier,
-        &verifier_params_verifier,
-        &vkey,
-        &instances,
-        proof.clone(),
-    );
+        let params = load_or_build_unsafe_params::<Bn256>(
+            verify_circuit_k,
+            Some(&path.join(format!("K{}.params", verify_circuit_k))),
+        );
+        let verifier_params_verifier: ParamsVerifier<Bn256> =
+            params.verifier(3 * n_proofs).unwrap();
 
-    solidity_aux_gen(
-        &verifier_params_verifier,
-        &vkey,
-        &instances,
-        proof,
-        &path.join(format!("{}.{}.aux.data", "verify-circuit", 0)),
-    );
+        let vkey = load_or_build_vkey::<Bn256, _>(
+            &params,
+            &circuit0,
+            Some(&path.join(format!("{}.{}.vkey.data", "verify-circuit", 0))),
+        );
+
+        let proof = load_proof(&path.join(format!("{}.{}.transcript.data", "verify-circuit", 0)));
+        solidity_render::<_, D>(
+            "sol/templates/*",
+            "sol/contracts",
+            vec![(
+                "AggregatorConfig.sol.tera".to_owned(),
+                "AggregatorConfig.sol".to_owned(),
+            )],
+            "AggregatorVerifierStepStart.sol.tera",
+            "AggregatorVerifierStepEnd.sol.tera",
+            |i| format!("AggregatorVerifierStep{}.sol", i + 1),
+            aggregator_circuit_hasher,
+            &target_params_verifier,
+            &verifier_params_verifier,
+            &vkey,
+            &instances,
+            proof.clone(),
+        );
+
+        solidity_aux_gen::<_, D>(
+            &verifier_params_verifier,
+            &vkey,
+            &instances,
+            proof,
+            &path.join(format!("{}.{}.aux.data", "verify-circuit", 0)),
+        );
+    }
+
+    #[test]
+    fn test_solidity_render_sha256() {
+        test_solidity_render::<sha2::Sha256>(TranscriptHash::Sha)
+    }
+
+    #[test]
+    fn test_solidity_render_keccak() {
+        test_solidity_render::<sha3::Keccak256>(TranscriptHash::Keccak)
+    }
 }

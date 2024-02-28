@@ -210,6 +210,17 @@ pub fn verify_proofs<E: MultiMillerLoop>(
             ctx.context_eval();
             ctx.finals
         }
+        TranscriptHash::Keccak => {
+            let mut t = vec![];
+            for i in 0..proofs.len() {
+                t.push(ShaRead::<_, _, _, sha3::Keccak256>::init(&proofs[i][..]));
+            }
+            let empty = vec![];
+            t.push(ShaRead::init(&empty[..]));
+            let mut ctx = NativeEvalContext::<E, _, _>::new(c, instance_commitments, t);
+            ctx.context_eval();
+            ctx.finals
+        }
     };
 
     let s_g2_prepared = E::G2Prepared::from(params.s_g2);

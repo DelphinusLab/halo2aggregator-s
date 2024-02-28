@@ -32,6 +32,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ark-std"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94893f1e0c6eeab764ade8dc4c0db24caf4fe7cbbaafc0eba0a9030f447b5185"
+dependencies = [
+ "colored",
+ "num-traits",
+ "rand",
+]
+
+[[package]]
 name = "arrayref"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -393,7 +404,7 @@ name = "ec-gpu-gen"
 version = "0.4.0"
 source = "git+https://github.com/lanbones/ec-gpu?branch=halo2-opt-v2#784eda53754a5344f75e4b3c533361d628ad1402"
 dependencies = [
- "ark-std",
+ "ark-std 0.3.0",
  "bitvec",
  "crossbeam-channel",
  "ec-gpu",
@@ -565,7 +576,7 @@ name = "halo2_proofs"
 version = "0.1.0-beta.1"
 source = "git+https://github.com/DelphinusLab/halo2-gpu-specific.git#3d92486eac82722f0519c6f25387e5019abaa8ce"
 dependencies = [
- "ark-std",
+ "ark-std 0.3.0",
  "blake2b_simd",
  "bumpalo",
  "cfg-if 0.1.10",
@@ -592,7 +603,7 @@ dependencies = [
 name = "halo2aggregator-s"
 version = "0.1.0"
 dependencies = [
- "ark-std",
+ "ark-std 0.4.0",
  "blake2b_simd",
  "halo2_proofs",
  "halo2ecc-s",
@@ -601,6 +612,7 @@ dependencies = [
  "num-integer",
  "poseidon",
  "sha2",
+ "sha3",
  "tera",
 ]
 
@@ -699,6 +711,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49409df3e3bf0856b916e2ceaca09ee28e6871cf7d9ce97a692cacfdb2a25a47"
 dependencies = [
  "wasm-bindgen",
+]
+
+[[package]]
+name = "keccak"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ecc2af9a1119c51f12a14607e783cb977bde58bc069ff0c3da1095e635d70654"
+dependencies = [
+ "cpufeatures",
 ]
 
 [[package]]
@@ -1217,6 +1238,16 @@ dependencies = [
  "cfg-if 1.0.0",
  "cpufeatures",
  "digest",
+]
+
+[[package]]
+name = "sha3"
+version = "0.10.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75872d278a8f37ef87fa0ddbda7802605cb18344497949862c0d4dcb291eba60"
+dependencies = [
+ "digest",
+ "keccak",
 ]
 
 [[package]]
