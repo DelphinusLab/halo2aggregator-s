@@ -37,10 +37,7 @@ version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94893f1e0c6eeab764ade8dc4c0db24caf4fe7cbbaafc0eba0a9030f447b5185"
 dependencies = [
-<<<<<<< HEAD
  "colored",
-=======
->>>>>>> ae1d1a5 (optimize calc_hash)
  "num-traits",
  "rand",
 ]
@@ -579,7 +576,7 @@ name = "halo2_proofs"
 version = "0.1.0-beta.1"
 source = "git+https://github.com/DelphinusLab/halo2-gpu-specific.git#80028eaae672655abac39938a4df29e8a5209cc9"
 dependencies = [
- "ark-std 0.3.0",
+ "ark-std 0.4.0",
  "blake2b_simd",
  "bumpalo",
  "cfg-if 0.1.10",

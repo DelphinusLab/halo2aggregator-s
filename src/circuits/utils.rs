@@ -212,7 +212,7 @@ pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
         }
         TranscriptHash::Keccak => {
             let mut transcript = ShaWrite::<_, _, _, sha3::Keccak256>::init(vec![]);
-            create_proof(
+            create_proof_with_shplonk(
                 params,
                 &pkey,
                 &[circuit],
@@ -399,7 +399,7 @@ where
                     &[&instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>()[..]],
                     &mut ShaRead::<_, _, _, sha2::Sha256>::init(&proof[..]),
                 ),
-                TranscriptHash::Keccak => verify_proof(
+                TranscriptHash::Keccak => verify_proof_with_shplonk(
                     &params_verifier,
                     &vkey,
                     strategy,

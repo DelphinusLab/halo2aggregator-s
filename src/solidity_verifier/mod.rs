@@ -317,18 +317,8 @@ pub fn test_twice_verify_circuit_diff() {
     }
 }
 
-<<<<<<< HEAD
 #[cfg(test)]
 mod tests {
-=======
-#[test]
-pub fn test_solidity_render() {
-    use crate::circuits::samples::simple::SimpleCircuit;
-    use crate::circuits::utils::load_or_build_unsafe_params;
-    use crate::circuits::utils::load_or_build_vkey;
-    use crate::circuits::utils::load_proof;
-    use crate::circuits::utils::run_circuit_unsafe_full_pass_no_rec;
->>>>>>> 01dcc7d (fix interface)
     use crate::circuits::utils::TranscriptHash;
     use crate::solidity_verifier::solidity_render;
     use halo2_proofs::poly::commitment::ParamsVerifier;
@@ -345,7 +335,7 @@ pub fn test_solidity_render() {
         use crate::circuits::utils::load_or_build_unsafe_params;
         use crate::circuits::utils::load_or_build_vkey;
         use crate::circuits::utils::load_proof;
-        use crate::circuits::utils::run_circuit_unsafe_full_pass;
+        use crate::circuits::utils::run_circuit_unsafe_full_pass_no_rec;
         use crate::solidity_verifier::codegen::solidity_aux_gen;
         use halo2_proofs::pairing::bn256::Bn256;
         use halo2_proofs::pairing::bn256::Fr;
@@ -356,44 +346,27 @@ pub fn test_solidity_render() {
         let path = "./output";
         DirBuilder::new().recursive(true).create(path).unwrap();
 
-<<<<<<< HEAD
         let n_proofs = 2;
         let target_circuit_k = 8;
         let verify_circuit_k = 21;
-=======
-    let (circuit, instances, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
-        path,
-        "simple-circuit",
-        target_circuit_k,
-        vec![circuit.clone(), circuit],
-        vec![instances.clone(), instances],
-        TranscriptHash::Poseidon,
-        vec![[0, 0, 1, 0]],
-        vec![],
-        true,
-    )
-    .unwrap();
->>>>>>> 713057a (remove select chip and use shplonk)
 
         let path = Path::new(path);
         let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
-        let (circuit, instances) = run_circuit_unsafe_full_pass::<Bn256, _>(
+        let (circuit, instances, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
             path,
             "simple-circuit",
             target_circuit_k,
             vec![circuit.clone(), circuit],
             vec![instances.clone(), instances],
             TranscriptHash::Poseidon,
-            //vec![],
             vec![[0, 0, 1, 0]],
-            vec![],
             vec![],
             true,
         )
         .unwrap();
 
         let circuit0 = circuit.without_witnesses();
-        run_circuit_unsafe_full_pass::<Bn256, _>(
+        run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
             path,
             "verify-circuit",
             verify_circuit_k,
@@ -402,30 +375,20 @@ pub fn test_solidity_render() {
             aggregator_circuit_hasher,
             vec![],
             vec![],
-            vec![],
             true,
         );
 
-<<<<<<< HEAD
         let params = load_or_build_unsafe_params::<Bn256>(
             target_circuit_k,
             Some(&path.join(format!("K{}.params", target_circuit_k))),
         );
         let target_params_verifier: ParamsVerifier<Bn256> = params.verifier(1).unwrap();
-=======
-    let params = load_or_build_unsafe_params::<Bn256>(
-        verify_circuit_k,
-        Some(&path.join(format!("K{}.params", verify_circuit_k))),
-    );
-    let verifier_params_verifier: ParamsVerifier<Bn256> = params.verifier(3 * n_proofs + 1).unwrap();
->>>>>>> 713057a (remove select chip and use shplonk)
-
         let params = load_or_build_unsafe_params::<Bn256>(
             verify_circuit_k,
             Some(&path.join(format!("K{}.params", verify_circuit_k))),
         );
         let verifier_params_verifier: ParamsVerifier<Bn256> =
-            params.verifier(3 * n_proofs).unwrap();
+            params.verifier(3 * n_proofs + 1).unwrap();
 
         let vkey = load_or_build_vkey::<Bn256, _>(
             &params,
