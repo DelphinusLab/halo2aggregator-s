@@ -46,19 +46,19 @@ contract AggregatorVerifier {
             uint256 y;
 
             (x, y) = encoding_scalars_to_point(
-                verify_instance[i * 3],
                 verify_instance[i * 3 + 1],
-                verify_instance[i * 3 + 2]
+                verify_instance[i * 3 + 2],
+                verify_instance[i * 3 + 3]
             );
             require(x == target_instance_buf[0], "invalid instance x");
             require(y == target_instance_buf[1], "invalid instance y");
         }
-
+        
         uint256[] memory verify_circuit_pairing_buf = new uint256[](12);
 
         {
             // step 1: calculate verify circuit instance commitment
-            uint256[] memory buf = new uint256[](180);
+            uint256[] memory buf = new uint256[](175);
             AggregatorConfig.calc_verify_circuit_lagrange(buf, verify_instance);
 
             // step 2: calculate challenge

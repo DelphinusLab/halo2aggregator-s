@@ -5,6 +5,7 @@ use crate::api::arith::AstScalarRc;
 use crate::commit;
 use crate::eval;
 use crate::pconst;
+use crate::scheckpoint;
 use crate::sconst;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::Field;
@@ -20,6 +21,12 @@ pub struct CommitQuery<C: CurveAffine> {
     pub eval: Option<AstScalarRc<C>>,
 }
 
+impl<C: CurveAffine> PartialEq for CommitQuery<C> {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum EvaluationQuerySchema<C: CurveAffine> {
     Commitment(Rc<CommitQuery<C>>),
@@ -28,6 +35,35 @@ pub enum EvaluationQuerySchema<C: CurveAffine> {
     Add(Rc<Self>, Rc<Self>, bool), // bool indicates whether contains commitment
     Mul(Rc<Self>, Rc<Self>, bool), // bool indicates whether contains commitment
     CheckPoint(String, Rc<Self>),
+}
+
+impl<C: CurveAffine> EvaluationQuerySchema<C> {
+    pub fn get_eval(&self) -> AstScalarRc<C> {
+        match self {
+            EvaluationQuerySchema::Commitment(x) => {
+                x.eval.clone().unwrap_or(sconst!(C::ScalarExt::zero()))
+            }
+            EvaluationQuerySchema::Eval(x) => x.eval.clone().unwrap(),
+            EvaluationQuerySchema::Scalar(s) => s.clone(),
+            EvaluationQuerySchema::Add(l, r, _) => l.get_eval() + r.get_eval(),
+            EvaluationQuerySchema::Mul(l, r, _) => l.get_eval() * r.get_eval(),
+            EvaluationQuerySchema::CheckPoint(_, x) => x.get_eval(),
+        }
+    }
+}
+
+impl<C: CurveAffine> PartialEq for EvaluationQuerySchema<C> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (EvaluationQuerySchema::Commitment(l), Self::Commitment(r)) => l.eq(r),
+            (Self::Eval(l), Self::Eval(r)) => l.eq(r),
+            (Self::Scalar(l), Self::Scalar(r)) => Rc::eq(&l.0, &r.0),
+            (Self::Add(l1, l2, _), Self::Add(r1, r2, _)) => l1.eq(r1) && l2.eq(r2),
+            (Self::Mul(l1, l2, _), Self::Mul(r1, r2, _)) => l1.eq(r1) && l2.eq(r2),
+            (Self::CheckPoint(_, l), Self::CheckPoint(_, r)) => l.eq(r),
+            _ => false,
+        }
+    }
 }
 
 pub fn replace_commitment<C: CurveAffine>(
@@ -76,14 +112,15 @@ pub fn replace_commitment<C: CurveAffine>(
 }
 
 #[repr(transparent)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct EvaluationQuerySchemaRc<C: CurveAffine>(pub Rc<EvaluationQuerySchema<C>>);
 
 #[derive(Clone, Debug)]
 pub struct EvaluationQuery<C: CurveAffine> {
     pub point: AstScalarRc<C>,
     pub rotation: i32,
-    pub s: EvaluationQuerySchemaRc<C>,
+    pub commitment: EvaluationQuerySchemaRc<C>,
+    pub eval: Option<EvaluationQuerySchemaRc<C>>,
 }
 
 impl<C: CurveAffine> EvaluationQuery<C> {
@@ -94,7 +131,7 @@ impl<C: CurveAffine> EvaluationQuery<C> {
         commitment: AstPointRc<C>,
         eval: AstScalarRc<C>,
     ) -> Self {
-        let s = Rc::new(CommitQuery {
+        let c = Rc::new(CommitQuery {
             key,
             commitment: Some(commitment),
             eval: Some(eval),
@@ -103,16 +140,23 @@ impl<C: CurveAffine> EvaluationQuery<C> {
         EvaluationQuery {
             point,
             rotation,
-            s: commit!(s.clone()) + eval!(s),
+            commitment: commit!(c.clone()),
+            eval: Some(eval!(c)),
         }
     }
 
     pub fn new_with_query(
         rotation: i32,
         point: AstScalarRc<C>,
-        s: EvaluationQuerySchemaRc<C>,
+        commitment: EvaluationQuerySchemaRc<C>,
+        eval: EvaluationQuerySchemaRc<C>,
     ) -> Self {
-        EvaluationQuery { rotation, point, s }
+        EvaluationQuery {
+            rotation,
+            point,
+            commitment,
+            eval: Some(eval),
+        }
     }
 }
 
@@ -192,9 +236,23 @@ impl<C: CurveAffine> Mul<EvaluationQuerySchemaRc<C>> for EvaluationQuerySchemaRc
 impl<C: CurveAffine> EvaluationQuerySchemaRc<C> {
     pub fn eval(self, g1: C) -> AstPointRc<C> {
         let (pl, s) = self.eval_prepare(sconst!(C::ScalarExt::one()));
+        let g1_msm = if let Some(v) = s.0.check_const_and_get() {
+            if v.is_zero_vartime() {
+                vec![]
+            } else {
+                use halo2_proofs::pairing::group::Curve;
+                vec![(
+                    pconst!((g1 * v).to_affine()).0,
+                    sconst!(C::ScalarExt::one()).0,
+                )]
+            }
+        } else {
+            vec![(pconst!(g1).0, (scheckpoint!("msm g1 scalar".to_owned(), s)).0)]
+        };
+
         AstPointRc(Rc::new(AstPoint::MultiExp(
             vec![
-                vec![(pconst!(g1).0, s.0)],
+                g1_msm,
                 pl.into_values()
                     .into_iter()
                     .map(|(p, s)| (p.0, s.0))
@@ -272,7 +330,7 @@ impl<C: CurveAffine> EvaluationQuerySchemaRc<C> {
 
     fn eval_prepare(
         self,
-        coeff: AstScalarRc<C>
+        coeff: AstScalarRc<C>,
     ) -> (
         BTreeMap<String, (AstPointRc<C>, AstScalarRc<C>)>,
         AstScalarRc<C>,
@@ -280,14 +338,7 @@ impl<C: CurveAffine> EvaluationQuerySchemaRc<C> {
         match self.0.as_ref() {
             EvaluationQuerySchema::Commitment(cq) => (
                 BTreeMap::from_iter(
-                    vec![(
-                        cq.key.clone(),
-                        (
-                            cq.commitment.clone().unwrap(),
-                            coeff,
-                        ),
-                    )]
-                    .into_iter(),
+                    vec![(cq.key.clone(), (cq.commitment.clone().unwrap(), coeff))].into_iter(),
                 ),
                 sconst!(C::ScalarExt::zero()),
             ),

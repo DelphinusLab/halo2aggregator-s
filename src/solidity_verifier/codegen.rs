@@ -20,28 +20,19 @@ use halo2_proofs::transcript::TranscriptRead;
 use halo2ecc_s::utils::field_to_bn;
 use sha2::Digest;
 use std::collections::BTreeSet;
-use std::env;
 use std::io::Read;
 use std::path::Path;
 
-const CHALLENGE_BUF_START: usize = 2;
-const TEMP_BUF_START: usize = 16;
+const INSTANCE_COLUMN_COUNT: usize = 1;
+const MAX_MSM_COUNT: usize = 2;
+const CHALLENGE_BUF_START: usize = 2 * INSTANCE_COLUMN_COUNT;
+const CHALLENGE_BUF_MAX: usize = 8;
+const MSM_BUF_START: usize = CHALLENGE_BUF_START + CHALLENGE_BUF_MAX;
+const TEMP_BUF_START: usize = MSM_BUF_START + 2 * MAX_MSM_COUNT + 3; // 3 reserved for msm operation;
 const DEEP_LIMIT: usize = 6;
 
-lazy_static! {
-    static ref TEMP_BUF_MAX: usize = usize::from_str_radix(
-        &env::var("HALO2_AGGREGATOR_S_TEMP_BUF_MAX").unwrap_or("170".to_owned()),
-        10
-    )
-    .unwrap();
-    static ref MSM_BUF_SIZE: usize = usize::from_str_radix(
-        &env::var("HALO2_AGGREGATOR_S_MSM_BUF_SIZE").unwrap_or("5".to_owned()),
-        10
-    )
-    .unwrap();
-}
-
-const SOLIDITY_VERIFY_STEP_MAX_SIZE: usize = 128;
+const SOLIDITY_VERIFY_FIRST_STEP_MAX_SIZE: usize = 100; // first step need to be less for shplonk
+const SOLIDITY_VERIFY_STEP_MAX_SIZE: usize = 120;
 
 const SOLIDITY_DEBUG: bool = false;
 
@@ -109,6 +100,7 @@ struct SolidityEvalContext<R: Read, E: MultiMillerLoop, D: Digest> {
     challenge_idx: usize,
     msm_index: usize,
     temp_idx_allocator: (BTreeSet<usize>, usize),
+    max_temp_buffer_index: usize,
     constant_scalars: Vec<E::Scalar>,
     div_res: Vec<E::Scalar>,
     challenges: Vec<E::Scalar>,
@@ -136,6 +128,7 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
             msm_index: 0,
             aux_index: 0,
             temp_idx_allocator: (BTreeSet::new(), TEMP_BUF_START),
+            max_temp_buffer_index: 0,
             constant_scalars: vec![],
             div_res: vec![],
             challenges: vec![],
@@ -156,7 +149,9 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
     fn alloc_temp_idx(&mut self) -> usize {
         if self.temp_idx_allocator.0.len() == 0 {
             self.temp_idx_allocator.1 += 1;
-            assert!(self.temp_idx_allocator.1 <= *TEMP_BUF_MAX);
+            if self.temp_idx_allocator.1 > self.max_temp_buffer_index {
+                self.max_temp_buffer_index = self.temp_idx_allocator.1;
+            }
             self.temp_idx_allocator.1.clone() - 1
         } else {
             self.temp_idx_allocator.0.pop_first().clone().unwrap()
@@ -465,7 +460,8 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
                     Some(SolidityVar::Temp(t))
                 }
                 EvalOps::MSM(psl) => {
-                    let start: usize = *TEMP_BUF_MAX + self.msm_len.len() * *MSM_BUF_SIZE;
+                    assert!(self.msm_len.len() <= MAX_MSM_COUNT);
+                    let start: usize = MSM_BUF_START + self.msm_len.len() * 2;
 
                     self.msm_index += 1;
                     self.msm_len.push(psl.len());
@@ -535,7 +531,7 @@ pub fn solidity_codegen_with_proof<E: MultiMillerLoop, D: Digest + Clone>(
     tera_context: &mut tera::Context,
     check: bool,
 ) -> Vec<String> {
-    let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey], &vec![]);
+    let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey], &vec![], false);
 
     let instance_commitments =
         instance_to_instance_commitment(params, &[vkey], vec![&vec![instances.clone()]])[0].clone();
@@ -581,8 +577,8 @@ pub fn solidity_codegen_with_proof<E: MultiMillerLoop, D: Digest + Clone>(
     tera_context.insert("msm_w_x_len", &ctx.msm_len[0]);
     tera_context.insert("msm_w_g_len", &ctx.msm_len[1]);
 
-    tera_context.insert("msm_w_x_start", &*TEMP_BUF_MAX);
-    tera_context.insert("msm_w_g_start", &(*TEMP_BUF_MAX + *MSM_BUF_SIZE));
+    tera_context.insert("msm_w_x_start", &MSM_BUF_START);
+    tera_context.insert("msm_w_g_start", &(MSM_BUF_START + 2));
 
     if SOLIDITY_DEBUG {
         tera_context.insert(
@@ -594,15 +590,24 @@ pub fn solidity_codegen_with_proof<E: MultiMillerLoop, D: Digest + Clone>(
         );
     }
 
-    ctx.statements
-        .chunks(SOLIDITY_VERIFY_STEP_MAX_SIZE)
-        .map(|c| {
-            c.iter()
-                .map(|x| format!("{}\n", x))
-                .collect::<Vec<_>>()
-                .concat()
-        })
-        .collect()
+    let mut res = vec![ctx.statements[..SOLIDITY_VERIFY_FIRST_STEP_MAX_SIZE]
+        .iter()
+        .map(|x| format!("{}\n", x))
+        .collect::<Vec<_>>()
+        .concat()];
+
+    res.append(
+        &mut ctx.statements[SOLIDITY_VERIFY_FIRST_STEP_MAX_SIZE..]
+            .chunks(SOLIDITY_VERIFY_STEP_MAX_SIZE)
+            .map(|c| {
+                c.iter()
+                    .map(|x| format!("{}\n", x))
+                    .collect::<Vec<_>>()
+                    .concat()
+            })
+            .collect(),
+    );
+    res
 }
 
 pub fn solidity_aux_gen<E: MultiMillerLoop, D: Digest + Clone>(
@@ -624,7 +629,7 @@ pub fn solidity_aux_gen_data<E: MultiMillerLoop, D: Digest + Clone>(
     proofs: Vec<u8>,
     check: bool,
 ) -> Vec<E::Scalar> {
-    let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey], &vec![]);
+    let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey], &vec![], false);
 
     let instance_commitments =
         instance_to_instance_commitment(params, &[vkey], vec![&vec![instances.clone()]])[0].clone();

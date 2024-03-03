@@ -32,13 +32,14 @@ pub fn format_instance_commitment_key(circuit_key: &str, column: usize) -> Strin
 }
 
 pub fn format_fixed_commitment_key(circuit_key: &str, column: usize) -> String {
-    format!("{}_fixed_advice_commitments_{}", circuit_key, column)
+    format!("{}_fixed_commitments_{}", circuit_key, column)
 }
 
 pub fn verify_single_proof_no_eval<E: MultiMillerLoop>(
     params: &ParamsVerifier<E>,
     vk: &VerifyingKey<E::G1Affine>,
     index: usize,
+    use_gwc: bool,
 ) -> (
     MultiOpenProof<E::G1Affine>,
     Vec<AstPointRc<E::G1Affine>>,
@@ -49,11 +50,16 @@ pub fn verify_single_proof_no_eval<E: MultiMillerLoop>(
         params,
         key: format_circuit_key(index),
         proof_index: index,
+        use_gwc,
     };
 
     let (verifier_params, transcript) = params_builder.build();
     (
-        verifier_params.batch_multi_open_proofs(),
+        if use_gwc {
+            verifier_params.batch_multi_open_proofs_gwc()
+        } else {
+            verifier_params.batch_multi_open_proofs_shplonk()
+        },
         verifier_params.advice_commitments,
         transcript,
     )
@@ -63,6 +69,7 @@ pub fn verify_aggregation_proofs<E: MultiMillerLoop>(
     params: &ParamsVerifier<E>,
     vks: &[&VerifyingKey<E::G1Affine>],
     commitment_check: &Vec<[usize; 4]>,
+    use_gwc: bool
 ) -> (
     AstPointRc<E::G1Affine>,           // w_x
     AstPointRc<E::G1Affine>,           // w_g
@@ -84,7 +91,8 @@ pub fn verify_aggregation_proofs<E: MultiMillerLoop>(
     }
 
     for (i, vk) in vks.into_iter().enumerate() {
-        let (p, a, mut t) = verify_single_proof_no_eval(params, vk, i);
+        let (p, a, mut t) =
+            verify_single_proof_no_eval(params, vk, i, use_gwc);
         transcript.common_scalar(t.squeeze_challenge());
         advice_commitments.push(a);
         pairs.push(p);

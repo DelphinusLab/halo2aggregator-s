@@ -239,6 +239,7 @@ pub fn build_single_proof_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper
     expose: Vec<[usize; 2]>,
     absorb: Vec<([usize; 3], [usize; 2])>, // the index of instance + the index of advices
     target_aggregator_constant_hash_instance_offset: &Vec<(usize, usize, E::Scalar)>, // (proof_index, instance_col, hash)
+    use_gwc: bool,
 ) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>, E::Scalar)
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
@@ -253,6 +254,7 @@ where
         expose,
         absorb,
         target_aggregator_constant_hash_instance_offset,
+        use_gwc
     )
 }
 
@@ -266,6 +268,7 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
     expose: Vec<[usize; 2]>,
     absorb: Vec<([usize; 3], [usize; 2])>, // the index of instance + the index of advices,
     target_aggregator_constant_hash_instance_offset: &Vec<(usize, usize, E::Scalar)>, // (proof_index, instance_col, hash)
+    use_gwc: bool,
 ) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>, E::Scalar)
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
@@ -284,6 +287,7 @@ where
             &expose,
             &absorb,
             &target_aggregator_constant_hash_instance_offset,
+            use_gwc,
         )
         .ok();
         rest_tries -= 1;
@@ -323,6 +327,7 @@ pub fn _build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
     expose: &Vec<[usize; 2]>,
     absorb: &Vec<([usize; 3], [usize; 2])>, // the index of instance + the index of advices
     target_aggregator_constant_hash_instance_offset: &Vec<(usize, usize, E::Scalar)>, // (proof_index, instance_col, hash)
+    use_gwc: bool,
 ) -> Result<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>, E::Scalar), UnsafeError>
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
@@ -330,7 +335,7 @@ where
     let ctx = Rc::new(RefCell::new(Context::new()));
     let ctx = IntegerContext::<<E::G1Affine as CurveAffine>::Base, E::Scalar>::new(ctx);
     let mut ctx = NativeScalarEccContext::<E::G1Affine>(ctx, 0);
-    let (w_x, w_g, advices) = verify_aggregation_proofs(params, vkey, commitment_check);
+    let (w_x, w_g, advices) = verify_aggregation_proofs(params, vkey, commitment_check, use_gwc);
 
     let instance_commitments = instance_to_instance_commitment(params, vkey, instances.clone());
 
@@ -411,7 +416,7 @@ where
             let update_commit = ctx.ecc_add(&instance_commit_curv, &diff_commitment);
             il[instance_index] = update_commit;
         }
-        
+
         hasher.common_scalar(&mut ctx, &assigned_constant_hash);
 
         hasher.squeeze(&mut ctx)
@@ -523,10 +528,7 @@ where
 
     let instances = assigned_instances.iter().map(|x| x.val).collect::<Vec<_>>();
     let ctx: Context<_> = ctx.into();
-    println!(
-        "offset {} {} {}",
-        ctx.base_offset, ctx.range_offset, ctx.select_offset
-    );
+    println!("offset {} {}", ctx.base_offset, ctx.range_offset);
 
     Ok((
         AggregatorCircuit::new(

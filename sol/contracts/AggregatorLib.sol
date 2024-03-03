@@ -90,6 +90,10 @@ library AggregatorLib {
         uint256[] memory input,
         uint256 offset
     ) internal view {
+        if (input[offset + 2] == 1) {
+            return;
+        }
+
         return msm(input, offset, 1);
     }
 

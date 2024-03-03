@@ -17,9 +17,11 @@ use halo2_proofs::arithmetic::MultiMillerLoop;
 use halo2_proofs::dev::MockProver;
 use halo2_proofs::pairing::group::Curve;
 use halo2_proofs::plonk::create_proof;
+use halo2_proofs::plonk::create_proof_with_shplonk;
 use halo2_proofs::plonk::keygen_pk;
 use halo2_proofs::plonk::keygen_vk;
 use halo2_proofs::plonk::verify_proof;
+use halo2_proofs::plonk::verify_proof_with_shplonk;
 use halo2_proofs::plonk::Circuit;
 use halo2_proofs::plonk::SingleVerifier;
 use halo2_proofs::plonk::VerifyingKey;
@@ -33,6 +35,8 @@ use halo2ecc_s::context::NativeScalarEccContext;
 use std::io::Read;
 use std::io::Write;
 use std::path::Path;
+
+pub(crate) static USE_GWC_FOR_TARGET_PROOF: bool = true;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum TranscriptHash {
@@ -195,7 +199,7 @@ pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
         }
         TranscriptHash::Sha => {
             let mut transcript = ShaWrite::<_, _, _, sha2::Sha256>::init(vec![]);
-            create_proof(
+            create_proof_with_shplonk(
                 params,
                 &pkey,
                 &[circuit],
@@ -388,7 +392,7 @@ where
                     &[&instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>()[..]],
                     &mut PoseidonRead::init(&proof[..]),
                 ),
-                TranscriptHash::Sha => verify_proof(
+                TranscriptHash::Sha => verify_proof_with_shplonk(
                     &params_verifier,
                     &vkey,
                     strategy,
@@ -417,14 +421,15 @@ where
                     &instances[i],
                     proof.clone(),
                     hash,
+                    hash == TranscriptHash::Poseidon && USE_GWC_FOR_TARGET_PROOF,
                 );
             }
             end_timer!(timer);
         }
 
         // circuit single check
-        if false && hash == TranscriptHash::Poseidon {
-            let timer = start_timer!(|| "circuit verify single proof");
+        if hash == TranscriptHash::Poseidon {
+            let timer = start_timer!(|| "build_single_proof_verify_circuit");
             for (i, proof) in proofs.iter().enumerate() {
                 let (circuit, instances, _) =
                     crate::circuit_verifier::build_single_proof_verify_circuit::<E>(
@@ -436,6 +441,7 @@ where
                         expose.clone(),
                         absorb.clone(),
                         target_aggregator_constant_hash_instance_offset,
+                        USE_GWC_FOR_TARGET_PROOF,
                     );
                 const K: u32 = 21;
                 let prover = MockProver::run(K, &circuit, vec![instances]).unwrap();
@@ -448,7 +454,7 @@ where
     }
 
     // native multi check
-    if false {
+    if true {
         let timer = start_timer!(|| "native verify aggregated proofs");
         verify_proofs::<E>(
             &params_verifier,
@@ -457,13 +463,14 @@ where
             proofs.clone(),
             hash,
             commitment_check.clone(),
+            hash == TranscriptHash::Poseidon && USE_GWC_FOR_TARGET_PROOF,
         );
         end_timer!(timer);
     }
 
     // circuit multi check
     if hash == TranscriptHash::Poseidon {
-        let timer = start_timer!(|| "circuit verify single proof");
+        let timer = start_timer!(|| "build_aggregate_verify_circuit");
         let (circuit, instances, hash) = build_aggregate_verify_circuit::<E>(
             &params_verifier,
             &vkeys[..].iter().collect::<Vec<_>>(),
@@ -474,6 +481,7 @@ where
             expose,
             absorb,
             target_aggregator_constant_hash_instance_offset,
+            USE_GWC_FOR_TARGET_PROOF,
         );
         end_timer!(timer);
 
@@ -573,7 +581,7 @@ where
 
     // circuit multi check
     if hash == TranscriptHash::Poseidon {
-        let timer = start_timer!(|| "circuit verify single proof");
+        let timer = start_timer!(|| "build_aggregate_verify_circuit");
         let (circuit, instances, hash) = build_aggregate_verify_circuit::<E>(
             &params_verifier,
             &vkeys[..].iter().collect::<Vec<_>>(),
@@ -584,6 +592,7 @@ where
             expose,
             absorb,
             target_aggregator_constant_hash_instance_offset,
+            false,
         );
         end_timer!(timer);
 

@@ -91,6 +91,13 @@ macro_rules! scheckpoint {
 }
 
 impl<C: CurveAffine> AstScalar<C> {
+    pub fn check_const_and_get(&self) -> Option<C::ScalarExt> {
+        match self {
+            AstScalar::FromConst(v) => Some(*v),
+            _ => None,
+        }
+    }
+
     pub fn is_const_zero(&self) -> bool {
         match self {
             AstScalar::FromConst(v) => v == &C::ScalarExt::zero(),

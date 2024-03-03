@@ -356,9 +356,24 @@ pub fn test_solidity_render() {
         let path = "./output";
         DirBuilder::new().recursive(true).create(path).unwrap();
 
+<<<<<<< HEAD
         let n_proofs = 2;
         let target_circuit_k = 8;
         let verify_circuit_k = 21;
+=======
+    let (circuit, instances, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
+        path,
+        "simple-circuit",
+        target_circuit_k,
+        vec![circuit.clone(), circuit],
+        vec![instances.clone(), instances],
+        TranscriptHash::Poseidon,
+        vec![[0, 0, 1, 0]],
+        vec![],
+        true,
+    )
+    .unwrap();
+>>>>>>> 713057a (remove select chip and use shplonk)
 
         let path = Path::new(path);
         let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
@@ -391,11 +406,19 @@ pub fn test_solidity_render() {
             true,
         );
 
+<<<<<<< HEAD
         let params = load_or_build_unsafe_params::<Bn256>(
             target_circuit_k,
             Some(&path.join(format!("K{}.params", target_circuit_k))),
         );
         let target_params_verifier: ParamsVerifier<Bn256> = params.verifier(1).unwrap();
+=======
+    let params = load_or_build_unsafe_params::<Bn256>(
+        verify_circuit_k,
+        Some(&path.join(format!("K{}.params", verify_circuit_k))),
+    );
+    let verifier_params_verifier: ParamsVerifier<Bn256> = params.verifier(3 * n_proofs + 1).unwrap();
+>>>>>>> 713057a (remove select chip and use shplonk)
 
         let params = load_or_build_unsafe_params::<Bn256>(
             verify_circuit_k,
