@@ -148,7 +148,8 @@ pub fn verify_single_proof<E: MultiMillerLoop>(
     instances: &Vec<Vec<E::Scalar>>,
     proof: Vec<u8>,
     hash: TranscriptHash,
-    use_gwc: bool,
+    use_shplonk_as_default: bool,
+    proofs_with_shplonk: &Vec<usize>,
 ) {
     verify_proofs(
         params,
@@ -156,8 +157,9 @@ pub fn verify_single_proof<E: MultiMillerLoop>(
         vec![instances],
         vec![proof],
         hash,
-        vec![],
-        use_gwc,
+        &vec![],
+        use_shplonk_as_default,
+        proofs_with_shplonk,
     )
 }
 
@@ -167,10 +169,17 @@ pub fn verify_proofs<E: MultiMillerLoop>(
     instances: Vec<&Vec<Vec<E::Scalar>>>,
     proofs: Vec<Vec<u8>>,
     hash: TranscriptHash,
-    commitment_check: Vec<[usize; 4]>,
-    use_gwc: bool,
+    commitment_check: &Vec<[usize; 4]>,
+    use_shplonk_as_default: bool,
+    proofs_with_shplonk: &Vec<usize>,
 ) {
-    let (w_x, w_g, advices) = verify_aggregation_proofs(params, vkey, &commitment_check, use_gwc);
+    let (w_x, w_g, advices) = verify_aggregation_proofs(
+        params,
+        vkey,
+        commitment_check,
+        use_shplonk_as_default,
+        proofs_with_shplonk,
+    );
 
     let instance_commitments = instance_to_instance_commitment(params, vkey, instances);
 

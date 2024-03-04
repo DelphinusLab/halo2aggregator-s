@@ -1,13 +1,12 @@
 pub mod api;
-pub mod circuits;
-pub mod transcript;
-
 pub mod circuit_verifier;
+pub mod circuits;
 pub mod native_verifier;
 pub mod solidity_verifier;
+pub mod transcript;
 
 #[test]
-fn test_single_one_pass() {
+fn test_batch_no_rec() {
     use circuits::samples::simple::SimpleCircuit;
     use circuits::utils::run_circuit_unsafe_full_pass_no_rec;
     use circuits::utils::TranscriptHash;
@@ -20,52 +19,24 @@ fn test_single_one_pass() {
     DirBuilder::new().recursive(true).create(path).unwrap();
 
     let path = Path::new(path);
-    let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
-    run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
-        path,
-        "simple-circuit",
-        8,
-        vec![circuit],
-        vec![instances],
-        TranscriptHash::Blake2b,
-        vec![],
-        vec![],
-        true,
-    );
-}
-
-#[test]
-fn test_single_one_pass_with_verify_circuit() {
-    use circuits::samples::simple::SimpleCircuit;
-    use circuits::utils::run_circuit_unsafe_full_pass_no_rec;
-    use circuits::utils::TranscriptHash;
-    use halo2_proofs::pairing::bn256::Bn256;
-    use halo2_proofs::pairing::bn256::Fr;
-    use std::fs::DirBuilder;
-    use std::path::Path;
-
-    let path = "./output";
-    DirBuilder::new().recursive(true).create(path).unwrap();
-
-    let path = Path::new(path);
-    let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
+    let (circuit1, instance1) = SimpleCircuit::<Fr>::random_new_with_instance();
+    let (circuit2, instance2) = SimpleCircuit::<Fr>::random_new_with_instance();
     let (circuit, instances, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
         path,
         "simple-circuit",
         8,
-        vec![circuit],
-        vec![instances],
+        vec![circuit1, circuit2],
+        vec![instance1, instance2],
         TranscriptHash::Poseidon,
-        vec![[0, 0, 0, 0]],
+        vec![],
         vec![],
         true,
-    )
-    .unwrap();
+    ).unwrap();
 
     run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
         path,
         "verify-circuit",
-        20,
+        22,
         vec![circuit],
         vec![vec![instances]],
         TranscriptHash::Blake2b,
@@ -76,94 +47,9 @@ fn test_single_one_pass_with_verify_circuit() {
 }
 
 #[test]
-fn test_single_one_pass_poseidon() {
-    use circuits::samples::simple::SimpleCircuit;
-    use circuits::utils::run_circuit_unsafe_full_pass_no_rec;
-    use circuits::utils::TranscriptHash;
-    use halo2_proofs::pairing::bn256::Bn256;
-    use halo2_proofs::pairing::bn256::Fr;
-    use std::fs::DirBuilder;
-    use std::path::Path;
-
-    let path = "./output";
-    DirBuilder::new().recursive(true).create(path).unwrap();
-
-    let path = Path::new(path);
-    let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
-    run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
-        path,
-        "simple-circuit",
-        8,
-        vec![circuit],
-        vec![instances],
-        TranscriptHash::Poseidon,
-        vec![[0, 0, 0, 0]],
-        vec![],
-        true,
-    );
-}
-
-#[test]
-fn test_multi_one_pass() {
-    use circuits::samples::simple::SimpleCircuit;
-    use circuits::utils::run_circuit_unsafe_full_pass_no_rec;
-    use circuits::utils::TranscriptHash;
-    use halo2_proofs::pairing::bn256::Bn256;
-    use halo2_proofs::pairing::bn256::Fr;
-    use std::fs::DirBuilder;
-    use std::path::Path;
-
-    let path = "./output";
-    DirBuilder::new().recursive(true).create(path).unwrap();
-
-    let path = Path::new(path);
-    let (circuit1, instance1) = SimpleCircuit::<Fr>::random_new_with_instance();
-    let (circuit2, instance2) = SimpleCircuit::<Fr>::random_new_with_instance();
-    run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
-        path,
-        "simple-circuit",
-        8,
-        vec![circuit1, circuit2],
-        vec![instance1, instance2],
-        TranscriptHash::Blake2b,
-        vec![],
-        vec![],
-        true,
-    );
-}
-
-#[test]
-fn test_multi_one_pass_poseidon() {
-    use circuits::samples::simple::SimpleCircuit;
-    use circuits::utils::run_circuit_unsafe_full_pass_no_rec;
-    use circuits::utils::TranscriptHash;
-    use halo2_proofs::pairing::bn256::Bn256;
-    use halo2_proofs::pairing::bn256::Fr;
-    use std::fs::DirBuilder;
-    use std::path::Path;
-
-    let path = "./output";
-    DirBuilder::new().recursive(true).create(path).unwrap();
-
-    let path = Path::new(path);
-    let (circuit1, instance1) = SimpleCircuit::<Fr>::random_new_with_instance();
-    let (circuit2, instance2) = SimpleCircuit::<Fr>::random_new_with_instance();
-    run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
-        path,
-        "simple-circuit",
-        8,
-        vec![circuit1, circuit2],
-        vec![instance1, instance2],
-        TranscriptHash::Poseidon,
-        vec![],
-        vec![],
-        true,
-    );
-}
-
-#[test]
-fn test_rec_aggregator() {
+fn test_single_rec() {
     use crate::circuits::utils::calc_hash;
+    use crate::circuits::utils::AggregatorConfig;
     use ark_std::end_timer;
     use ark_std::start_timer;
     use circuits::samples::simple::SimpleCircuit;
@@ -185,18 +71,16 @@ fn test_rec_aggregator() {
     let (circuit, target_instances) = SimpleCircuit::<Fr>::default_with_instance();
 
     println!("build agg 0");
+    let mut config =
+        AggregatorConfig::new_for_non_rec(TranscriptHash::Poseidon, vec![[0, 0, 0, 0]], vec![]);
     let (agg_l0, agg_l0_instances, hash) = run_circuit_unsafe_full_pass::<Bn256, _>(
         path,
         "simple-circuit",
         k,
         vec![circuit.clone()],
         vec![target_instances.clone()],
-        TranscriptHash::Poseidon,
-        vec![[0, 0, 0, 0]],
-        vec![],
-        vec![],
         false,
-        &vec![],
+        &config,
     )
     .unwrap();
     println!(
@@ -210,21 +94,19 @@ fn test_rec_aggregator() {
     let mut last_agg = agg_l0;
     let mut last_agg_instances = agg_l0_instances;
     for i in 1..5 {
+        config.target_aggregator_constant_hash_instance_offset =
+            vec![(1, 0, *final_hashes.last().unwrap())];
         let (agg, instances, hash) = run_circuit_with_agg_unsafe_full_pass::<Bn256, _>(
             path,
             "simple-circuit",
             k,
             vec![circuit.clone()],
             vec![target_instances.clone()],
-            last_agg,
             last_agg_instances,
-            TranscriptHash::Poseidon,
-            vec![[0, 0, 0, 0]],
-            vec![],
-            vec![],
+            last_agg,
+            i - 1,
             false,
-            &vec![(1, 0, *final_hashes.last().unwrap())],
-            i,
+            &config,
         )
         .unwrap();
         println!(

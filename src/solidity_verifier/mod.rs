@@ -348,7 +348,7 @@ mod tests {
 
         let n_proofs = 2;
         let target_circuit_k = 8;
-        let verify_circuit_k = 21;
+        let verify_circuit_k = 22;
 
         let path = Path::new(path);
         let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();

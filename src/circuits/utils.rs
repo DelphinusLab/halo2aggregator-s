@@ -16,12 +16,10 @@ use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::arithmetic::MultiMillerLoop;
 use halo2_proofs::dev::MockProver;
 use halo2_proofs::pairing::group::Curve;
-use halo2_proofs::plonk::create_proof;
-use halo2_proofs::plonk::create_proof_with_shplonk;
+use halo2_proofs::plonk::create_proof_ext;
 use halo2_proofs::plonk::keygen_pk;
 use halo2_proofs::plonk::keygen_vk;
-use halo2_proofs::plonk::verify_proof;
-use halo2_proofs::plonk::verify_proof_with_shplonk;
+use halo2_proofs::plonk::verify_proof_ext;
 use halo2_proofs::plonk::Circuit;
 use halo2_proofs::plonk::SingleVerifier;
 use halo2_proofs::plonk::VerifyingKey;
@@ -35,8 +33,6 @@ use halo2ecc_s::context::NativeScalarEccContext;
 use std::io::Read;
 use std::io::Write;
 use std::path::Path;
-
-pub(crate) static USE_GWC_FOR_TARGET_PROOF: bool = true;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub enum TranscriptHash {
@@ -158,6 +154,7 @@ pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
     cache_file_opt: Option<&Path>,
     hash: TranscriptHash,
     try_load_proof: bool,
+    use_shplonk: bool,
 ) -> Vec<u8> {
     if let Some(cache_file) = &cache_file_opt {
         if try_load_proof && Path::exists(&cache_file) {
@@ -173,52 +170,56 @@ pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
     let transcript = match hash {
         TranscriptHash::Blake2b => {
             let mut transcript = Blake2bWrite::init(vec![]);
-            create_proof(
+            create_proof_ext(
                 params,
                 &pkey,
                 &[circuit],
                 &[instances],
                 OsRng,
                 &mut transcript,
+                !use_shplonk,
             )
             .expect("proof generation should not fail");
             transcript.finalize()
         }
         TranscriptHash::Poseidon => {
             let mut transcript = PoseidonWrite::init(vec![]);
-            create_proof(
+            create_proof_ext(
                 params,
                 &pkey,
                 &[circuit],
                 &[instances],
                 OsRng,
                 &mut transcript,
+                !use_shplonk,
             )
             .expect("proof generation should not fail");
             transcript.finalize()
         }
         TranscriptHash::Sha => {
             let mut transcript = ShaWrite::<_, _, _, sha2::Sha256>::init(vec![]);
-            create_proof_with_shplonk(
+            create_proof_ext(
                 params,
                 &pkey,
                 &[circuit],
                 &[instances],
                 OsRng,
                 &mut transcript,
+                !use_shplonk,
             )
             .expect("proof generation should not fail");
             transcript.finalize()
         }
         TranscriptHash::Keccak => {
             let mut transcript = ShaWrite::<_, _, _, sha3::Keccak256>::init(vec![]);
-            create_proof_with_shplonk(
+            create_proof_ext(
                 params,
                 &pkey,
                 &[circuit],
                 &[instances],
                 OsRng,
                 &mut transcript,
+                !use_shplonk,
             )
             .expect("proof generation should not fail");
             transcript.finalize()
@@ -259,12 +260,8 @@ where
         k,
         circuits,
         instances,
-        hash,
-        commitment_check,
-        expose,
-        vec![],
         force_create_proof,
-        &vec![],
+        &AggregatorConfig::new_for_non_rec(hash, commitment_check, expose),
     )
 }
 
@@ -308,26 +305,67 @@ pub fn calc_hash<C: CurveAffine>(
     res
 }
 
-/* CARE: unsafe means that to review before used in real production */
+pub struct AggregatorConfig<F: FieldExt> {
+    pub hash: TranscriptHash,
+    pub commitment_check: Vec<[usize; 4]>,
+    pub expose: Vec<[usize; 2]>,
+    pub absorb: Vec<([usize; 3], [usize; 2])>,
+    /* (proof_index, instance_col, hash) */
+    pub target_aggregator_constant_hash_instance_offset: Vec<(usize, usize, F)>,
+    /* the set of proof that genearted with shplonk (if target_proof_with_shplonk_as_default is false) */
+    pub target_proof_with_shplonk: Vec<usize>,
+    pub target_proof_with_shplonk_as_default: bool,
+}
+
+impl<F: FieldExt> AggregatorConfig<F> {
+    pub fn new_for_non_rec(
+        hash: TranscriptHash,
+        commitment_check: Vec<[usize; 4]>,
+        expose: Vec<[usize; 2]>,
+    ) -> Self {
+        Self {
+            hash,
+            commitment_check,
+            expose,
+            absorb: vec![],
+            target_aggregator_constant_hash_instance_offset: vec![],
+            target_proof_with_shplonk: vec![],
+            target_proof_with_shplonk_as_default: false,
+        }
+    }
+
+    pub fn default_final_aggregator_config() -> Self {
+        Self {
+            hash: TranscriptHash::Sha,
+            commitment_check: vec![],
+            expose: vec![],
+            absorb: vec![],
+            target_aggregator_constant_hash_instance_offset: vec![],
+            target_proof_with_shplonk: vec![],
+            target_proof_with_shplonk_as_default: false,
+        }
+    }
+}
+
+/* CARE: unsafe means that to review before used in production */
 pub fn run_circuit_unsafe_full_pass<
+    'a,
     E: MultiMillerLoop + G2AffineBaseHelper,
     C: Circuit<E::Scalar>,
 >(
-    cache_folder: &Path,
-    prefix: &str,
+    cache_folder: &'a Path,
+    prefix: &'a str,
     k: u32,
     circuits: Vec<C>,
     instances: Vec<Vec<Vec<E::Scalar>>>,
-    hash: TranscriptHash,
-    commitment_check: Vec<[usize; 4]>,
-    expose: Vec<[usize; 2]>,
-    absorb: Vec<([usize; 3], [usize; 2])>,
     force_create_proof: bool,
-    target_aggregator_constant_hash_instance_offset: &Vec<(usize, usize, E::Scalar)>, // (proof_index, instance_col, hash)
+    config: &AggregatorConfig<E::Scalar>,
 ) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>, E::Scalar)>
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
 {
+    let hash = config.hash;
+
     // 1. setup params
     let params =
         load_or_build_unsafe_params::<E>(k, Some(&cache_folder.join(format!("K{}.params", k))));
@@ -348,8 +386,11 @@ where
             circuit,
             &instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>(),
             Some(&cache_folder.join(format!("{}.{}.transcript.data", prefix, i))),
-            hash,
+            config.hash,
             !force_create_proof,
+            hash != TranscriptHash::Poseidon
+                || config.target_proof_with_shplonk_as_default
+                || config.target_proof_with_shplonk.contains(&i),
         );
         proofs.push(proof);
 
@@ -375,36 +416,43 @@ where
 
         // origin check
         if true {
+            let use_shplonk = hash != TranscriptHash::Poseidon
+                || config.target_proof_with_shplonk_as_default
+                || config.target_proof_with_shplonk.contains(&i);
             let timer = start_timer!(|| "origin verify single proof");
             let strategy = SingleVerifier::new(&params_verifier);
             match hash {
-                TranscriptHash::Blake2b => verify_proof(
+                TranscriptHash::Blake2b => verify_proof_ext(
                     &params_verifier,
                     &vkey,
                     strategy,
                     &[&instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>()[..]],
                     &mut Blake2bRead::init(&proof[..]),
+                    !use_shplonk,
                 ),
-                TranscriptHash::Poseidon => verify_proof(
+                TranscriptHash::Poseidon => verify_proof_ext(
                     &params_verifier,
                     &vkey,
                     strategy,
                     &[&instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>()[..]],
                     &mut PoseidonRead::init(&proof[..]),
+                    !use_shplonk,
                 ),
-                TranscriptHash::Sha => verify_proof_with_shplonk(
+                TranscriptHash::Sha => verify_proof_ext(
                     &params_verifier,
                     &vkey,
                     strategy,
                     &[&instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>()[..]],
                     &mut ShaRead::<_, _, _, sha2::Sha256>::init(&proof[..]),
+                    !use_shplonk,
                 ),
-                TranscriptHash::Keccak => verify_proof_with_shplonk(
+                TranscriptHash::Keccak => verify_proof_ext(
                     &params_verifier,
                     &vkey,
                     strategy,
                     &[&instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>()[..]],
                     &mut ShaRead::<_, _, _, sha3::Keccak256>::init(&proof[..]),
+                    !use_shplonk,
                 ),
             }
             .unwrap();
@@ -421,31 +469,9 @@ where
                     &instances[i],
                     proof.clone(),
                     hash,
-                    hash == TranscriptHash::Poseidon && USE_GWC_FOR_TARGET_PROOF,
+                    hash != TranscriptHash::Poseidon || config.target_proof_with_shplonk_as_default,
+                    &config.target_proof_with_shplonk,
                 );
-            }
-            end_timer!(timer);
-        }
-
-        // circuit single check
-        if hash == TranscriptHash::Poseidon {
-            let timer = start_timer!(|| "build_single_proof_verify_circuit");
-            for (i, proof) in proofs.iter().enumerate() {
-                let (circuit, instances, _) =
-                    crate::circuit_verifier::build_single_proof_verify_circuit::<E>(
-                        &params_verifier,
-                        &vkey,
-                        &instances[i],
-                        proof.clone(),
-                        hash,
-                        expose.clone(),
-                        absorb.clone(),
-                        target_aggregator_constant_hash_instance_offset,
-                        USE_GWC_FOR_TARGET_PROOF,
-                    );
-                const K: u32 = 21;
-                let prover = MockProver::run(K, &circuit, vec![instances]).unwrap();
-                assert_eq!(prover.verify(), Ok(()));
             }
             end_timer!(timer);
         }
@@ -461,9 +487,10 @@ where
             &vkeys.iter().map(|x| x).collect::<Vec<_>>()[..],
             instances.iter().collect(),
             proofs.clone(),
-            hash,
-            commitment_check.clone(),
-            hash == TranscriptHash::Poseidon && USE_GWC_FOR_TARGET_PROOF,
+            config.hash,
+            &config.commitment_check,
+            hash != TranscriptHash::Poseidon || config.target_proof_with_shplonk_as_default,
+            &config.target_proof_with_shplonk,
         );
         end_timer!(timer);
     }
@@ -476,12 +503,7 @@ where
             &vkeys[..].iter().collect::<Vec<_>>(),
             instances.iter().collect(),
             proofs,
-            hash,
-            commitment_check,
-            expose,
-            absorb,
-            target_aggregator_constant_hash_instance_offset,
-            USE_GWC_FOR_TARGET_PROOF,
+            config,
         );
         end_timer!(timer);
 
@@ -507,15 +529,11 @@ pub fn run_circuit_with_agg_unsafe_full_pass<
     k: u32,
     circuits: Vec<C>,
     mut instances: Vec<Vec<Vec<E::Scalar>>>,
-    agg_circuit: AggregatorCircuit<E::G1Affine>,
-    last_agg_instance: Vec<E::Scalar>,
-    hash: TranscriptHash,
-    commitment_check: Vec<[usize; 4]>,
-    expose: Vec<[usize; 2]>,
-    absorb: Vec<([usize; 3], [usize; 2])>,
+    prev_agg_instance: Vec<E::Scalar>,
+    prev_agg_circuit: AggregatorCircuit<E::G1Affine>,
+    prev_agg_idx: usize,
     force_create_proof: bool,
-    target_aggregator_constant_hash_instance_offset: &Vec<(usize, usize, E::Scalar)>, // (proof_index, instance_col, hash)
-    agg_idx: usize,
+    config: &AggregatorConfig<E::Scalar>,
 ) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>, E::Scalar)>
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
@@ -543,8 +561,10 @@ where
             circuit,
             &instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>(),
             Some(&cache_folder.join(format!("{}.{}.transcript.data", prefix, i))),
-            hash,
+            config.hash,
             !force_create_proof,
+            config.target_proof_with_shplonk_as_default
+                || config.target_proof_with_shplonk.contains(&i),
         );
         proofs.push(proof);
 
@@ -554,25 +574,26 @@ where
         );
     }
 
-    let agg_vkey = load_or_build_vkey::<E, _>(
+    let prev_agg_vkey = load_or_build_vkey::<E, _>(
         &params,
-        &agg_circuit,
-        Some(&cache_folder.join(format!("{}.agg.{}.vkey.data", prefix, agg_idx))),
+        &prev_agg_circuit,
+        Some(&cache_folder.join(format!("{}.agg.{}.vkey.data", prefix, prev_agg_idx))),
     );
-    vkeys.push(agg_vkey.clone());
+    vkeys.push(prev_agg_vkey.clone());
 
-    let agg_proof = load_or_create_proof::<E, _>(
+    let prev_agg_proof = load_or_create_proof::<E, _>(
         &params,
-        agg_vkey,
-        agg_circuit,
-        &[&last_agg_instance[..]][..],
-        Some(&cache_folder.join(format!("{}.agg.{}.transcript.data", prefix, agg_idx))),
-        hash,
+        prev_agg_vkey,
+        prev_agg_circuit,
+        &[&prev_agg_instance[..]][..],
+        Some(&cache_folder.join(format!("{}.agg.{}.transcript.data", prefix, prev_agg_idx))),
+        config.hash,
         !force_create_proof,
+        config.target_proof_with_shplonk_as_default,
     );
-    proofs.push(agg_proof);
+    proofs.push(prev_agg_proof);
 
-    instances.push(vec![last_agg_instance]);
+    instances.push(vec![prev_agg_instance]);
     // 4. many verify
     let public_inputs_size = instances.iter().fold(0usize, |acc, x| {
         usize::max(acc, x.iter().fold(0, |acc, x| usize::max(acc, x.len())))
@@ -580,19 +601,14 @@ where
     let params_verifier: ParamsVerifier<E> = params.verifier(public_inputs_size).unwrap();
 
     // circuit multi check
-    if hash == TranscriptHash::Poseidon {
+    if config.hash == TranscriptHash::Poseidon {
         let timer = start_timer!(|| "build_aggregate_verify_circuit");
         let (circuit, instances, hash) = build_aggregate_verify_circuit::<E>(
             &params_verifier,
             &vkeys[..].iter().collect::<Vec<_>>(),
             instances.iter().collect(),
             proofs,
-            hash,
-            commitment_check,
-            expose,
-            absorb,
-            target_aggregator_constant_hash_instance_offset,
-            false,
+            config,
         );
         end_timer!(timer);
 

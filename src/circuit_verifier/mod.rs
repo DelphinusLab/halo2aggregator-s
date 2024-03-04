@@ -5,6 +5,7 @@ use crate::api::ast_eval::EvalOps;
 use crate::api::ast_eval::EvalPos;
 use crate::api::halo2::verify_aggregation_proofs;
 use crate::circuits::utils::instance_to_instance_commitment;
+use crate::circuits::utils::AggregatorConfig;
 use crate::circuits::utils::TranscriptHash;
 use crate::transcript::poseidon::PoseidonRead;
 use halo2_proofs::arithmetic::CurveAffine;
@@ -235,27 +236,12 @@ pub fn build_single_proof_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper
     vkey: &VerifyingKey<E::G1Affine>,
     instances: &Vec<Vec<E::Scalar>>,
     proof: Vec<u8>,
-    hash: TranscriptHash,
-    expose: Vec<[usize; 2]>,
-    absorb: Vec<([usize; 3], [usize; 2])>, // the index of instance + the index of advices
-    target_aggregator_constant_hash_instance_offset: &Vec<(usize, usize, E::Scalar)>, // (proof_index, instance_col, hash)
-    use_gwc: bool,
+    config: &AggregatorConfig<E::Scalar>,
 ) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>, E::Scalar)
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
 {
-    build_aggregate_verify_circuit(
-        params,
-        &[vkey],
-        vec![instances],
-        vec![proof],
-        hash,
-        vec![],
-        expose,
-        absorb,
-        target_aggregator_constant_hash_instance_offset,
-        use_gwc
-    )
+    build_aggregate_verify_circuit(params, &[vkey], vec![instances], vec![proof], config)
 }
 
 pub fn build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
@@ -263,12 +249,7 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
     vkey: &[&VerifyingKey<E::G1Affine>],
     instances: Vec<&Vec<Vec<E::Scalar>>>,
     proofs: Vec<Vec<u8>>,
-    hash: TranscriptHash,
-    commitment_check: Vec<[usize; 4]>,
-    expose: Vec<[usize; 2]>,
-    absorb: Vec<([usize; 3], [usize; 2])>, // the index of instance + the index of advices,
-    target_aggregator_constant_hash_instance_offset: &Vec<(usize, usize, E::Scalar)>, // (proof_index, instance_col, hash)
-    use_gwc: bool,
+    config: &AggregatorConfig<E::Scalar>,
 ) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>, E::Scalar)
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
@@ -277,19 +258,8 @@ where
     let mut res = None;
 
     while rest_tries > 0 && res.is_none() {
-        res = _build_aggregate_verify_circuit(
-            params,
-            vkey,
-            instances.clone(),
-            &proofs,
-            hash,
-            &commitment_check,
-            &expose,
-            &absorb,
-            &target_aggregator_constant_hash_instance_offset,
-            use_gwc,
-        )
-        .ok();
+        res =
+            _build_aggregate_verify_circuit(params, vkey, instances.clone(), &proofs, config).ok();
         rest_tries -= 1;
     }
 
@@ -322,12 +292,7 @@ pub fn _build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
     vkey: &[&VerifyingKey<E::G1Affine>],
     instances: Vec<&Vec<Vec<E::Scalar>>>,
     proofs: &Vec<Vec<u8>>,
-    hash: TranscriptHash,
-    commitment_check: &Vec<[usize; 4]>,
-    expose: &Vec<[usize; 2]>,
-    absorb: &Vec<([usize; 3], [usize; 2])>, // the index of instance + the index of advices
-    target_aggregator_constant_hash_instance_offset: &Vec<(usize, usize, E::Scalar)>, // (proof_index, instance_col, hash)
-    use_gwc: bool,
+    config: &AggregatorConfig<E::Scalar>,
 ) -> Result<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>, E::Scalar), UnsafeError>
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
@@ -335,31 +300,37 @@ where
     let ctx = Rc::new(RefCell::new(Context::new()));
     let ctx = IntegerContext::<<E::G1Affine as CurveAffine>::Base, E::Scalar>::new(ctx);
     let mut ctx = NativeScalarEccContext::<E::G1Affine>(ctx, 0);
-    let (w_x, w_g, advices) = verify_aggregation_proofs(params, vkey, commitment_check, use_gwc);
+    let (w_x, w_g, advices) = verify_aggregation_proofs(
+        params,
+        vkey,
+        &config.commitment_check,
+        config.target_proof_with_shplonk_as_default,
+        &config.target_proof_with_shplonk,
+    );
 
     let instance_commitments = instance_to_instance_commitment(params, vkey, instances.clone());
 
     let mut targets = vec![w_x.0, w_g.0];
 
-    for idx in commitment_check {
+    for idx in &config.commitment_check {
         targets.push(advices[idx[0]][idx[1]].0.clone());
         targets.push(advices[idx[2]][idx[3]].0.clone());
     }
 
     let absorb_start_idx = targets.len();
 
-    for abs in absorb {
+    for abs in &config.absorb {
         targets.push(advices[abs.1[0]][abs.1[1]].0.clone());
     }
 
     let expose_start_idx = targets.len();
 
-    for idx in expose {
+    for idx in &config.expose {
         targets.push(advices[idx[0]][idx[1]].0.clone());
     }
 
     let c = EvalContext::translate(&targets[..]);
-    let (pl, mut il, assigned_constant_hash) = match hash {
+    let (pl, mut il, assigned_constant_hash) = match config.hash {
         TranscriptHash::Poseidon => {
             let mut t = vec![];
             for i in 0..proofs.len() {
@@ -396,7 +367,9 @@ where
         let mut hasher = PoseidonChipRead::init(PoseidonRead::init(&empty[..]), &mut ctx);
 
         // il[target_aggregator_circuit's hash instance col] -= params[0] * hash
-        for (proof_index, instance_col, hash) in target_aggregator_constant_hash_instance_offset {
+        for (proof_index, instance_col, hash) in
+            &config.target_aggregator_constant_hash_instance_offset
+        {
             let assigned_hash = ctx.base_integer_chip().base_chip().assign(*hash);
             hasher.common_scalar(&mut ctx, &assigned_hash);
 
@@ -424,7 +397,7 @@ where
 
     for (i, c) in pl[absorb_start_idx..expose_start_idx].iter().enumerate() {
         let encoded_c = ctx.ecc_encode(c);
-        let [proof_index, instance_offset, g_index] = absorb[i].0;
+        let [proof_index, instance_offset, g_index] = config.absorb[i].0;
         let mut instance_index = instance_offset;
         for i in instances[0..proof_index].iter() {
             instance_index += i.len()

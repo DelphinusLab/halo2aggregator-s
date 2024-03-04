@@ -69,7 +69,8 @@ pub fn verify_aggregation_proofs<E: MultiMillerLoop>(
     params: &ParamsVerifier<E>,
     vks: &[&VerifyingKey<E::G1Affine>],
     commitment_check: &Vec<[usize; 4]>,
-    use_gwc: bool
+    use_shplonk_as_default: bool,
+    proofs_with_shplonk: &Vec<usize>,
 ) -> (
     AstPointRc<E::G1Affine>,           // w_x
     AstPointRc<E::G1Affine>,           // w_g
@@ -91,8 +92,8 @@ pub fn verify_aggregation_proofs<E: MultiMillerLoop>(
     }
 
     for (i, vk) in vks.into_iter().enumerate() {
-        let (p, a, mut t) =
-            verify_single_proof_no_eval(params, vk, i, use_gwc);
+        let use_shplonk = use_shplonk_as_default || proofs_with_shplonk.contains(&i);
+        let (p, a, mut t) = verify_single_proof_no_eval(params, vk, i, !use_shplonk);
         transcript.common_scalar(t.squeeze_challenge());
         advice_commitments.push(a);
         pairs.push(p);

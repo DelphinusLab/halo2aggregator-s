@@ -531,7 +531,7 @@ pub fn solidity_codegen_with_proof<E: MultiMillerLoop, D: Digest + Clone>(
     tera_context: &mut tera::Context,
     check: bool,
 ) -> Vec<String> {
-    let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey], &vec![], false);
+    let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey], &vec![], true, &vec![]);
 
     let instance_commitments =
         instance_to_instance_commitment(params, &[vkey], vec![&vec![instances.clone()]])[0].clone();
@@ -629,7 +629,7 @@ pub fn solidity_aux_gen_data<E: MultiMillerLoop, D: Digest + Clone>(
     proofs: Vec<u8>,
     check: bool,
 ) -> Vec<E::Scalar> {
-    let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey], &vec![], false);
+    let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey], &vec![], true, &vec![]);
 
     let instance_commitments =
         instance_to_instance_commitment(params, &[vkey], vec![&vec![instances.clone()]])[0].clone();
