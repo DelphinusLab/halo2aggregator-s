@@ -246,11 +246,18 @@ pub fn run_circuit_unsafe_full_pass_no_rec<
     k: u32,
     circuits: Vec<C>,
     instances: Vec<Vec<Vec<E::Scalar>>>,
+    fake_instances: Vec<Vec<Vec<E::Scalar>>>,
     hash: TranscriptHash,
     commitment_check: Vec<[usize; 4]>,
     expose: Vec<[usize; 2]>,
+    max_public_instance: Vec<Vec<usize>>,
     force_create_proof: bool,
-) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>, E::Scalar)>
+) -> Option<(
+    AggregatorCircuit<E::G1Affine>,
+    Vec<E::Scalar>,
+    Vec<E::Scalar>,
+    E::Scalar,
+)>
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
 {
@@ -260,8 +267,9 @@ where
         k,
         circuits,
         instances,
+        fake_instances,
         force_create_proof,
-        &AggregatorConfig::new_for_non_rec(hash, commitment_check, expose),
+        &AggregatorConfig::new_for_non_rec(hash, commitment_check, expose, max_public_instance),
     )
 }
 
@@ -315,6 +323,8 @@ pub struct AggregatorConfig<F: FieldExt> {
     /* the set of proof that genearted with shplonk (if target_proof_with_shplonk_as_default is false) */
     pub target_proof_with_shplonk: Vec<usize>,
     pub target_proof_with_shplonk_as_default: bool,
+    pub target_proof_max_instance: Vec<Vec<usize>>,
+    pub is_final_aggregator: bool,
 }
 
 impl<F: FieldExt> AggregatorConfig<F> {
@@ -322,6 +332,7 @@ impl<F: FieldExt> AggregatorConfig<F> {
         hash: TranscriptHash,
         commitment_check: Vec<[usize; 4]>,
         expose: Vec<[usize; 2]>,
+        target_proof_max_instance: Vec<Vec<usize>>,
     ) -> Self {
         Self {
             hash,
@@ -331,10 +342,15 @@ impl<F: FieldExt> AggregatorConfig<F> {
             target_aggregator_constant_hash_instance_offset: vec![],
             target_proof_with_shplonk: vec![],
             target_proof_with_shplonk_as_default: false,
+            target_proof_max_instance,
+            is_final_aggregator: true,
         }
     }
 
-    pub fn default_final_aggregator_config() -> Self {
+    pub fn default_final_aggregator_config(
+        target_proof_max_instance: Vec<Vec<usize>>,
+        is_final_aggregator: bool,
+    ) -> Self {
         Self {
             hash: TranscriptHash::Sha,
             commitment_check: vec![],
@@ -343,6 +359,8 @@ impl<F: FieldExt> AggregatorConfig<F> {
             target_aggregator_constant_hash_instance_offset: vec![],
             target_proof_with_shplonk: vec![],
             target_proof_with_shplonk_as_default: false,
+            target_proof_max_instance,
+            is_final_aggregator,
         }
     }
 }
@@ -358,9 +376,15 @@ pub fn run_circuit_unsafe_full_pass<
     k: u32,
     circuits: Vec<C>,
     instances: Vec<Vec<Vec<E::Scalar>>>,
+    fake_instances: Vec<Vec<Vec<E::Scalar>>>,
     force_create_proof: bool,
     config: &AggregatorConfig<E::Scalar>,
-) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>, E::Scalar)>
+) -> Option<(
+    AggregatorCircuit<E::G1Affine>,
+    Vec<E::Scalar>,
+    Vec<E::Scalar>,
+    E::Scalar,
+)>
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
 {
@@ -394,10 +418,26 @@ where
         );
         proofs.push(proof);
 
+        let mut aligned_instances = instances[i].clone();
+        // We need to align instance to max according to config
+        for j in 0..instances[i].len() {
+            use halo2_proofs::arithmetic::Field;
+            assert!(instances[i][j].len() <= config.target_proof_max_instance[i][j]);
+            aligned_instances[j].resize(config.target_proof_max_instance[i][j], E::Scalar::zero());
+        }
         store_instance(
-            &instances[i],
+            &aligned_instances,
             &cache_folder.join(format!("{}.{}.instance.data", prefix, i)),
         );
+
+        if hash != TranscriptHash::Poseidon {
+            // Store fake instaces for solidity verifier when create proof for final aggregator.
+            assert!(fake_instances.len() > i);
+            store_instance(
+                &fake_instances[i],
+                &cache_folder.join(format!("{}.{}.fakeinstance.data", prefix, i)),
+            );
+        }
     }
 
     // 4. many verify
@@ -498,7 +538,7 @@ where
     // circuit multi check
     if hash == TranscriptHash::Poseidon {
         let timer = start_timer!(|| "build_aggregate_verify_circuit");
-        let (circuit, instances, hash) = build_aggregate_verify_circuit::<E>(
+        let (circuit, instances, fake_instance, hash) = build_aggregate_verify_circuit::<E>(
             &params_verifier,
             &vkeys[..].iter().collect::<Vec<_>>(),
             instances.iter().collect(),
@@ -513,7 +553,7 @@ where
             assert_eq!(prover.verify(), Ok(()));
         }
 
-        Some((circuit, instances, hash))
+        Some((circuit, instances, fake_instance, hash))
     } else {
         None
     }
@@ -534,7 +574,12 @@ pub fn run_circuit_with_agg_unsafe_full_pass<
     prev_agg_idx: usize,
     force_create_proof: bool,
     config: &AggregatorConfig<E::Scalar>,
-) -> Option<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>, E::Scalar)>
+) -> Option<(
+    AggregatorCircuit<E::G1Affine>,
+    Vec<E::Scalar>,
+    Vec<E::Scalar>,
+    E::Scalar,
+)>
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
 {
@@ -603,7 +648,7 @@ where
     // circuit multi check
     if config.hash == TranscriptHash::Poseidon {
         let timer = start_timer!(|| "build_aggregate_verify_circuit");
-        let (circuit, instances, hash) = build_aggregate_verify_circuit::<E>(
+        let (circuit, instances, fake_instance, hash) = build_aggregate_verify_circuit::<E>(
             &params_verifier,
             &vkeys[..].iter().collect::<Vec<_>>(),
             instances.iter().collect(),
@@ -618,7 +663,7 @@ where
             assert_eq!(prover.verify(), Ok(()));
         }
 
-        Some((circuit, instances, hash))
+        Some((circuit, instances, fake_instance, hash))
     } else {
         None
     }

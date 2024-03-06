@@ -25,6 +25,7 @@ use halo2ecc_s::circuit::ecc_chip::EccBaseIntegerChipWrapper;
 use halo2ecc_s::circuit::ecc_chip::EccChipBaseOps;
 use halo2ecc_s::circuit::ecc_chip::EccChipScalarOps;
 use halo2ecc_s::circuit::ecc_chip::UnsafeError;
+use halo2ecc_s::circuit::keccak_chip::KeccakChipOps;
 use halo2ecc_s::circuit::pairing_chip::PairingChipOps;
 use halo2ecc_s::context::Context;
 use halo2ecc_s::context::IntegerContext;
@@ -237,7 +238,12 @@ pub fn build_single_proof_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper
     instances: &Vec<Vec<E::Scalar>>,
     proof: Vec<u8>,
     config: &AggregatorConfig<E::Scalar>,
-) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>, E::Scalar)
+) -> (
+    AggregatorCircuit<E::G1Affine>,
+    Vec<E::Scalar>,
+    Vec<E::Scalar>,
+    E::Scalar,
+)
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
 {
@@ -250,7 +256,12 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
     instances: Vec<&Vec<Vec<E::Scalar>>>,
     proofs: Vec<Vec<u8>>,
     config: &AggregatorConfig<E::Scalar>,
-) -> (AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>, E::Scalar)
+) -> (
+    AggregatorCircuit<E::G1Affine>,
+    Vec<E::Scalar>,
+    Vec<E::Scalar>,
+    E::Scalar,
+)
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
 {
@@ -293,7 +304,15 @@ pub fn _build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
     instances: Vec<&Vec<Vec<E::Scalar>>>,
     proofs: &Vec<Vec<u8>>,
     config: &AggregatorConfig<E::Scalar>,
-) -> Result<(AggregatorCircuit<E::G1Affine>, Vec<E::Scalar>, E::Scalar), UnsafeError>
+) -> Result<
+    (
+        AggregatorCircuit<E::G1Affine>,
+        Vec<E::Scalar>,
+        Vec<E::Scalar>,
+        E::Scalar,
+    ),
+    UnsafeError,
+>
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
 {
@@ -479,27 +498,106 @@ where
         ctx.check_pairing(&[(&pl[0], &assigned_s_g2), (&pl[1], &assigned_g2)]);
     }
 
-    let mut assigned_instances = vec![assigned_final_hash.clone()];
-    assigned_instances.append(
-        &mut vec![&il[..], &pl[expose_start_idx..pl.len()]]
-            .concat()
+    // Fake instance is not the real instance of the final aggregator.
+    // The final aggregator should hash all fake instance and target circuit instance to get the real instance.
+    let (assigned_instances, instances, fake_instances) = if !config.is_final_aggregator {
+        let mut assigned_instances = vec![assigned_final_hash];
+        assigned_instances.append(
+            &mut vec![&il[..], &pl[expose_start_idx..pl.len()]]
+                .concat()
+                .iter()
+                .map(|p| ctx.ecc_encode(p))
+                .collect::<Vec<_>>()
+                .concat(),
+        );
+
+        for ai in assigned_instances.iter() {
+            ctx.0
+                .ctx
+                .borrow()
+                .records
+                .lock()
+                .unwrap()
+                .enable_permute(&ai.cell);
+        }
+
+        let instances = assigned_instances.iter().map(|x| x.val).collect::<Vec<_>>();
+
+        (assigned_instances, instances, vec![])
+    } else {
+        let mut instance_commitments = vec![];
+        let mut hash_list = vec![];
+        for (proof_idx, max_row_of_cols) in config.target_proof_max_instance.iter().enumerate() {
+            for (column_idx, max_row) in max_row_of_cols.iter().enumerate() {
+                let mut sl = vec![];
+                for row_idx in 0..*max_row {
+                    let assigned_s = ctx.base_integer_chip().base_chip().assign(
+                        instances[proof_idx][column_idx]
+                            .get(row_idx)
+                            .cloned()
+                            .unwrap_or(E::Scalar::zero()),
+                    );
+                    hash_list.push(assigned_s.clone());
+                    sl.push(assigned_s)
+                }
+
+                let mut pl = vec![];
+                for row_idx in 0..*max_row {
+                    let assigned_p =
+                        ctx.assign_constant_point(&params.g_lagrange[row_idx].to_curve());
+                    pl.push(assigned_p);
+                }
+
+                #[cfg(feature = "unsafe")]
+                let instance_commitment = ctx.msm_unsafe(&pl, &sl)?;
+
+                #[cfg(not(feature = "unsafe"))]
+                let instance_commitment = ctx.msm(&pl, &sl);
+
+                instance_commitments.push(instance_commitment);
+            }
+        }
+
+        assert!(instance_commitments.len() == il.len());
+        for i in 0..instance_commitments.len() {
+            ctx.ecc_assert_equal(&instance_commitments[i], &il[i]);
+        }
+
+        let mut assigned_fake_instances = vec![assigned_final_hash];
+
+        assigned_fake_instances.append(
+            &mut vec![&pl[expose_start_idx..pl.len()]]
+                .concat()
+                .iter()
+                .map(|p| ctx.ecc_encode(p))
+                .collect::<Vec<_>>()
+                .concat(),
+        );
+
+        let fake_instances = assigned_fake_instances
             .iter()
-            .map(|p| ctx.ecc_encode(p))
-            .collect::<Vec<_>>()
-            .concat(),
-    );
+            .map(|x| x.val)
+            .collect::<Vec<_>>();
 
-    for ai in assigned_instances.iter() {
-        ctx.0
-            .ctx
-            .borrow()
-            .records
-            .lock()
-            .unwrap()
-            .enable_permute(&ai.cell);
-    }
+        hash_list.append(&mut assigned_fake_instances);
 
-    let instances = assigned_instances.iter().map(|x| x.val).collect::<Vec<_>>();
+        let assigned_instances = vec![ctx.0.ctx.borrow_mut().hash(&hash_list[..])];
+
+        for ai in assigned_instances.iter() {
+            ctx.0
+                .ctx
+                .borrow()
+                .records
+                .lock()
+                .unwrap()
+                .enable_permute(&ai.cell);
+        }
+
+        let instances = assigned_instances.iter().map(|x| x.val).collect::<Vec<_>>();
+
+        (assigned_instances, instances, fake_instances)
+    };
+
     let ctx: Context<_> = ctx.into();
     println!("offset {} {}", ctx.base_offset, ctx.range_offset);
 
@@ -509,6 +607,7 @@ where
             assigned_instances,
         ),
         instances,
+        fake_instances,
         assigned_constant_hash.val,
     ))
 }

@@ -29,17 +29,20 @@ contract('AggregatorVerifier', () => {
     const target_instance1 = readBnLe(
       __dirname + "/../../output/simple-circuit.1.instance.data");
 
-    const verify_instance = readBnLe(
+
+    const verify_real_instance = readBnLe(
       __dirname + "/../../output/verify-circuit.0.instance.data");
+    const verify_fake_instance = readBnLe(
+      __dirname + "/../../output/verify-circuit.0.fakeinstance.data");
     const proof = readBnLe(
       __dirname + "/../../output/verify-circuit.0.transcript.data");
     const aux = readBnLe(
       __dirname + "/../../output/verify-circuit.0.aux.data");
 
-    const gas = await verifier.verify.estimateGas(proof, verify_instance, aux, [target_instance0, target_instance1]);
+    const gas = await verifier.verify.estimateGas(proof, verify_fake_instance, aux, [target_instance0, target_instance1]);
     console.log("gas cost", gas);
 
-    const xy = await verifier.verify(proof, verify_instance, aux, [target_instance0, target_instance1]);
+    const xy = await verifier.verify(proof, verify_fake_instance, aux, [target_instance0, target_instance1]);
     console.log(xy.toString(16));
   });
 });

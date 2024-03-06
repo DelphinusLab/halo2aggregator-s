@@ -230,30 +230,34 @@ pub fn test_twice_verify_circuit_diff() {
     let path = Path::new(path);
     let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
     println!("circuit1 {:?} {:?}", &circuit.a, &circuit.b);
-    let (circuit1, _, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
+    let (circuit1, _, _, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
         path,
         "simple-circuit",
         target_circuit_k,
         vec![circuit.clone(), circuit],
         vec![instances.clone(), instances],
+        vec![],
         TranscriptHash::Poseidon,
         vec![],
         vec![],
+        vec![vec![1], vec![1]],
         true,
     )
     .unwrap();
 
     let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
     println!("circuit2 {:?} {:?}", &circuit.a, &circuit.b);
-    let (circuit2, _, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
+    let (circuit2, _, _, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
         path,
         "simple-circuit",
         target_circuit_k,
         vec![circuit.clone(), circuit],
         vec![instances.clone(), instances],
+        vec![],
         TranscriptHash::Poseidon,
         vec![],
         vec![],
+        vec![vec![1], vec![1]],
         true,
     )
     .unwrap();
@@ -352,18 +356,21 @@ mod tests {
 
         let path = Path::new(path);
         let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
-        let (circuit, instances, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
-            path,
-            "simple-circuit",
-            target_circuit_k,
-            vec![circuit.clone(), circuit],
-            vec![instances.clone(), instances],
-            TranscriptHash::Poseidon,
-            vec![[0, 0, 1, 0]],
-            vec![],
-            true,
-        )
-        .unwrap();
+        let (circuit, instances, fake_instances, _) =
+            run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
+                path,
+                "simple-circuit",
+                target_circuit_k,
+                vec![circuit.clone(), circuit],
+                vec![instances.clone(), instances],
+                vec![],
+                TranscriptHash::Poseidon,
+                vec![[0, 0, 1, 0]],
+                vec![],
+                vec![vec![1], vec![1]],
+                true,
+            )
+            .unwrap();
 
         let circuit0 = circuit.without_witnesses();
         run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
@@ -372,9 +379,11 @@ mod tests {
             verify_circuit_k,
             vec![circuit],
             vec![vec![instances.clone()]],
+            vec![vec![fake_instances]],
             aggregator_circuit_hasher,
             vec![],
             vec![],
+            vec![vec![1]],
             true,
         );
 

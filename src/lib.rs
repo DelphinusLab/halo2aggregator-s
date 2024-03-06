@@ -21,17 +21,20 @@ fn test_batch_no_rec() {
     let path = Path::new(path);
     let (circuit1, instance1) = SimpleCircuit::<Fr>::random_new_with_instance();
     let (circuit2, instance2) = SimpleCircuit::<Fr>::random_new_with_instance();
-    let (circuit, instances, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
+    let (circuit, instances, fake_instances, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
         path,
         "simple-circuit",
         8,
         vec![circuit1, circuit2],
         vec![instance1, instance2],
+        vec![],
         TranscriptHash::Poseidon,
         vec![],
         vec![],
+        vec![vec![1], vec![1]],
         true,
-    ).unwrap();
+    )
+    .unwrap();
 
     run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
         path,
@@ -39,9 +42,11 @@ fn test_batch_no_rec() {
         22,
         vec![circuit],
         vec![vec![instances]],
+        vec![vec![fake_instances]],
         TranscriptHash::Blake2b,
         vec![],
         vec![],
+        vec![vec![1]],
         true,
     );
 }
@@ -71,14 +76,19 @@ fn test_single_rec() {
     let (circuit, target_instances) = SimpleCircuit::<Fr>::default_with_instance();
 
     println!("build agg 0");
-    let mut config =
-        AggregatorConfig::new_for_non_rec(TranscriptHash::Poseidon, vec![[0, 0, 0, 0]], vec![]);
-    let (agg_l0, agg_l0_instances, hash) = run_circuit_unsafe_full_pass::<Bn256, _>(
+    let mut config = AggregatorConfig::new_for_non_rec(
+        TranscriptHash::Poseidon,
+        vec![[0, 0, 0, 0]],
+        vec![],
+        vec![vec![1]],
+    );
+    let (agg_l0, agg_l0_instances, _, hash) = run_circuit_unsafe_full_pass::<Bn256, _>(
         path,
         "simple-circuit",
         k,
         vec![circuit.clone()],
         vec![target_instances.clone()],
+        vec![],
         false,
         &config,
     )
@@ -94,21 +104,24 @@ fn test_single_rec() {
     let mut last_agg = agg_l0;
     let mut last_agg_instances = agg_l0_instances;
     for i in 1..5 {
+        config.target_proof_max_instance = vec![vec![1], vec![4]];
         config.target_aggregator_constant_hash_instance_offset =
             vec![(1, 0, *final_hashes.last().unwrap())];
-        let (agg, instances, hash) = run_circuit_with_agg_unsafe_full_pass::<Bn256, _>(
-            path,
-            "simple-circuit",
-            k,
-            vec![circuit.clone()],
-            vec![target_instances.clone()],
-            last_agg_instances,
-            last_agg,
-            i - 1,
-            false,
-            &config,
-        )
-        .unwrap();
+
+        let (agg, instances, _fake_instance, hash) =
+            run_circuit_with_agg_unsafe_full_pass::<Bn256, _>(
+                path,
+                "simple-circuit",
+                k,
+                vec![circuit.clone()],
+                vec![target_instances.clone()],
+                last_agg_instances,
+                last_agg,
+                i - 1,
+                false,
+                &config,
+            )
+            .unwrap();
         println!(
             "build agg {} done, hash is {:?}, instance is {:?}",
             i, hash, instances

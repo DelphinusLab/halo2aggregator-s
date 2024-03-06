@@ -19,7 +19,7 @@ sha3 = "0.10.8"
 lazy_static = "1.4.0"
 
 [features]
-default = []
+default = ["unsafe"]
 profile = ["ark-std/print-trace"]
 cuda = ["halo2_proofs/cuda", "halo2ecc-s/cuda"]
 unsafe = []

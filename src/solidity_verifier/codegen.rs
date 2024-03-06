@@ -324,7 +324,7 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
                     let a = self.pos_to_scalar_var(a);
                     let b = self.pos_to_scalar_var(b);
                     let expr = format!(
-                        "mulmod({}, {}, AggregatorLib.p_mod)",
+                        "mulmod({}, {}, AggregatorLib.q_mod)",
                         a.to_string(true),
                         b.to_string(true)
                     );
@@ -354,7 +354,7 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
                     let a = self.pos_to_scalar_var(a);
                     let b = self.pos_to_scalar_var(b);
                     let expr = format!(
-                        "addmod({}, {}, AggregatorLib.p_mod)",
+                        "addmod({}, {}, AggregatorLib.q_mod)",
                         a.to_string(true),
                         b.to_string(true)
                     );
@@ -383,7 +383,7 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
                     let a = self.pos_to_scalar_var(a);
                     let b = self.pos_to_scalar_var(b);
                     let expr = format!(
-                        "addmod({}, AggregatorLib.p_mod - {}, AggregatorLib.p_mod)",
+                        "addmod({}, AggregatorLib.q_mod - {}, AggregatorLib.q_mod)",
                         a.to_string(true),
                         b.to_string(true)
                     );
@@ -482,35 +482,36 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
                         self.statements
                             .push(format!("buf[{}] = {};", start + idx + 2, s_str));
 
+                        if SOLIDITY_DEBUG {
+                            let start = start + if i == 0 { 0 } else { 2 };
+                            let p_value = self.eval_point_pos(p).coordinates().unwrap();
+                            let s_value = self.eval_scalar_pos(s);
+                            self.statements.push(format!(
+                                "require(buf[{}] == {}, \"ops {}.0\");",
+                                start,
+                                field_to_bn(p_value.x()).to_str_radix(10),
+                                i
+                            ));
+                            self.statements.push(format!(
+                                "require(buf[{}] == {}, \"ops {}.1\");",
+                                start + 1,
+                                field_to_bn(p_value.y()).to_str_radix(10),
+                                i
+                            ));
+                            self.statements.push(format!(
+                                "require(buf[{}] == {}, \"ops {}.2\");",
+                                start + 2,
+                                field_to_bn(&s_value).to_str_radix(10),
+                                i
+                            ));
+                        }
+
                         if i > 0 {
                             self.statements
                                 .push(format!("AggregatorLib.ecc_mul_add(buf, {});", start));
                         } else {
                             self.statements
                                 .push(format!("AggregatorLib.ecc_mul(buf, {});", start));
-                        }
-
-                        if SOLIDITY_DEBUG {
-                            let p_value = self.eval_point_pos(p).coordinates().unwrap();
-                            let s_value = self.eval_scalar_pos(s);
-                            self.statements.push(format!(
-                                "require(buf[{}] == {}, \"ops {}.0\");",
-                                start + i * 3,
-                                field_to_bn(p_value.x()).to_str_radix(10),
-                                i
-                            ));
-                            self.statements.push(format!(
-                                "require(buf[{}] == {}, \"ops {}.1\");",
-                                start + i * 3 + 1,
-                                field_to_bn(p_value.y()).to_str_radix(10),
-                                i
-                            ));
-                            self.statements.push(format!(
-                                "require(buf[{}] == {}, \"ops {}.2\");",
-                                start + i * 3 + 2,
-                                field_to_bn(&s_value).to_str_radix(10),
-                                i
-                            ));
                         }
                     }
 
