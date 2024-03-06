@@ -76,11 +76,10 @@ fn test_single_rec() {
     let (circuit, target_instances) = SimpleCircuit::<Fr>::default_with_instance();
 
     println!("build agg 0");
-    let mut config = AggregatorConfig::new_for_non_rec(
+    let mut config = AggregatorConfig::default_final_aggregator_config(
         TranscriptHash::Poseidon,
-        vec![[0, 0, 0, 0]],
-        vec![],
         vec![vec![1]],
+        false,
     );
     let (agg_l0, agg_l0_instances, _, hash) = run_circuit_unsafe_full_pass::<Bn256, _>(
         path,

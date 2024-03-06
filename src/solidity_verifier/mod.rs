@@ -292,21 +292,6 @@ pub fn test_twice_verify_circuit_diff() {
         }
     }
 
-    for (col, (l, r)) in circuit1
-        .records
-        .as_ref()
-        .select_fix_record
-        .iter()
-        .zip(circuit2.records.as_ref().select_fix_record.iter())
-        .enumerate()
-    {
-        for (row, (l, r)) in l.iter().zip(r.iter()).enumerate() {
-            if l != r {
-                println!("different select fix {} {} {:?} {:?}", col, row, l, r);
-            }
-        }
-    }
-
     for (i, (l, r)) in circuit1
         .records
         .as_ref()

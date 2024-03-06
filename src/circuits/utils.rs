@@ -348,11 +348,12 @@ impl<F: FieldExt> AggregatorConfig<F> {
     }
 
     pub fn default_final_aggregator_config(
+        hash: TranscriptHash,
         target_proof_max_instance: Vec<Vec<usize>>,
         is_final_aggregator: bool,
     ) -> Self {
         Self {
-            hash: TranscriptHash::Sha,
+            hash,
             commitment_check: vec![],
             expose: vec![],
             absorb: vec![],

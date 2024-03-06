@@ -620,7 +620,7 @@ dependencies = [
 [[package]]
 name = "halo2ecc-s"
 version = "0.3.2"
-source = "git+https://github.com/lanbones/halo2ecc-s.git?branch=no-select-chip#2e29a7d040bafb4b567ab38e2a551be6aa6375d8"
+source = "git+https://github.com/lanbones/halo2ecc-s.git?branch=no-select-chip#350ce547a098f678f6f965d48e6ff67fa65edba7"
 dependencies = [
  "halo2_proofs",
  "num-bigint",
