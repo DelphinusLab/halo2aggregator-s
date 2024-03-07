@@ -600,40 +600,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "halo2_proofs"
-version = "0.1.0-beta.1"
-source = "git+https://github.com/DelphinusLab/halo2-gpu-specific.git#600c9d1e01d75effe3d683bde81dc34b7f6ec62f"
-dependencies = [
- "ark-std 0.4.0",
- "blake2b_simd",
- "bumpalo",
- "cfg-if 0.1.10",
- "core_affinity",
- "cuda-driver-sys",
- "ff",
- "group",
- "lazy_static",
- "log",
- "memmap",
- "num",
- "num-bigint",
- "num-derive",
- "num-integer",
- "num-traits",
- "pairing_bn256",
- "rand",
- "rand_core",
- "rayon",
- "subtle",
-]
-
-[[package]]
 name = "halo2aggregator-s"
 version = "0.1.0"
 dependencies = [
  "ark-std 0.4.0",
  "blake2b_simd",
- "halo2_proofs 0.1.0-beta.1 (git+https://github.com/DelphinusLab/halo2-gpu-specific.git?branch=zhangjunyu/para-synthesize)",
+ "halo2_proofs",
  "halo2ecc-s",
  "lazy_static",
  "num-bigint",
@@ -648,7 +620,7 @@ name = "halo2ecc-s"
 version = "0.3.2"
 source = "git+https://github.com/lanbones/halo2ecc-s.git?branch=para-synthesize#919e91ebd78a766b180a679389c735a8b5fda9aa"
 dependencies = [
- "halo2_proofs 0.1.0-beta.1 (git+https://github.com/DelphinusLab/halo2-gpu-specific.git?branch=zhangjunyu/para-synthesize)",
+ "halo2_proofs",
  "num-bigint",
  "num-integer",
  "rayon",
@@ -1044,9 +1016,9 @@ dependencies = [
 [[package]]
 name = "poseidon"
 version = "0.2.0"
-source = "git+https://github.com/lanbones/poseidon#df8891073182c5c6cc1e2e7f9d2f4297d3c1565d"
+source = "git+https://github.com/DelphinusLab/poseidon?branch=para-synthesize#07db5bfcfafc2fc2144666a0a9a83cd081f3357f"
 dependencies = [
- "halo2_proofs 0.1.0-beta.1 (git+https://github.com/DelphinusLab/halo2-gpu-specific.git)",
+ "halo2_proofs",
  "subtle",
 ]
 
