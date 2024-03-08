@@ -276,38 +276,23 @@ where
 // t: target circuits, t0 means non-end circuit, t1 means end circuit
 // a: aggregatore circuits
 pub fn calc_hash<C: CurveAffine>(
-    t1_hash: C::Scalar, // end on first
-    t0_hash: C::Scalar,
-    t1_a0_hash: C::Scalar, // end on second
-    t0_a0_hash: C::Scalar,
-    t1_a1_hash: C::Scalar, // end on third
-    t0_a1_hash: C::Scalar,
+    hash_cont: [C::Scalar; 3], // constant_hash of [target_cont], [target_cont, a_init], [target_cont, a_non_init]
+    hash_tail: [C::Scalar; 3], // constant_hash of [target_tail], [target_tail, a_init], [target_tail, a_non_init]
     max: usize,
 ) -> Vec<C::Scalar> {
-    let mut res = vec![t1_hash];
-    let mut last = t0_hash;
+    let mut res = vec![];
 
-    let hasher_default = PoseidonPure::<C>::default();
-    let mut hasher_end = hasher_default.clone();
-    let mut hasher_next = hasher_default;
+    let mut hasher_cont = PoseidonPure::<C>::default();
+    for i in 0..max {
+        let mut hasher_tail = hasher_cont.clone();
+        hasher_cont.common_scalar(*hash_cont.get(i).unwrap_or(&hash_cont[2])).unwrap();
+        hasher_tail.common_scalar(*hash_tail.get(i).unwrap_or(&hash_tail[2])).unwrap();
 
-    for i in 1..max {
-        hasher_next.common_scalar(last).unwrap();
-        hasher_end.common_scalar(last).unwrap();
+        res.push(*hasher_tail.squeeze_challenge_scalar::<()>());
 
-        if i == 1 {
-            hasher_end.common_scalar(t1_a0_hash).unwrap();
-            hasher_next.common_scalar(t0_a0_hash).unwrap();
-        } else {
-            hasher_end.common_scalar(t1_a1_hash).unwrap();
-            hasher_next.common_scalar(t0_a1_hash).unwrap();
-        }
-
-        res.push(*hasher_end.squeeze_challenge_scalar::<()>());
-        last = *hasher_next.squeeze_challenge_scalar::<()>();
-
-        hasher_next.reset();
-        hasher_end.reset();
+        let hash_cont = *hasher_cont.squeeze_challenge_scalar::<()>();
+        hasher_cont.reset();
+        hasher_cont.common_scalar(hash_cont).unwrap();
     }
 
     res

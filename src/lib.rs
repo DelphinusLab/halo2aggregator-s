@@ -106,7 +106,7 @@ fn test_single_rec() {
     );
 
     let mut hashes = vec![hash];
-    let mut final_hashes = vec![hash];
+    let mut final_hashes = vec![agg_l0_instances[0]];
 
     let mut last_agg = agg_l0;
     let mut last_agg_instances = agg_l0_instances;
@@ -116,7 +116,7 @@ fn test_single_rec() {
     for i in 0..=end_of_non_final_agg_idx {
         config.target_proof_max_instance = vec![vec![1], vec![4]];
         config.target_aggregator_constant_hash_instance_offset =
-            vec![(1, 0, *final_hashes.last().unwrap())];
+            vec![(1, 0, last_agg_instances[0])];
 
         if i == end_of_non_final_agg_idx {
             config.is_final_aggregator = true;
@@ -141,8 +141,11 @@ fn test_single_rec() {
             "build agg {} done, hash is {:?}, instance is {:?}",
             i, hash, instances
         );
-        hashes.push(hash);
-        final_hashes.push(instances[0]);
+
+        if i != end_of_non_final_agg_idx {
+            hashes.push(hash);
+            final_hashes.push(instances[0]);
+        }
 
         last_agg = agg;
         last_agg_instances = instances;
@@ -198,19 +201,17 @@ fn test_single_rec() {
         &path.join(format!("{}.0.aux.data", final_agg_file_prex)),
     );
 
-    let t0_hash = hashes[0];
-    let t1_hash = hashes[0];
-    let t0_a0_hash = hashes[1];
-    let t1_a0_hash = hashes[1];
-    let t0_a1_hash = hashes[2];
-    let t1_a1_hash = hashes[2];
-
     let timer = start_timer!(|| "calc final hashes");
     let final_hashes_expected = calc_hash::<bn256::G1Affine>(
-        t1_hash, t0_hash, t1_a0_hash, t0_a0_hash, t1_a1_hash, t0_a1_hash, 1024,
+        hashes[0..3].try_into().unwrap(),
+        hashes[0..3].try_into().unwrap(),
+        1024,
     );
     end_timer!(timer);
 
     println!("final_hashes_expected is {:?}", final_hashes_expected);
-    assert_eq!(final_hashes_expected[0..4], final_hashes[0..4]);
+    assert_eq!(
+        final_hashes_expected[0..final_hashes.len()],
+        final_hashes[..]
+    );
 }

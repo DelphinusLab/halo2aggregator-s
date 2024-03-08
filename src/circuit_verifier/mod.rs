@@ -627,6 +627,6 @@ where
         ),
         instances,
         fake_instances,
-        assigned_final_hash.val,
+        assigned_constant_hash.val,
     ))
 }
