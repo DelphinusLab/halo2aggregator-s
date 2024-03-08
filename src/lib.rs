@@ -54,7 +54,12 @@ fn test_batch_no_rec() {
 #[test]
 fn test_single_rec() {
     use crate::circuits::utils::calc_hash;
+    use crate::circuits::utils::load_or_build_unsafe_params;
+    use crate::circuits::utils::load_or_build_vkey;
+    use crate::circuits::utils::load_proof;
     use crate::circuits::utils::AggregatorConfig;
+    use crate::solidity_verifier::codegen::solidity_aux_gen;
+    use crate::solidity_verifier::solidity_render;
     use ark_std::end_timer;
     use ark_std::start_timer;
     use circuits::samples::simple::SimpleCircuit;
@@ -64,6 +69,8 @@ fn test_single_rec() {
     use halo2_proofs::pairing::bn256;
     use halo2_proofs::pairing::bn256::Bn256;
     use halo2_proofs::pairing::bn256::Fr;
+    use halo2_proofs::poly::commitment::ParamsVerifier;
+    use sha3::Keccak256;
     use std::fs::DirBuilder;
     use std::path::Path;
 
@@ -81,17 +88,18 @@ fn test_single_rec() {
         vec![vec![1]],
         false,
     );
-    let (agg_l0, agg_l0_instances, _, hash) = run_circuit_unsafe_full_pass::<Bn256, _>(
-        path,
-        "simple-circuit",
-        k,
-        vec![circuit.clone()],
-        vec![target_instances.clone()],
-        vec![],
-        false,
-        &config,
-    )
-    .unwrap();
+    let (agg_l0, agg_l0_instances, agg_l0_fake_instances, hash) =
+        run_circuit_unsafe_full_pass::<Bn256, _>(
+            path,
+            "simple-circuit",
+            k,
+            vec![circuit.clone()],
+            vec![target_instances.clone()],
+            vec![],
+            false,
+            &config,
+        )
+        .unwrap();
     println!(
         "build agg 0 done, hash is {:?}, instance is {:?}",
         hash, agg_l0_instances
@@ -102,21 +110,29 @@ fn test_single_rec() {
 
     let mut last_agg = agg_l0;
     let mut last_agg_instances = agg_l0_instances;
-    for i in 1..5 {
+    let mut last_agg_fake_instances = agg_l0_fake_instances;
+
+    let end_of_non_final_agg_idx = 2;
+    for i in 0..=end_of_non_final_agg_idx {
         config.target_proof_max_instance = vec![vec![1], vec![4]];
         config.target_aggregator_constant_hash_instance_offset =
             vec![(1, 0, *final_hashes.last().unwrap())];
 
-        let (agg, instances, _fake_instance, hash) =
+        if i == end_of_non_final_agg_idx {
+            config.is_final_aggregator = true;
+            config.prev_aggregator_skip_instance = vec![(1, 4)];
+        }
+
+        let (agg, instances, fake_instance, hash) =
             run_circuit_with_agg_unsafe_full_pass::<Bn256, _>(
                 path,
                 "simple-circuit",
                 k,
                 vec![circuit.clone()],
                 vec![target_instances.clone()],
-                last_agg_instances,
-                last_agg,
-                i - 1,
+                last_agg_instances.clone(),
+                last_agg.clone(),
+                i,
                 false,
                 &config,
             )
@@ -127,9 +143,60 @@ fn test_single_rec() {
         );
         hashes.push(hash);
         final_hashes.push(instances[0]);
+
         last_agg = agg;
         last_agg_instances = instances;
+        last_agg_fake_instances = fake_instance;
     }
+
+    config.hash = TranscriptHash::Keccak;
+    let final_agg_file_prex = format!("simple-circuit.agg.final");
+    run_circuit_unsafe_full_pass::<Bn256, _>(
+        path,
+        &final_agg_file_prex,
+        k,
+        vec![last_agg.clone()],
+        vec![vec![last_agg_instances.clone()]],
+        vec![vec![last_agg_fake_instances]],
+        false,
+        &config,
+    );
+
+    let params =
+        load_or_build_unsafe_params::<Bn256>(k, Some(&path.join(format!("K{}.params", k))));
+    let params_verifier: ParamsVerifier<Bn256> = params.verifier(1).unwrap();
+
+    let vkey = load_or_build_vkey::<Bn256, _>(
+        &params,
+        &last_agg,
+        Some(&path.join(format!("{}.0.vkey.data", final_agg_file_prex))),
+    );
+
+    let proof = load_proof(&path.join(format!("{}.0.transcript.data", final_agg_file_prex)));
+    solidity_render::<_, Keccak256>(
+        "sol/templates/*",
+        "sol/contracts",
+        vec![(
+            "AggregatorConfig.sol.tera".to_owned(),
+            "AggregatorConfig.sol".to_owned(),
+        )],
+        "AggregatorVerifierStepStart.sol.tera",
+        "AggregatorVerifierStepEnd.sol.tera",
+        |i| format!("AggregatorVerifierStep{}.sol", i + 1),
+        config.hash,
+        &params_verifier,
+        &vkey,
+        &last_agg_instances,
+        proof.clone(),
+    );
+
+    solidity_aux_gen::<_, Keccak256>(
+        &params_verifier,
+        &vkey,
+        &last_agg_instances,
+        proof,
+        &path.join(format!("{}.0.aux.data", final_agg_file_prex)),
+    );
 
     let t0_hash = hashes[0];
     let t1_hash = hashes[0];
@@ -145,5 +212,5 @@ fn test_single_rec() {
     end_timer!(timer);
 
     println!("final_hashes_expected is {:?}", final_hashes_expected);
-    assert_eq!(final_hashes_expected[0..5], final_hashes[0..5]);
+    assert_eq!(final_hashes_expected[0..4], final_hashes[0..4]);
 }

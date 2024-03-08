@@ -439,7 +439,7 @@ where
         let g0 = ctx.assign_constant_point(&params.g_lagrange[g_index].to_curve());
         let g1 = ctx.assign_constant_point(&params.g_lagrange[g_index + 1].to_curve());
         let g2 = ctx.assign_constant_point(&params.g_lagrange[g_index + 2].to_curve());
-        let msm_c = ctx.msm(&vec![g0, g1, g2], &encoded_c);
+        let msm_c = ctx.msm_unsafe(&vec![g0, g1, g2], &encoded_c)?;
         let diff_commit = ctx.ecc_neg(&msm_c);
         let instance_commit_curv = ctx.to_point_with_curvature(instance_commit);
         let update_commit = ctx.ecc_add(&instance_commit_curv, &diff_commit);
@@ -529,32 +529,51 @@ where
         let mut hash_list = vec![];
         for (proof_idx, max_row_of_cols) in config.target_proof_max_instance.iter().enumerate() {
             for (column_idx, max_row) in max_row_of_cols.iter().enumerate() {
-                let mut sl = vec![];
-                for row_idx in 0..*max_row {
-                    let assigned_s = ctx.base_integer_chip().base_chip().assign(
-                        instances[proof_idx][column_idx]
-                            .get(row_idx)
-                            .cloned()
-                            .unwrap_or(E::Scalar::zero()),
-                    );
-                    hash_list.push(assigned_s.clone());
-                    sl.push(assigned_s)
+                let mut start_row = 0;
+                let end_row = *max_row;
+
+                if let Some((_, skips)) = config
+                    .prev_aggregator_skip_instance
+                    .iter()
+                    .find(|(pi, _)| *pi == proof_idx)
+                {
+                    // aggregagtor only has one instance column
+                    assert!(column_idx == 0);
+                    start_row += skips;
                 }
 
-                let mut pl = vec![];
-                for row_idx in 0..*max_row {
-                    let assigned_p =
-                        ctx.assign_constant_point(&params.g_lagrange[row_idx].to_curve());
-                    pl.push(assigned_p);
+                if end_row > start_row {
+                    let mut sl = vec![];
+                    for row_idx in start_row..end_row {
+                        let assigned_s = ctx.base_integer_chip().base_chip().assign(
+                            instances[proof_idx][column_idx]
+                                .get(row_idx)
+                                .cloned()
+                                .unwrap_or(E::Scalar::zero()),
+                        );
+                        hash_list.push(assigned_s.clone());
+                        sl.push(assigned_s)
+                    }
+
+                    let mut pl = vec![];
+                    for row_idx in start_row..end_row {
+                        let assigned_p =
+                            ctx.assign_constant_point(&params.g_lagrange[row_idx].to_curve());
+                        pl.push(assigned_p);
+                    }
+
+                    #[cfg(feature = "unsafe")]
+                    let instance_commitment = ctx.msm_unsafe(&pl, &sl)?;
+
+                    #[cfg(not(feature = "unsafe"))]
+                    let instance_commitment = ctx.msm(&pl, &sl);
+
+                    instance_commitments.push(instance_commitment);
+                } else {
+                    let instance_commitment =
+                        ctx.assign_constant_point(&E::G1Affine::identity().to_curve());
+                    instance_commitments.push(instance_commitment);
                 }
-
-                #[cfg(feature = "unsafe")]
-                let instance_commitment = ctx.msm_unsafe(&pl, &sl)?;
-
-                #[cfg(not(feature = "unsafe"))]
-                let instance_commitment = ctx.msm(&pl, &sl);
-
-                instance_commitments.push(instance_commitment);
             }
         }
 
@@ -608,6 +627,6 @@ where
         ),
         instances,
         fake_instances,
-        assigned_constant_hash.val,
+        assigned_final_hash.val,
     ))
 }

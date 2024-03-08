@@ -21,7 +21,6 @@ pub fn solidity_render<E: MultiMillerLoop, D: Digest + Clone>(
     end_step_template_name: &str,
     step_out_file_name: impl Fn(usize) -> String,
     hasher: TranscriptHash,
-    target_circuit_params: &ParamsVerifier<E>,
     verify_circuit_params: &ParamsVerifier<E>,
     vkey: &VerifyingKey<E::G1Affine>,
     instances: &Vec<E::Scalar>,
@@ -35,7 +34,6 @@ pub fn solidity_render<E: MultiMillerLoop, D: Digest + Clone>(
         end_step_template_name,
         step_out_file_name,
         hasher,
-        target_circuit_params,
         verify_circuit_params,
         vkey,
         instances,
@@ -52,7 +50,6 @@ pub fn solidity_render_with_check_option<E: MultiMillerLoop, D: Digest + Clone>(
     end_step_template_name: &str,
     step_out_file_name: impl Fn(usize) -> String,
     hasher: TranscriptHash,
-    target_circuit_params: &ParamsVerifier<E>,
     verify_circuit_params: &ParamsVerifier<E>,
     vkey: &VerifyingKey<E::G1Affine>,
     instances: &Vec<E::Scalar>,
@@ -89,16 +86,6 @@ pub fn solidity_render_with_check_option<E: MultiMillerLoop, D: Digest + Clone>(
 
     insert_g2(
         &mut tera_ctx,
-        "target_circuit_s_g2",
-        target_circuit_params.s_g2,
-    );
-    insert_g2(
-        &mut tera_ctx,
-        "target_circuit_n_g2",
-        -target_circuit_params.g2,
-    );
-    insert_g2(
-        &mut tera_ctx,
         "verify_circuit_s_g2",
         verify_circuit_params.s_g2,
     );
@@ -124,24 +111,7 @@ pub fn solidity_render_with_check_option<E: MultiMillerLoop, D: Digest + Clone>(
         &verify_circuit_g_lagrange,
     );
 
-    let target_circuit_g_lagrange = target_circuit_params
-        .g_lagrange
-        .iter()
-        .map(|g1| {
-            let c = g1.coordinates().unwrap();
-            [
-                field_to_bn(c.x()).to_str_radix(10),
-                field_to_bn(c.y()).to_str_radix(10),
-            ]
-        })
-        .collect::<Vec<_>>();
-    tera_ctx.insert(
-        "target_circuit_lagrange_commitments",
-        &target_circuit_g_lagrange,
-    );
-
     // vars for challenge
-
     let mut hasher = blake2b_simd::Params::new()
         .hash_length(64)
         .personal(b"Halo2-Verify-Key")
@@ -373,11 +343,6 @@ mod tests {
         );
 
         let params = load_or_build_unsafe_params::<Bn256>(
-            target_circuit_k,
-            Some(&path.join(format!("K{}.params", target_circuit_k))),
-        );
-        let target_params_verifier: ParamsVerifier<Bn256> = params.verifier(1).unwrap();
-        let params = load_or_build_unsafe_params::<Bn256>(
             verify_circuit_k,
             Some(&path.join(format!("K{}.params", verify_circuit_k))),
         );
@@ -402,7 +367,6 @@ mod tests {
             "AggregatorVerifierStepEnd.sol.tera",
             |i| format!("AggregatorVerifierStep{}.sol", i + 1),
             aggregator_circuit_hasher,
-            &target_params_verifier,
             &verifier_params_verifier,
             &vkey,
             &instances,
