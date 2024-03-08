@@ -310,6 +310,10 @@ pub struct AggregatorConfig<F: FieldExt> {
     pub target_proof_with_shplonk_as_default: bool,
     pub target_proof_max_instance: Vec<Vec<usize>>,
 
+    // Absorb instance in each agg.
+    // (proof_idx_of_target, columns, proof_idx_of_prev_agg, expose_row)
+    pub absorb_instance: Vec<(usize, usize, usize, usize)>,
+
     // final aggregator is a different aggregator, it merge all instance into a hash
     pub is_final_aggregator: bool,
     // final aggregator skips some instance for hash because they are absorbed thus should be zero
@@ -334,6 +338,7 @@ impl<F: FieldExt> AggregatorConfig<F> {
             target_proof_max_instance,
             is_final_aggregator: true,
             prev_aggregator_skip_instance: vec![],
+            absorb_instance: vec![],
         }
     }
 
@@ -353,6 +358,7 @@ impl<F: FieldExt> AggregatorConfig<F> {
             target_proof_max_instance,
             is_final_aggregator,
             prev_aggregator_skip_instance: vec![],
+            absorb_instance: vec![],
         }
     }
 }

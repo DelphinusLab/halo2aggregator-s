@@ -36,7 +36,7 @@ impl<F: FieldExt> SimpleCircuit<F> {
     }
 
     pub fn default_with_instance() -> (Self, Vec<Vec<F>>) {
-        let a = F::zero();
+        let a = F::one();
         let b = F::zero();
         let instance = a + b;
 

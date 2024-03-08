@@ -48,7 +48,7 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
 ) -> Result<
     (
         Vec<AssignedPoint<E::G1Affine, E::Scalar>>,
-        Vec<AssignedPoint<E::G1Affine, E::Scalar>>,
+        Vec<Vec<AssignedPoint<E::G1Affine, E::Scalar>>>,
         AssignedValue<E::Scalar>,
     ),
     UnsafeError,
@@ -227,7 +227,7 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
             .iter()
             .map(|x| circuit.ecc_reduce(it[*x].0.as_ref().unwrap()))
             .collect(),
-        instance_commitments.concat(),
+        instance_commitments,
         constants_hash,
     ))
 }
@@ -381,6 +381,21 @@ where
         ctx.ecc_assert_equal(&check[0], &check[1]);
     }
 
+    for (proof_idx_of_target, columns, proof_idx_of_prev_agg, expose_row) in
+        config.absorb_instance.iter()
+    {
+        let encoded_c = ctx.ecc_encode(&il[*proof_idx_of_target][*columns]);
+        let instance_commit = il[*proof_idx_of_prev_agg][0].clone();
+        let g0 = ctx.assign_constant_point(&params.g_lagrange[*expose_row].to_curve());
+        let g1 = ctx.assign_constant_point(&params.g_lagrange[*expose_row + 1].to_curve());
+        let g2 = ctx.assign_constant_point(&params.g_lagrange[*expose_row + 2].to_curve());
+        let msm_c = ctx.msm_unsafe(&vec![g0, g1, g2], &encoded_c)?;
+        let diff_commit = ctx.ecc_neg(&msm_c);
+        let instance_commit_curv = ctx.to_point_with_curvature(instance_commit);
+        let update_commit = ctx.ecc_add(&instance_commit_curv, &diff_commit);
+        il[*proof_idx_of_prev_agg][0] = update_commit;
+    }
+
     let assigned_final_hash = {
         let empty = vec![];
         let mut hasher = PoseidonChipRead::init(PoseidonRead::init(&empty[..]), &mut ctx);
@@ -392,21 +407,16 @@ where
             let assigned_hash = ctx.base_integer_chip().base_chip().assign(*hash);
             hasher.common_scalar(&mut ctx, &assigned_hash);
 
-            let mut instance_index = *instance_col;
-            for i in instances[0..*proof_index].iter() {
-                instance_index += i.len()
-            }
-
             let mut points = vec![];
             let mut scalars = vec![];
             points.push(ctx.assign_constant_point(&(-params.g_lagrange[0]).to_curve()));
             scalars.push(assigned_hash);
 
             let diff_commitment = ctx.msm(&points, &scalars);
-            let instance_commit = il[instance_index].clone();
+            let instance_commit = il[*proof_index][*instance_col].clone();
             let instance_commit_curv = ctx.to_point_with_curvature(instance_commit);
             let update_commit = ctx.ecc_add(&instance_commit_curv, &diff_commitment);
-            il[instance_index] = update_commit;
+            il[*proof_index][*instance_col] = update_commit;
         }
 
         hasher.common_scalar(&mut ctx, &assigned_constant_hash);
@@ -417,10 +427,6 @@ where
     for (i, c) in pl[absorb_start_idx..expose_start_idx].iter().enumerate() {
         let encoded_c = ctx.ecc_encode(c);
         let [proof_index, instance_offset, g_index] = config.absorb[i].0;
-        let mut instance_index = instance_offset;
-        for i in instances[0..proof_index].iter() {
-            instance_index += i.len()
-        }
 
         assert_eq!(
             instances[proof_index][instance_offset][g_index],
@@ -435,7 +441,7 @@ where
             encoded_c[2].val
         );
 
-        let instance_commit = il[instance_index].clone();
+        let instance_commit = il[proof_index][instance_offset].clone();
         let g0 = ctx.assign_constant_point(&params.g_lagrange[g_index].to_curve());
         let g1 = ctx.assign_constant_point(&params.g_lagrange[g_index + 1].to_curve());
         let g2 = ctx.assign_constant_point(&params.g_lagrange[g_index + 2].to_curve());
@@ -443,7 +449,7 @@ where
         let diff_commit = ctx.ecc_neg(&msm_c);
         let instance_commit_curv = ctx.to_point_with_curvature(instance_commit);
         let update_commit = ctx.ecc_add(&instance_commit_curv, &diff_commit);
-        il[instance_index] = update_commit;
+        il[proof_index][instance_offset] = update_commit;
     }
 
     assert!(pl[0].z.0.val == E::Scalar::zero());
@@ -503,7 +509,7 @@ where
     let (assigned_instances, instances, fake_instances) = if !config.is_final_aggregator {
         let mut assigned_instances = vec![assigned_final_hash];
         assigned_instances.append(
-            &mut vec![&il[..], &pl[expose_start_idx..pl.len()]]
+            &mut vec![&il.concat()[..], &pl[expose_start_idx..pl.len()]]
                 .concat()
                 .iter()
                 .map(|p| ctx.ecc_encode(p))
@@ -525,7 +531,6 @@ where
 
         (assigned_instances, instances, vec![])
     } else {
-        let mut instance_commitments = vec![];
         let mut hash_list = vec![];
         for (proof_idx, max_row_of_cols) in config.target_proof_max_instance.iter().enumerate() {
             for (column_idx, max_row) in max_row_of_cols.iter().enumerate() {
@@ -542,7 +547,7 @@ where
                     start_row += skips;
                 }
 
-                if end_row > start_row {
+                let instance_commitment = if end_row > start_row {
                     let mut sl = vec![];
                     for row_idx in start_row..end_row {
                         let assigned_s = ctx.base_integer_chip().base_chip().assign(
@@ -568,18 +573,16 @@ where
                     #[cfg(not(feature = "unsafe"))]
                     let instance_commitment = ctx.msm(&pl, &sl);
 
-                    instance_commitments.push(instance_commitment);
+                    instance_commitment
                 } else {
                     let instance_commitment =
                         ctx.assign_constant_point(&E::G1Affine::identity().to_curve());
-                    instance_commitments.push(instance_commitment);
-                }
-            }
-        }
 
-        assert!(instance_commitments.len() == il.len());
-        for i in 0..instance_commitments.len() {
-            ctx.ecc_assert_equal(&instance_commitments[i], &il[i]);
+                    instance_commitment
+                };
+
+                ctx.ecc_assert_equal(&instance_commitment, &il[proof_idx][column_idx]);
+            }
         }
 
         let mut assigned_fake_instances = vec![assigned_final_hash];
@@ -597,6 +600,14 @@ where
             .iter()
             .map(|x| x.val)
             .collect::<Vec<_>>();
+
+        println!(
+            "hash_list before fake instance {:?}",
+            assigned_fake_instances
+                .iter()
+                .map(|x| x.val)
+                .collect::<Vec<_>>()
+        );
 
         hash_list.append(&mut assigned_fake_instances);
 

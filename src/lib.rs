@@ -88,6 +88,7 @@ fn test_single_rec() {
         vec![vec![1]],
         false,
     );
+
     let (agg_l0, agg_l0_instances, agg_l0_fake_instances, hash) =
         run_circuit_unsafe_full_pass::<Bn256, _>(
             path,
@@ -114,13 +115,14 @@ fn test_single_rec() {
 
     let end_of_non_final_agg_idx = 2;
     for i in 0..=end_of_non_final_agg_idx {
-        config.target_proof_max_instance = vec![vec![1], vec![7]];
         config.target_aggregator_constant_hash_instance_offset =
             vec![(1, 0, last_agg_instances[0])];
+        config.absorb_instance = vec![(0, 0, 1, 1)];
 
         if i == end_of_non_final_agg_idx {
             config.is_final_aggregator = true;
             config.prev_aggregator_skip_instance = vec![(1, 7)];
+            config.target_proof_max_instance = vec![vec![1], vec![7]];
         }
 
         let (agg, instances, fake_instance, hash) =
@@ -209,7 +211,7 @@ fn test_single_rec() {
     );
     end_timer!(timer);
 
-    println!("final_hashes_expected is {:?}", final_hashes_expected);
+    //println!("final_hashes_expected is {:?}", final_hashes_expected);
     assert_eq!(
         final_hashes_expected[0..final_hashes.len()],
         final_hashes[..]
