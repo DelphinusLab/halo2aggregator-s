@@ -2,8 +2,7 @@ const fs = require("fs");
 const BN = require("bn.js");
 
 function readBnLe(file) {
-  let buffer = fs.readFileSync(file
-  );
+  let buffer = fs.readFileSync(file);
   let buffer256 = [];
   for (let i = 0; i < buffer.length / 32; i++) {
     let v = new BN(0);
@@ -20,29 +19,56 @@ function readBnLe(file) {
 
 const AggregatorVerifier = artifacts.require("AggregatorVerifier");
 
-contract('AggregatorVerifier', () => {
-  it('test', async () => {
+contract("AggregatorVerifier", () => {
+  it("test", async () => {
     const verifier = await AggregatorVerifier.deployed();
 
     const target_instance0 = readBnLe(
-      __dirname + "/../../output/simple-circuit.0.instance.data");
+      __dirname + "/../../output/simple-circuit.0.instance.data"
+    );
+
     const target_instance1 = readBnLe(
-      __dirname + "/../../output/simple-circuit.1.instance.data");
-
-
+      __dirname + "/../../output/simple-circuit.1.instance.data"
+    );
     const verify_real_instance = readBnLe(
-      __dirname + "/../../output/verify-circuit.0.instance.data");
+      __dirname + "/../../output/verify-circuit.0.instance.data"
+    );
     const verify_fake_instance = readBnLe(
-      __dirname + "/../../output/verify-circuit.0.fakeinstance.data");
+      __dirname + "/../../output/verify-circuit.0.fakeinstance.data"
+    );
     const proof = readBnLe(
-      __dirname + "/../../output/verify-circuit.0.transcript.data");
-    const aux = readBnLe(
-      __dirname + "/../../output/verify-circuit.0.aux.data");
+      __dirname + "/../../output/verify-circuit.0.transcript.data"
+    );
+    const aux = readBnLe(__dirname + "/../../output/verify-circuit.0.aux.data");
 
-    const gas = await verifier.verify.estimateGas(proof, verify_fake_instance, aux, [target_instance0, target_instance1]);
+    /*
+    target_instance1 = [];
+    const verify_real_instance = readBnLe(
+      __dirname + "/../../output/simple-circuit.agg.final.0.instance.data"
+    );
+    const verify_fake_instance = readBnLe(
+      __dirname + "/../../output/simple-circuit.agg.final.0.fakeinstance.data"
+    );
+    const proof = readBnLe(
+      __dirname + "/../../output/simple-circuit.agg.final.0.transcript.data"
+    );
+    const aux = readBnLe(
+      __dirname + "/../../output/simple-circuit.agg.final.0.aux.data"
+    );
+    */
+
+    const gas = await verifier.verify.estimateGas(
+      proof,
+      verify_fake_instance,
+      aux,
+      [target_instance0, target_instance1]
+    );
     console.log("gas cost", gas);
 
-    const xy = await verifier.verify(proof, verify_fake_instance, aux, [target_instance0, target_instance1]);
+    const xy = await verifier.verify(proof, verify_fake_instance, aux, [
+      target_instance0,
+      target_instance1,
+    ]);
     console.log(xy.toString(16));
   });
 });
