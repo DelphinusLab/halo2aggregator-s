@@ -402,7 +402,7 @@ source = "git+https://github.com/lanbones/ec-gpu#165d1dd6215f6fd1dd85c83cf430ff5
 [[package]]
 name = "ec-gpu-gen"
 version = "0.4.0"
-source = "git+https://github.com/lanbones/ec-gpu?branch=halo2-opt-v2#784eda53754a5344f75e4b3c533361d628ad1402"
+source = "git+https://github.com/lanbones/ec-gpu?branch=halo2-opt-v2#5481be558da026bb9bddcd5807f973f6b1a8346e"
 dependencies = [
  "ark-std 0.3.0",
  "bitvec",
@@ -618,7 +618,7 @@ dependencies = [
 [[package]]
 name = "halo2ecc-s"
 version = "0.3.2"
-source = "git+https://github.com/lanbones/halo2ecc-s.git?branch=para-synthesize#919e91ebd78a766b180a679389c735a8b5fda9aa"
+source = "git+https://github.com/lanbones/halo2ecc-s.git?branch=para-synthesize#e86efc4791385caf0d07e812c5d006484c536cbf"
 dependencies = [
  "halo2_proofs",
  "num-bigint",
