@@ -234,7 +234,7 @@ impl<C: CurveAffine> Mul<EvaluationQuerySchemaRc<C>> for EvaluationQuerySchemaRc
 }
 
 impl<C: CurveAffine> EvaluationQuerySchemaRc<C> {
-    pub fn eval(self, g1: C) -> AstPointRc<C> {
+    pub fn eval(self, g1: C, msm_index: usize) -> AstPointRc<C> {
         let (pl, s) = self.eval_prepare(sconst!(C::ScalarExt::one()));
         let g1_msm = if let Some(v) = s.0.check_const_and_get() {
             if v.is_zero_vartime() {
@@ -247,7 +247,10 @@ impl<C: CurveAffine> EvaluationQuerySchemaRc<C> {
                 )]
             }
         } else {
-            vec![(pconst!(g1).0, (scheckpoint!("msm g1 scalar".to_owned(), s)).0)]
+            vec![(
+                pconst!(g1).0,
+                (scheckpoint!("msm g1 scalar".to_owned(), s)).0,
+            )]
         };
 
         AstPointRc(Rc::new(AstPoint::MultiExp(
@@ -259,6 +262,7 @@ impl<C: CurveAffine> EvaluationQuerySchemaRc<C> {
                     .collect::<Vec<_>>(),
             ]
             .concat(),
+            msm_index,
         )))
     }
 

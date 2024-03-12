@@ -196,7 +196,7 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
                     .unwrap();
                 (None, Some(s))
             }
-            EvalOps::MSM(psl) => {
+            EvalOps::MSM(psl, _) => {
                 let pl = psl
                     .iter()
                     .map(|(p, _)| eval_point_pos!(p).clone())
@@ -220,6 +220,10 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
                 }
                 eval_any_pos!(v)
             }
+            EvalOps::MSMSlice(_, _, _) => {
+                // ignore MSMSlice in circuit
+                (None, None)
+            },
         });
     }
     Ok((
