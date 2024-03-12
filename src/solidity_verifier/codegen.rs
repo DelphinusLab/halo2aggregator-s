@@ -31,8 +31,8 @@ const MSM_BUF_START: usize = CHALLENGE_BUF_START + CHALLENGE_BUF_MAX;
 const TEMP_BUF_START: usize = MSM_BUF_START + 2 * MAX_MSM_COUNT + 3; // 3 reserved for msm operation;
 const DEEP_LIMIT: usize = 6;
 
-const SOLIDITY_VERIFY_FIRST_STEP_MAX_SIZE: usize = 80; // first step need to be less for shplonk
-const SOLIDITY_VERIFY_STEP_MAX_SIZE: usize = 100;
+const SOLIDITY_VERIFY_FIRST_STEP_MAX_SIZE: usize = 99; // first step need to be less for shplonk
+const SOLIDITY_VERIFY_STEP_MAX_SIZE: usize = 135;
 
 const SOLIDITY_DEBUG: bool = false;
 
@@ -155,6 +155,16 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
             self.temp_idx_allocator.1.clone() - 1
         } else {
             self.temp_idx_allocator.0.pop_first().clone().unwrap()
+        }
+    }
+
+    fn pos_is_constant_zero(&self, p: &EvalPos) -> bool {
+        match p {
+            EvalPos::Constant(i) => {
+                let s = self.c.const_scalars[*i];
+                s.is_zero_vartime()
+            }
+            _ => false,
         }
     }
 
@@ -379,14 +389,19 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
                         Some(SolidityVar::Temp(t))
                     }
                 }
-                EvalOps::ScalarSub(a, b) => {
-                    let a = self.pos_to_scalar_var(a);
+                EvalOps::ScalarSub(_a, b) => {
+                    let a = self.pos_to_scalar_var(_a);
                     let b = self.pos_to_scalar_var(b);
-                    let expr = format!(
-                        "addmod({}, AggregatorLib.q_mod - {}, AggregatorLib.q_mod)",
-                        a.to_string(true),
-                        b.to_string(true)
-                    );
+                    let expr = if self.pos_is_constant_zero(_a) {
+                        format!("AggregatorLib.q_mod - {}", b.to_string(true))
+                    } else {
+                        format!(
+                            "addmod({}, AggregatorLib.q_mod - {}, AggregatorLib.q_mod)",
+                            a.to_string(true),
+                            b.to_string(true)
+                        )
+                    };
+
                     if self.deps[i] == 1
                         && get_combine_degree(a.get_deep(), b.get_deep()) < DEEP_LIMIT
                     {
