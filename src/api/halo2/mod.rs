@@ -128,8 +128,8 @@ pub fn verify_aggregation_proofs<E: MultiMillerLoop>(
         pair.w_g = EvaluationQuerySchemaRc(w_g_replace_res.0);
     }
 
-    let w_x = pcheckpoint!("w_x".to_owned(), pair.w_x.eval(params.g1));
-    let w_g = pcheckpoint!("w_g".to_owned(), pair.w_g.eval(-params.g1));
+    let w_x = pcheckpoint!("w_x".to_owned(), pair.w_x.eval(params.g1, 0));
+    let w_g = pcheckpoint!("w_g".to_owned(), pair.w_g.eval(-params.g1, 1));
 
     (w_x, w_g, advice_commitments)
 }

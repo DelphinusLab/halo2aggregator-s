@@ -116,14 +116,15 @@ impl<E: MultiMillerLoop, EC: EncodedChallenge<E::G1Affine>, T: TranscriptRead<E:
                 EvalOps::ScalarPow(a, n) => {
                     (None, Some(self.eval_scalar_pos(a).pow_vartime([*n as u64])))
                 }
-                EvalOps::MSM(psl) => (
-                    psl.into_iter()
-                        .map(|(p, s)| {
-                            (self.eval_point_pos(p) * self.eval_scalar_pos(s)).to_affine()
-                        })
-                        .reduce(|acc, p| (acc + p).to_affine()),
-                    None,
-                ),
+                EvalOps::MSM(_, last) => (Some(self.eval_point_pos(last)), None),
+                EvalOps::MSMSlice((p, s), last, _) => {
+                    let curr = (self.eval_point_pos(p) * self.eval_scalar_pos(s)).to_affine();
+                    let acc = last
+                        .as_ref()
+                        .map(|x| (self.eval_point_pos(x) + curr).to_affine())
+                        .unwrap_or(curr);
+                    (Some(acc), None)
+                }
                 EvalOps::CheckPoint(tag, v) => {
                     if false {
                         println!("checkpoint {}: {:?}", tag, self.eval_any_pos(v));
