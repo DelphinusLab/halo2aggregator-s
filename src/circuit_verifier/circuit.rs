@@ -13,6 +13,8 @@ use halo2ecc_s::circuit::base_chip::BaseChip;
 use halo2ecc_s::circuit::base_chip::BaseChipConfig;
 use halo2ecc_s::circuit::range_chip::RangeChip;
 use halo2ecc_s::circuit::range_chip::RangeChipConfig;
+use halo2ecc_s::circuit::select_chip::SelectChip;
+use halo2ecc_s::circuit::select_chip::SelectChipConfig;
 use halo2ecc_s::context::Records;
 use std::rc::Rc;
 
@@ -20,6 +22,7 @@ use std::rc::Rc;
 pub struct AggregatorChipConfig {
     base_chip_config: BaseChipConfig,
     range_chip_config: RangeChipConfig,
+    select_chip_config: SelectChipConfig,
     instance_col: Column<Instance>,
 }
 
@@ -30,10 +33,7 @@ pub struct AggregatorCircuit<C: CurveAffine> {
 }
 
 impl<C: CurveAffine> AggregatorCircuit<C> {
-    pub fn new(
-        records: Rc<Records<C::Scalar>>,
-        instances: Vec<AssignedValue<C::Scalar>>,
-    ) -> Self {
+    pub fn new(records: Rc<Records<C::Scalar>>, instances: Vec<AssignedValue<C::Scalar>>) -> Self {
         Self { records, instances }
     }
 }
@@ -49,11 +49,13 @@ impl<C: CurveAffine> Circuit<C::Scalar> for AggregatorCircuit<C> {
     fn configure(meta: &mut ConstraintSystem<C::Scalar>) -> Self::Config {
         let base_chip_config = BaseChip::configure(meta);
         let range_chip_config = RangeChip::<C::Scalar>::configure(meta);
+        let select_chip_config = SelectChip::<C::Scalar>::configure(meta);
         let instance_col = meta.instance_column();
         meta.enable_equality(instance_col);
         AggregatorChipConfig {
             base_chip_config,
             range_chip_config,
+            select_chip_config,
             instance_col,
         }
     }
@@ -67,6 +69,7 @@ impl<C: CurveAffine> Circuit<C::Scalar> for AggregatorCircuit<C> {
 
         let base_chip = BaseChip::new(config.base_chip_config);
         let range_chip = RangeChip::<C::Scalar>::new(config.range_chip_config);
+        let select_chip = SelectChip::new(config.select_chip_config);
 
         let mut instance_cells = None;
 
@@ -78,6 +81,7 @@ impl<C: CurveAffine> Circuit<C::Scalar> for AggregatorCircuit<C> {
                     &mut region,
                     &base_chip,
                     &range_chip,
+                    &select_chip,
                 )?;
 
                 match cells {
