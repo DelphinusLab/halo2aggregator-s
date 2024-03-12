@@ -214,6 +214,7 @@ pub fn test_twice_verify_circuit_diff() {
         true,
     )
     .unwrap();
+    let circuit1 = circuit1.circuit_with_select_chip.unwrap();
 
     let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
     println!("circuit2 {:?} {:?}", &circuit.a, &circuit.b);
@@ -231,6 +232,7 @@ pub fn test_twice_verify_circuit_diff() {
         true,
     )
     .unwrap();
+    let circuit2 = circuit2.circuit_with_select_chip.unwrap();
 
     for (col, (l, r)) in circuit1
         .records
@@ -278,10 +280,21 @@ pub fn test_twice_verify_circuit_diff() {
 
 #[cfg(test)]
 mod tests {
+    use crate::circuits::samples::simple::SimpleCircuit;
+    use crate::circuits::utils::load_or_build_unsafe_params;
+    use crate::circuits::utils::load_or_build_vkey;
+    use crate::circuits::utils::load_proof;
+    use crate::circuits::utils::run_circuit_unsafe_full_pass_no_rec;
     use crate::circuits::utils::TranscriptHash;
+    use crate::solidity_verifier::codegen::solidity_aux_gen;
     use crate::solidity_verifier::solidity_render;
+    use halo2_proofs::pairing::bn256::Bn256;
+    use halo2_proofs::pairing::bn256::Fr;
+    use halo2_proofs::plonk::Circuit;
     use halo2_proofs::poly::commitment::ParamsVerifier;
     use sha2::Digest;
+    use std::fs::DirBuilder;
+    use std::path::Path;
 
     fn test_solidity_render<D: Digest + Clone>(aggregator_circuit_hasher: TranscriptHash) {
         assert!(
@@ -289,18 +302,6 @@ mod tests {
                 || aggregator_circuit_hasher == TranscriptHash::Keccak,
             "aggregator circuit only support sha or keccak."
         );
-
-        use crate::circuits::samples::simple::SimpleCircuit;
-        use crate::circuits::utils::load_or_build_unsafe_params;
-        use crate::circuits::utils::load_or_build_vkey;
-        use crate::circuits::utils::load_proof;
-        use crate::circuits::utils::run_circuit_unsafe_full_pass_no_rec;
-        use crate::solidity_verifier::codegen::solidity_aux_gen;
-        use halo2_proofs::pairing::bn256::Bn256;
-        use halo2_proofs::pairing::bn256::Fr;
-        use halo2_proofs::plonk::Circuit;
-        use std::fs::DirBuilder;
-        use std::path::Path;
 
         let path = "./output";
         DirBuilder::new().recursive(true).create(path).unwrap();
@@ -326,6 +327,7 @@ mod tests {
                 true,
             )
             .unwrap();
+        let circuit = circuit.circuit_without_select_chip.unwrap();
 
         let circuit0 = circuit.without_witnesses();
         run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(

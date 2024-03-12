@@ -1,5 +1,6 @@
 use crate::circuit_verifier::build_aggregate_verify_circuit;
 use crate::circuit_verifier::circuit::AggregatorCircuit;
+use crate::circuit_verifier::circuit::AggregatorCircuitOption;
 use crate::circuit_verifier::G2AffineBaseHelper;
 use crate::native_verifier::verify_proofs;
 use crate::transcript::poseidon::PoseidonPure;
@@ -14,7 +15,6 @@ use halo2_proofs::arithmetic::BaseExt;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::arithmetic::MultiMillerLoop;
-use halo2_proofs::dev::MockProver;
 use halo2_proofs::pairing::group::Curve;
 use halo2_proofs::plonk::create_proof_ext;
 use halo2_proofs::plonk::keygen_pk;
@@ -253,7 +253,7 @@ pub fn run_circuit_unsafe_full_pass_no_rec<
     max_public_instance: Vec<Vec<usize>>,
     force_create_proof: bool,
 ) -> Option<(
-    AggregatorCircuit<E::G1Affine>,
+    AggregatorCircuitOption<E::G1Affine>,
     Vec<E::Scalar>,
     Vec<E::Scalar>,
     E::Scalar,
@@ -285,8 +285,12 @@ pub fn calc_hash<C: CurveAffine>(
     let mut hasher_cont = PoseidonPure::<C>::default();
     for i in 0..max {
         let mut hasher_tail = hasher_cont.clone();
-        hasher_cont.common_scalar(*hash_cont.get(i).unwrap_or(&hash_cont[2])).unwrap();
-        hasher_tail.common_scalar(*hash_tail.get(i).unwrap_or(&hash_tail[2])).unwrap();
+        hasher_cont
+            .common_scalar(*hash_cont.get(i).unwrap_or(&hash_cont[2]))
+            .unwrap();
+        hasher_tail
+            .common_scalar(*hash_tail.get(i).unwrap_or(&hash_tail[2]))
+            .unwrap();
 
         res.push(*hasher_tail.squeeze_challenge_scalar::<()>());
 
@@ -318,6 +322,9 @@ pub struct AggregatorConfig<F: FieldExt> {
     pub is_final_aggregator: bool,
     // final aggregator skips some instance for hash because they are absorbed thus should be zero
     pub prev_aggregator_skip_instance: Vec<(usize, usize)>,
+
+    // about halo2ecc-s circuit
+    pub use_select_chip: bool,
 }
 
 impl<F: FieldExt> AggregatorConfig<F> {
@@ -339,10 +346,11 @@ impl<F: FieldExt> AggregatorConfig<F> {
             is_final_aggregator: true,
             prev_aggregator_skip_instance: vec![],
             absorb_instance: vec![],
+            use_select_chip: false,
         }
     }
 
-    pub fn default_final_aggregator_config(
+    pub fn default_aggregator_config(
         hash: TranscriptHash,
         target_proof_max_instance: Vec<Vec<usize>>,
         is_final_aggregator: bool,
@@ -359,6 +367,7 @@ impl<F: FieldExt> AggregatorConfig<F> {
             is_final_aggregator,
             prev_aggregator_skip_instance: vec![],
             absorb_instance: vec![],
+            use_select_chip: !is_final_aggregator,
         }
     }
 }
@@ -378,7 +387,7 @@ pub fn run_circuit_unsafe_full_pass<
     force_create_proof: bool,
     config: &AggregatorConfig<E::Scalar>,
 ) -> Option<(
-    AggregatorCircuit<E::G1Affine>,
+    AggregatorCircuitOption<E::G1Affine>,
     Vec<E::Scalar>,
     Vec<E::Scalar>,
     E::Scalar,
@@ -545,12 +554,6 @@ where
         );
         end_timer!(timer);
 
-        if false {
-            const K: u32 = 21;
-            let prover = MockProver::run(K, &circuit, vec![instances.clone()]).unwrap();
-            assert_eq!(prover.verify(), Ok(()));
-        }
-
         Some((circuit, instances, fake_instance, hash))
     } else {
         None
@@ -573,7 +576,7 @@ pub fn run_circuit_with_agg_unsafe_full_pass<
     force_create_proof: bool,
     config: &AggregatorConfig<E::Scalar>,
 ) -> Option<(
-    AggregatorCircuit<E::G1Affine>,
+    AggregatorCircuitOption<E::G1Affine>,
     Vec<E::Scalar>,
     Vec<E::Scalar>,
     E::Scalar,
@@ -654,12 +657,6 @@ where
             config,
         );
         end_timer!(timer);
-
-        if false {
-            const K: u32 = 21;
-            let prover = MockProver::run(K, &circuit, vec![instances.clone()]).unwrap();
-            assert_eq!(prover.verify(), Ok(()));
-        }
 
         Some((circuit, instances, fake_instance, hash))
     } else {

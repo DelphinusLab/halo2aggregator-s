@@ -106,13 +106,11 @@ struct SolidityEvalContext<R: Read, E: MultiMillerLoop, D: Digest> {
     aux_index: usize,
     transcript_idx: usize,
     challenge_idx: usize,
-    msm_index: usize,
     temp_idx_allocator: (BTreeSet<usize>, usize),
     max_temp_buffer_index: usize,
     constant_scalars: Vec<E::Scalar>,
     div_res: Vec<E::Scalar>,
     challenges: Vec<E::Scalar>,
-    msm_len: Vec<usize>,
 }
 
 impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D> {
@@ -133,14 +131,12 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
             deps: vec![],
             transcript_idx: 0,
             challenge_idx: 0,
-            msm_index: 0,
             aux_index: 0,
             temp_idx_allocator: (BTreeSet::new(), TEMP_BUF_START),
             max_temp_buffer_index: 0,
             constant_scalars: vec![],
             div_res: vec![],
             challenges: vec![],
-            msm_len: vec![],
         }
     }
 

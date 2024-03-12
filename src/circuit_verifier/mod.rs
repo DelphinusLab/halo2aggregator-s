@@ -1,9 +1,11 @@
-use self::circuit::AggregatorCircuit;
 use self::transcript::PoseidonChipRead;
 use crate::api::ast_eval::EvalContext;
 use crate::api::ast_eval::EvalOps;
 use crate::api::ast_eval::EvalPos;
 use crate::api::halo2::verify_aggregation_proofs;
+use crate::circuit_verifier::circuit::AggregatorCircuit;
+use crate::circuit_verifier::circuit::AggregatorCircuitOption;
+use crate::circuit_verifier::circuit::AggregatorNoSelectCircuit;
 use crate::circuits::utils::instance_to_instance_commitment;
 use crate::circuits::utils::AggregatorConfig;
 use crate::circuits::utils::TranscriptHash;
@@ -223,7 +225,7 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
             EvalOps::MSMSlice(_, _, _) => {
                 // ignore MSMSlice in circuit
                 (None, None)
-            },
+            }
         });
     }
     Ok((
@@ -243,7 +245,7 @@ pub fn build_single_proof_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper
     proof: Vec<u8>,
     config: &AggregatorConfig<E::Scalar>,
 ) -> (
-    AggregatorCircuit<E::G1Affine>,
+    AggregatorCircuitOption<E::G1Affine>,
     Vec<E::Scalar>,
     Vec<E::Scalar>,
     E::Scalar,
@@ -261,7 +263,7 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
     proofs: Vec<Vec<u8>>,
     config: &AggregatorConfig<E::Scalar>,
 ) -> (
-    AggregatorCircuit<E::G1Affine>,
+    AggregatorCircuitOption<E::G1Affine>,
     Vec<E::Scalar>,
     Vec<E::Scalar>,
     E::Scalar,
@@ -310,7 +312,7 @@ pub fn _build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
     config: &AggregatorConfig<E::Scalar>,
 ) -> Result<
     (
-        AggregatorCircuit<E::G1Affine>,
+        AggregatorCircuitOption<E::G1Affine>,
         Vec<E::Scalar>,
         Vec<E::Scalar>,
         E::Scalar,
@@ -322,7 +324,12 @@ where
 {
     let ctx = Rc::new(RefCell::new(Context::new()));
     let ctx = IntegerContext::<<E::G1Affine as CurveAffine>::Base, E::Scalar>::new(ctx);
-    let mut ctx = NativeScalarEccContext::<E::G1Affine>(ctx, 0);
+    let mut ctx = if config.use_select_chip {
+        NativeScalarEccContext::<E::G1Affine>::new_with_select_chip(ctx)
+    } else {
+        NativeScalarEccContext::<E::G1Affine>::new_without_select_chip(ctx)
+    };
+
     let (w_x, w_g, advices) = verify_aggregation_proofs(
         params,
         vkey,
@@ -633,13 +640,24 @@ where
     };
 
     let ctx: Context<_> = ctx.into();
-    println!("offset {} {}", ctx.base_offset, ctx.range_offset);
+    println!("offset {} {} {}", ctx.base_offset, ctx.range_offset, ctx.select_offset);
 
-    Ok((
+    let circuit = if config.use_select_chip {
         AggregatorCircuit::new(
             Rc::new(Arc::try_unwrap(ctx.records).unwrap().into_inner().unwrap()),
             assigned_instances,
-        ),
+        )
+        .into()
+    } else {
+        AggregatorNoSelectCircuit::new(
+            Rc::new(Arc::try_unwrap(ctx.records).unwrap().into_inner().unwrap()),
+            assigned_instances,
+        )
+        .into()
+    };
+
+    Ok((
+        circuit,
         instances,
         fake_instances,
         assigned_constant_hash.val,

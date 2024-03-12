@@ -35,6 +35,7 @@ fn test_batch_no_rec() {
         true,
     )
     .unwrap();
+    let circuit = circuit.circuit_with_select_chip.unwrap();
 
     run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
         path,
@@ -83,7 +84,7 @@ fn test_single_rec() {
     let (circuit, target_instances) = SimpleCircuit::<Fr>::default_with_instance();
 
     println!("build agg 0");
-    let mut config = AggregatorConfig::default_final_aggregator_config(
+    let mut config = AggregatorConfig::default_aggregator_config(
         TranscriptHash::Poseidon,
         vec![vec![1]],
         false,
@@ -123,8 +124,10 @@ fn test_single_rec() {
             config.is_final_aggregator = true;
             config.prev_aggregator_skip_instance = vec![(1, 7)];
             config.target_proof_max_instance = vec![vec![1], vec![7]];
+            config.use_select_chip = false;
         }
 
+        let last_agg_circuit = last_agg.circuit_with_select_chip.unwrap();
         let (agg, instances, fake_instance, hash) =
             run_circuit_with_agg_unsafe_full_pass::<Bn256, _>(
                 path,
@@ -133,7 +136,7 @@ fn test_single_rec() {
                 vec![circuit.clone()],
                 vec![target_instances.clone()],
                 last_agg_instances.clone(),
-                last_agg.clone(),
+                last_agg_circuit,
                 i,
                 false,
                 &config,
@@ -154,13 +157,14 @@ fn test_single_rec() {
         last_agg_fake_instances = fake_instance;
     }
 
+    let last_agg_circuit = last_agg.circuit_without_select_chip.unwrap();
     config.hash = TranscriptHash::Keccak;
     let final_agg_file_prex = format!("simple-circuit.agg.final");
     run_circuit_unsafe_full_pass::<Bn256, _>(
         path,
         &final_agg_file_prex,
         k,
-        vec![last_agg.clone()],
+        vec![last_agg_circuit.clone()],
         vec![vec![last_agg_instances.clone()]],
         vec![vec![last_agg_fake_instances]],
         false,
@@ -173,7 +177,7 @@ fn test_single_rec() {
 
     let vkey = load_or_build_vkey::<Bn256, _>(
         &params,
-        &last_agg,
+        &last_agg_circuit,
         Some(&path.join(format!("{}.0.vkey.data", final_agg_file_prex))),
     );
 
