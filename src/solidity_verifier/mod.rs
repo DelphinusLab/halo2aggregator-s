@@ -312,7 +312,7 @@ mod tests {
 
         let path = Path::new(path);
         let (circuit, instances) = SimpleCircuit::<Fr>::random_new_with_instance();
-        let (circuit, instances, fake_instances, _) =
+        let (circuit, instances, shadow_instances, _) =
             run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
                 path,
                 "simple-circuit",
@@ -336,7 +336,7 @@ mod tests {
             verify_circuit_k,
             vec![circuit],
             vec![vec![instances.clone()]],
-            vec![vec![fake_instances]],
+            vec![vec![shadow_instances]],
             aggregator_circuit_hasher,
             vec![],
             vec![],

@@ -246,7 +246,7 @@ pub fn run_circuit_unsafe_full_pass_no_rec<
     k: u32,
     circuits: Vec<C>,
     instances: Vec<Vec<Vec<E::Scalar>>>,
-    fake_instances: Vec<Vec<Vec<E::Scalar>>>,
+    shadow_instances: Vec<Vec<Vec<E::Scalar>>>,
     hash: TranscriptHash,
     commitment_check: Vec<[usize; 4]>,
     expose: Vec<[usize; 2]>,
@@ -267,7 +267,7 @@ where
         k,
         circuits,
         instances,
-        fake_instances,
+        shadow_instances,
         force_create_proof,
         &AggregatorConfig::new_for_non_rec(hash, commitment_check, expose, max_public_instance),
     )
@@ -383,7 +383,7 @@ pub fn run_circuit_unsafe_full_pass<
     k: u32,
     circuits: Vec<C>,
     instances: Vec<Vec<Vec<E::Scalar>>>,
-    fake_instances: Vec<Vec<Vec<E::Scalar>>>,
+    shadow_instances: Vec<Vec<Vec<E::Scalar>>>,
     force_create_proof: bool,
     config: &AggregatorConfig<E::Scalar>,
 ) -> Option<(
@@ -439,10 +439,10 @@ where
 
         if hash != TranscriptHash::Poseidon {
             // Store fake instaces for solidity verifier when create proof for final aggregator.
-            assert!(fake_instances.len() > i);
+            assert!(shadow_instances.len() > i);
             store_instance(
-                &fake_instances[i],
-                &cache_folder.join(format!("{}.{}.fakeinstance.data", prefix, i)),
+                &shadow_instances[i],
+                &cache_folder.join(format!("{}.{}.shadow-instance.data", prefix, i)),
             );
         }
     }
@@ -545,7 +545,7 @@ where
     // circuit multi check
     if hash == TranscriptHash::Poseidon {
         let timer = start_timer!(|| "build_aggregate_verify_circuit");
-        let (circuit, instances, fake_instance, hash) = build_aggregate_verify_circuit::<E>(
+        let (circuit, instances, shadow_instance, hash) = build_aggregate_verify_circuit::<E>(
             &params_verifier,
             &vkeys[..].iter().collect::<Vec<_>>(),
             instances.iter().collect(),
@@ -554,7 +554,7 @@ where
         );
         end_timer!(timer);
 
-        Some((circuit, instances, fake_instance, hash))
+        Some((circuit, instances, shadow_instance, hash))
     } else {
         None
     }
@@ -649,7 +649,7 @@ where
     // circuit multi check
     if config.hash == TranscriptHash::Poseidon {
         let timer = start_timer!(|| "build_aggregate_verify_circuit");
-        let (circuit, instances, fake_instance, hash) = build_aggregate_verify_circuit::<E>(
+        let (circuit, instances, shadow_instance, hash) = build_aggregate_verify_circuit::<E>(
             &params_verifier,
             &vkeys[..].iter().collect::<Vec<_>>(),
             instances.iter().collect(),
@@ -658,7 +658,7 @@ where
         );
         end_timer!(timer);
 
-        Some((circuit, instances, fake_instance, hash))
+        Some((circuit, instances, shadow_instance, hash))
     } else {
         None
     }

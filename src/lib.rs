@@ -21,7 +21,7 @@ fn test_batch_no_rec() {
     let path = Path::new(path);
     let (circuit1, instance1) = SimpleCircuit::<Fr>::random_new_with_instance();
     let (circuit2, instance2) = SimpleCircuit::<Fr>::random_new_with_instance();
-    let (circuit, instances, fake_instances, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
+    let (circuit, instances, shadow_instances, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
         path,
         "simple-circuit",
         8,
@@ -43,7 +43,7 @@ fn test_batch_no_rec() {
         22,
         vec![circuit],
         vec![vec![instances]],
-        vec![vec![fake_instances]],
+        vec![vec![shadow_instances]],
         TranscriptHash::Blake2b,
         vec![],
         vec![],
@@ -90,7 +90,7 @@ fn test_single_rec() {
         false,
     );
 
-    let (agg_l0, agg_l0_instances, agg_l0_fake_instances, hash) =
+    let (agg_l0, agg_l0_instances, agg_l0_shadow_instances, hash) =
         run_circuit_unsafe_full_pass::<Bn256, _>(
             path,
             "simple-circuit",
@@ -112,7 +112,7 @@ fn test_single_rec() {
 
     let mut last_agg = agg_l0;
     let mut last_agg_instances = agg_l0_instances;
-    let mut last_agg_fake_instances = agg_l0_fake_instances;
+    let mut last_agg_shadow_instances = agg_l0_shadow_instances;
 
     let end_of_non_final_agg_idx = 2;
     for i in 0..=end_of_non_final_agg_idx {
@@ -128,7 +128,7 @@ fn test_single_rec() {
         }
 
         let last_agg_circuit = last_agg.circuit_with_select_chip.unwrap();
-        let (agg, instances, fake_instance, hash) =
+        let (agg, instances, shadow_instance, hash) =
             run_circuit_with_agg_unsafe_full_pass::<Bn256, _>(
                 path,
                 "simple-circuit",
@@ -154,7 +154,7 @@ fn test_single_rec() {
 
         last_agg = agg;
         last_agg_instances = instances;
-        last_agg_fake_instances = fake_instance;
+        last_agg_shadow_instances = shadow_instance;
     }
 
     let last_agg_circuit = last_agg.circuit_without_select_chip.unwrap();
@@ -166,7 +166,7 @@ fn test_single_rec() {
         k,
         vec![last_agg_circuit.clone()],
         vec![vec![last_agg_instances.clone()]],
-        vec![vec![last_agg_fake_instances]],
+        vec![vec![last_agg_shadow_instances]],
         false,
         &config,
     );

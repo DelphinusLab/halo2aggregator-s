@@ -517,7 +517,7 @@ where
 
     // Fake instance is not the real instance of the final aggregator.
     // The final aggregator should hash all fake instance and target circuit instance to get the real instance.
-    let (assigned_instances, instances, fake_instances) = if !config.is_final_aggregator {
+    let (assigned_instances, instances, shadow_instances) = if !config.is_final_aggregator {
         let mut assigned_instances = vec![assigned_final_hash];
         assigned_instances.append(
             &mut vec![&il.concat()[..], &pl[expose_start_idx..pl.len()]]
@@ -596,9 +596,9 @@ where
             }
         }
 
-        let mut assigned_fake_instances = vec![assigned_final_hash];
+        let mut assigned_shadow_instances = vec![assigned_final_hash];
 
-        assigned_fake_instances.append(
+        assigned_shadow_instances.append(
             &mut vec![&pl[expose_start_idx..pl.len()]]
                 .concat()
                 .iter()
@@ -607,20 +607,20 @@ where
                 .concat(),
         );
 
-        let fake_instances = assigned_fake_instances
+        let shadow_instances = assigned_shadow_instances
             .iter()
             .map(|x| x.val)
             .collect::<Vec<_>>();
 
         println!(
             "hash_list before fake instance {:?}",
-            assigned_fake_instances
+            assigned_shadow_instances
                 .iter()
                 .map(|x| x.val)
                 .collect::<Vec<_>>()
         );
 
-        hash_list.append(&mut assigned_fake_instances);
+        hash_list.append(&mut assigned_shadow_instances);
 
         let assigned_instances = vec![ctx.0.ctx.borrow_mut().hash(&hash_list[..])];
 
@@ -636,7 +636,7 @@ where
 
         let instances = assigned_instances.iter().map(|x| x.val).collect::<Vec<_>>();
 
-        (assigned_instances, instances, fake_instances)
+        (assigned_instances, instances, shadow_instances)
     };
 
     let ctx: Context<_> = ctx.into();
@@ -659,7 +659,7 @@ where
     Ok((
         circuit,
         instances,
-        fake_instances,
+        shadow_instances,
         assigned_constant_hash.val,
     ))
 }
