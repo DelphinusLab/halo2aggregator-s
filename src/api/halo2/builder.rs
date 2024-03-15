@@ -72,7 +72,15 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
             .columns
             .chunks(self.vk.cs.degree() - 2)
             .len();
-
+        let shuffle_groups = cs.shuffles.group(self.vk.cs.degree());
+        let shuffle_groups = shuffle_groups
+            .iter()
+            .map(|v| {
+                v.0.iter()
+                    .map(|v| (v.input_expressions.clone(), v.shuffle_expressions.clone()))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
         // Prepare ast for constants.
         let l = cs.blinding_factors() as u32 + 1;
         let n = self.params.n as u32;
@@ -109,7 +117,7 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
             .map(|x| x.polys.clone())
             .collect::<Vec<_>>()
             .concat();
-        let delta = sconst!(C::ScalarExt::DELTA);
+        let field_delta = sconst!(C::ScalarExt::DELTA);
 
         let mut rotations = HashSet::<i32>::new();
         for i in iter::empty()
@@ -147,11 +155,12 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
 
         let beta = transcript.squeeze_challenge();
         let gamma = transcript.squeeze_challenge();
+        let challenge_delta = transcript.squeeze_challenge();
 
         let permutation_product_commitments =
             transcript.read_n_points(n_permutation_product_commitments);
         let lookup_product_commitments = transcript.read_n_points(self.vk.cs.lookups.len());
-        let shuffle_product_commitments = transcript.read_n_points(self.vk.cs.shuffles.len());
+        let shuffle_product_commitments = transcript.read_n_points(shuffle_groups.len());
 
         let random_commitment = transcript.read_point();
         let y = transcript.squeeze_challenge();
@@ -200,7 +209,7 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
                     index,
                     shuffle_product_commitment,
                     &self.key,
-                    &self.vk,
+                    shuffle_groups[index].clone(),
                     &mut transcript,
                 )
             })
@@ -282,7 +291,8 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
                 beta,
                 gamma,
                 theta,
-                delta,
+                challenge_delta,
+                field_delta,
                 x,
                 x_next,
                 x_last,

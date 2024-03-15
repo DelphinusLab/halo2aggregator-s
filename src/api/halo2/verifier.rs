@@ -57,7 +57,8 @@ pub struct VerifierParams<C: CurveAffine> {
     pub beta: AstScalarRc<C>,
     pub gamma: AstScalarRc<C>,
     pub theta: AstScalarRc<C>,
-    pub delta: AstScalarRc<C>,
+    pub challenge_delta: AstScalarRc<C>,
+    pub field_delta: AstScalarRc<C>,
 
     pub x: AstScalarRc<C>,
     pub x_next: AstScalarRc<C>,

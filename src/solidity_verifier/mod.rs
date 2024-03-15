@@ -149,6 +149,9 @@ pub fn solidity_render_with_check_option<E: MultiMillerLoop>(
     let lookups = vkey.cs.lookups.len();
     tera_ctx.insert("lookups", &lookups);
 
+    let shuffles = vkey.cs.shuffles.group(vkey.cs.degree()).len();
+    tera_ctx.insert("shuffles", &shuffles);
+
     let n_permutation_product = vkey
         .cs
         .permutation
@@ -166,7 +169,8 @@ pub fn solidity_render_with_check_option<E: MultiMillerLoop>(
         + vkey.permutation.commitments.len()
         + 3 * n_permutation_product
         - 1
-        + 5 * lookups;
+        + 5 * lookups
+        + 2 * shuffles;
     tera_ctx.insert("evals", &evals);
 
     let steps = solidity_codegen_with_proof(
