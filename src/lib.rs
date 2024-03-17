@@ -70,7 +70,7 @@ fn test_single_one_pass_with_verify_circuit() {
     run_circuit_unsafe_full_pass::<Bn256, _>(
         path,
         "verify-circuit",
-        20,
+        21,
         vec![circuit],
         vec![vec![instances]],
         TranscriptHash::Blake2b,

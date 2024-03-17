@@ -272,7 +272,7 @@ impl<C: CurveAffine> EvaluationQuerySchemaRc<C> {
 
     fn eval_prepare(
         self,
-        coeff: AstScalarRc<C>
+        coeff: AstScalarRc<C>,
     ) -> (
         BTreeMap<String, (AstPointRc<C>, AstScalarRc<C>)>,
         AstScalarRc<C>,
@@ -280,14 +280,7 @@ impl<C: CurveAffine> EvaluationQuerySchemaRc<C> {
         match self.0.as_ref() {
             EvaluationQuerySchema::Commitment(cq) => (
                 BTreeMap::from_iter(
-                    vec![(
-                        cq.key.clone(),
-                        (
-                            cq.commitment.clone().unwrap(),
-                            coeff,
-                        ),
-                    )]
-                    .into_iter(),
+                    vec![(cq.key.clone(), (cq.commitment.clone().unwrap(), coeff))].into_iter(),
                 ),
                 sconst!(C::ScalarExt::zero()),
             ),
