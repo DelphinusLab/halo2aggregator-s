@@ -36,7 +36,7 @@ impl<F: FieldExt> SimpleCircuit<F> {
     }
 
     pub fn default_with_instance() -> (Self, Vec<Vec<F>>) {
-        let a = F::zero();
+        let a = F::one();
         let b = F::zero();
         let instance = a + b;
 
@@ -90,14 +90,10 @@ impl<F: FieldExt> Circuit<F> for SimpleCircuit<F> {
         SimpleConfig { advices, sel }
     }
 
-    fn synthesize(
-        &self,
-        config: Self::Config,
-        mut layouter: impl Layouter<F>,
-    ) -> Result<(), Error> {
+    fn synthesize(&self, config: Self::Config, layouter: impl Layouter<F>) -> Result<(), Error> {
         layouter.assign_region(
             || "main",
-            |mut region| {
+            |region| {
                 region.assign_advice(|| "a", config.advices[0], 0, || Ok(self.a))?;
                 region.assign_advice(|| "b", config.advices[1], 0, || Ok(self.b))?;
                 region.assign_fixed(|| "sel", config.sel, 0, || Ok(F::one()))?;

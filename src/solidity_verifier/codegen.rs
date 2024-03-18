@@ -20,28 +20,19 @@ use halo2_proofs::transcript::TranscriptRead;
 use halo2ecc_s::utils::field_to_bn;
 use sha2::Digest;
 use std::collections::BTreeSet;
-use std::env;
 use std::io::Read;
 use std::path::Path;
 
-const CHALLENGE_BUF_START: usize = 2;
-const TEMP_BUF_START: usize = 16;
+const INSTANCE_COLUMN_COUNT: usize = 1;
+const MAX_MSM_COUNT: usize = 2;
+const CHALLENGE_BUF_START: usize = 2 * INSTANCE_COLUMN_COUNT;
+const CHALLENGE_BUF_MAX: usize = 8;
+const MSM_BUF_START: usize = CHALLENGE_BUF_START + CHALLENGE_BUF_MAX;
+const TEMP_BUF_START: usize = MSM_BUF_START + 2 * MAX_MSM_COUNT + 3; // 3 reserved for msm operation;
 const DEEP_LIMIT: usize = 6;
 
-lazy_static! {
-    static ref TEMP_BUF_MAX: usize = usize::from_str_radix(
-        &env::var("HALO2_AGGREGATOR_S_TEMP_BUF_MAX").unwrap_or("170".to_owned()),
-        10
-    )
-    .unwrap();
-    static ref MSM_BUF_SIZE: usize = usize::from_str_radix(
-        &env::var("HALO2_AGGREGATOR_S_MSM_BUF_SIZE").unwrap_or("5".to_owned()),
-        10
-    )
-    .unwrap();
-}
-
-const SOLIDITY_VERIFY_STEP_MAX_SIZE: usize = 128;
+const SOLIDITY_VERIFY_FIRST_STEP_MAX_SIZE: usize = 99; // first step need to be less for shplonk
+const SOLIDITY_VERIFY_STEP_MAX_SIZE: usize = 135;
 
 const SOLIDITY_DEBUG: bool = false;
 
@@ -50,17 +41,25 @@ pub enum SolidityVar<E: MultiMillerLoop> {
     Transcript(usize),
     Instance(usize),
     Challenge(usize),
-    Temp(usize),
+    Temp(usize, usize), // var_index, op_pos
     ConstantScalar(E::Scalar),
     ConstantPoint(E::G1Affine),
-    Expression(String, usize),
+    Expression(String, usize, Vec<(usize, usize)>),
 }
 
 impl<E: MultiMillerLoop> SolidityVar<E> {
     pub fn get_deep(&self) -> usize {
         match &self {
-            SolidityVar::Expression(_, n) => *n,
+            SolidityVar::Expression(_, n, _) => *n,
             _ => 1,
+        }
+    }
+
+    pub fn get_dep(&self) -> Vec<(usize, usize)> {
+        match &self {
+            SolidityVar::Expression(_, _, dep) => dep.clone(),
+            SolidityVar::Temp(t, i) => vec![(*t, *i)],
+            _ => vec![],
         }
     }
 
@@ -75,7 +74,7 @@ impl<E: MultiMillerLoop> SolidityVar<E> {
             }
             SolidityVar::Instance(i) => format!("(buf[{}], buf[{}])", i, i + 1),
             SolidityVar::Challenge(i) => format!("buf[{}]", i + CHALLENGE_BUF_START),
-            SolidityVar::Temp(i) => {
+            SolidityVar::Temp(i, _) => {
                 assert!(is_scalar);
                 format!("buf[{}]", i)
             }
@@ -88,7 +87,7 @@ impl<E: MultiMillerLoop> SolidityVar<E> {
                     field_to_bn(c.y()).to_str_radix(10)
                 )
             }
-            SolidityVar::Expression(s, _) => s.to_owned(),
+            SolidityVar::Expression(s, _, _) => s.to_owned(),
         }
     }
 }
@@ -107,12 +106,11 @@ struct SolidityEvalContext<R: Read, E: MultiMillerLoop, D: Digest> {
     aux_index: usize,
     transcript_idx: usize,
     challenge_idx: usize,
-    msm_index: usize,
     temp_idx_allocator: (BTreeSet<usize>, usize),
+    max_temp_buffer_index: usize,
     constant_scalars: Vec<E::Scalar>,
     div_res: Vec<E::Scalar>,
     challenges: Vec<E::Scalar>,
-    msm_len: Vec<usize>,
 }
 
 impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D> {
@@ -133,13 +131,12 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
             deps: vec![],
             transcript_idx: 0,
             challenge_idx: 0,
-            msm_index: 0,
             aux_index: 0,
             temp_idx_allocator: (BTreeSet::new(), TEMP_BUF_START),
+            max_temp_buffer_index: 0,
             constant_scalars: vec![],
             div_res: vec![],
             challenges: vec![],
-            msm_len: vec![],
         }
     }
 
@@ -153,13 +150,45 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
         }
     }
 
+    fn try_release_temp_idx(&mut self, dep: &SolidityVar<E>) {
+        match dep {
+            SolidityVar::Temp(t, i) => {
+                self.deps[*i] -= 1;
+                if self.deps[*i] == 0 {
+                    self.temp_idx_allocator.0.insert(*t);
+                }
+            }
+            SolidityVar::Expression(_, _, dep) => {
+                for (t, i) in dep {
+                    self.deps[*i] -= 1;
+                    if self.deps[*i] == 0 {
+                        self.temp_idx_allocator.0.insert(*t);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn alloc_temp_idx(&mut self) -> usize {
         if self.temp_idx_allocator.0.len() == 0 {
             self.temp_idx_allocator.1 += 1;
-            assert!(self.temp_idx_allocator.1 <= *TEMP_BUF_MAX);
+            if self.temp_idx_allocator.1 > self.max_temp_buffer_index {
+                self.max_temp_buffer_index = self.temp_idx_allocator.1;
+            }
             self.temp_idx_allocator.1.clone() - 1
         } else {
             self.temp_idx_allocator.0.pop_first().clone().unwrap()
+        }
+    }
+
+    fn pos_is_constant_zero(&self, p: &EvalPos) -> bool {
+        match p {
+            EvalPos::Constant(i) => {
+                let s = self.c.const_scalars[*i];
+                s.is_zero_vartime()
+            }
+            _ => false,
         }
     }
 
@@ -248,14 +277,15 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
                 EvalOps::ScalarPow(a, n) => {
                     (None, Some(self.eval_scalar_pos(a).pow_vartime([*n as u64])))
                 }
-                EvalOps::MSM(psl) => (
-                    psl.into_iter()
-                        .map(|(p, s)| {
-                            (self.eval_point_pos(p) * self.eval_scalar_pos(s)).to_affine()
-                        })
-                        .reduce(|acc, p| (acc + p).to_affine()),
-                    None,
-                ),
+                EvalOps::MSM(_, last) => (Some(self.eval_point_pos(last)), None),
+                EvalOps::MSMSlice((p, s), last, _) => {
+                    let curr = (self.eval_point_pos(p) * self.eval_scalar_pos(s)).to_affine();
+                    let acc = last
+                        .as_ref()
+                        .map(|x| (self.eval_point_pos(x) + curr).to_affine())
+                        .unwrap_or(curr);
+                    (Some(acc), None)
+                }
                 EvalOps::CheckPoint(tag, v) => {
                     if false {
                         println!("checkpoint {}: {:?}", tag, self.eval_any_pos(v));
@@ -298,11 +328,15 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
                 EvalOps::ScalarPow(a, _) => {
                     self.tag_lifetime(a, i);
                 }
-                EvalOps::MSM(psl) => {
-                    psl.iter().for_each(|(p, s)| {
-                        self.tag_lifetime(p, i);
-                        self.tag_lifetime(s, i);
-                    });
+                EvalOps::MSMSlice((a, b), c, _) => {
+                    self.tag_lifetime(a, i);
+                    self.tag_lifetime(b, i);
+                    if let Some(c) = c {
+                        self.tag_lifetime(c, i);
+                    }
+                }
+                EvalOps::CheckPoint(_, a) => {
+                    self.tag_lifetime(a, i);
                 }
                 _ => {}
             }
@@ -329,7 +363,7 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
                     let a = self.pos_to_scalar_var(a);
                     let b = self.pos_to_scalar_var(b);
                     let expr = format!(
-                        "mulmod({}, {}, AggregatorLib.p_mod)",
+                        "mulmod({}, {}, AggregatorLib.q_mod)",
                         a.to_string(true),
                         b.to_string(true)
                     );
@@ -339,8 +373,11 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
                         Some(SolidityVar::Expression(
                             expr,
                             get_combine_degree(a.get_deep(), b.get_deep()),
+                            vec![a.get_dep(), b.get_dep()].concat(),
                         ))
                     } else {
+                        self.try_release_temp_idx(&a);
+                        self.try_release_temp_idx(&b);
                         let t = self.alloc_temp_idx();
                         self.statements.push(format!("buf[{}] = {};", t, expr));
 
@@ -352,14 +389,14 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
                                 i
                             ));
                         }
-                        Some(SolidityVar::Temp(t))
+                        Some(SolidityVar::Temp(t, i))
                     }
                 }
                 EvalOps::ScalarAdd(a, b) => {
                     let a = self.pos_to_scalar_var(a);
                     let b = self.pos_to_scalar_var(b);
                     let expr = format!(
-                        "addmod({}, {}, AggregatorLib.p_mod)",
+                        "addmod({}, {}, AggregatorLib.q_mod)",
                         a.to_string(true),
                         b.to_string(true)
                     );
@@ -369,8 +406,11 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
                         Some(SolidityVar::Expression(
                             expr,
                             get_combine_degree(a.get_deep(), b.get_deep()),
+                            vec![a.get_dep(), b.get_dep()].concat(),
                         ))
                     } else {
+                        self.try_release_temp_idx(&a);
+                        self.try_release_temp_idx(&b);
                         let t = self.alloc_temp_idx();
                         self.statements.push(format!("buf[{}] = {};", t, expr));
                         if SOLIDITY_DEBUG {
@@ -381,25 +421,33 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
                                 i
                             ));
                         }
-                        Some(SolidityVar::Temp(t))
+                        Some(SolidityVar::Temp(t, i))
                     }
                 }
-                EvalOps::ScalarSub(a, b) => {
-                    let a = self.pos_to_scalar_var(a);
+                EvalOps::ScalarSub(_a, b) => {
+                    let a = self.pos_to_scalar_var(_a);
                     let b = self.pos_to_scalar_var(b);
-                    let expr = format!(
-                        "addmod({}, AggregatorLib.p_mod - {}, AggregatorLib.p_mod)",
-                        a.to_string(true),
-                        b.to_string(true)
-                    );
+                    let expr = if self.pos_is_constant_zero(_a) {
+                        format!("AggregatorLib.q_mod - {}", b.to_string(true))
+                    } else {
+                        format!(
+                            "addmod({}, AggregatorLib.q_mod - {}, AggregatorLib.q_mod)",
+                            a.to_string(true),
+                            b.to_string(true)
+                        )
+                    };
+
                     if self.deps[i] == 1
                         && get_combine_degree(a.get_deep(), b.get_deep()) < DEEP_LIMIT
                     {
                         Some(SolidityVar::Expression(
                             expr,
                             get_combine_degree(a.get_deep(), b.get_deep()),
+                            vec![a.get_dep(), b.get_dep()].concat(),
                         ))
                     } else {
+                        self.try_release_temp_idx(&a);
+                        self.try_release_temp_idx(&b);
                         let t = self.alloc_temp_idx();
                         self.statements.push(format!("buf[{}] = {};", t, expr));
 
@@ -411,7 +459,7 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
                                 i
                             ));
                         }
-                        Some(SolidityVar::Temp(t))
+                        Some(SolidityVar::Temp(t, i))
                     }
                 }
                 EvalOps::ScalarDiv(a, b) => {
@@ -432,8 +480,11 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
                         Some(SolidityVar::Expression(
                             expr,
                             get_combine_degree(a.get_deep(), b.get_deep()),
+                            vec![a.get_dep(), b.get_dep()].concat(),
                         ))
                     } else {
+                        self.try_release_temp_idx(&a);
+                        self.try_release_temp_idx(&b);
                         let t = self.alloc_temp_idx();
                         self.statements.push(format!("buf[{}] = {};", t, expr));
 
@@ -445,11 +496,13 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
                                 i
                             ));
                         }
-                        Some(SolidityVar::Temp(t))
+                        Some(SolidityVar::Temp(t, i))
                     }
                 }
                 EvalOps::ScalarPow(a, n) => {
-                    let a = self.pos_to_scalar_var(a).to_string(true);
+                    let a = self.pos_to_scalar_var(a);
+                    self.try_release_temp_idx(&a);
+                    let a = a.to_string(true);
                     let t = self.alloc_temp_idx();
                     self.statements
                         .push(format!("buf[{}] = AggregatorLib.fr_pow({}, {});", t, a, n));
@@ -462,10 +515,47 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
                             i
                         ));
                     }
-                    Some(SolidityVar::Temp(t))
+                    Some(SolidityVar::Temp(t, i))
                 }
-                EvalOps::MSM(psl) => {
-                    let start: usize = *TEMP_BUF_MAX + self.msm_len.len() * *MSM_BUF_SIZE;
+                EvalOps::MSMSlice((p, s), last, group) => {
+                    let p = self.pos_to_point_var(p);
+                    let s = self.pos_to_scalar_var(s);
+                    self.try_release_temp_idx(&s);
+                    let start: usize = MSM_BUF_START + group * 2;
+                    let p_str = p.to_string(false);
+                    let s_str = s.to_string(true);
+                    if last.is_some() {
+                        let idx = 2;
+                        self.statements.push(format!(
+                            "(buf[{}], buf[{}]) = {};",
+                            start + idx,
+                            start + idx + 1,
+                            p_str
+                        ));
+                        self.statements
+                            .push(format!("buf[{}] = {};", start + idx + 2, s_str));
+                        self.statements
+                            .push(format!("AggregatorLib.ecc_mul_add(buf, {});", start));
+                    } else {
+                        let idx = 0;
+                        self.statements.push(format!(
+                            "(buf[{}], buf[{}]) = {};",
+                            start + idx,
+                            start + idx + 1,
+                            p_str
+                        ));
+                        self.statements
+                            .push(format!("buf[{}] = {};", start + idx + 2, s_str));
+                        self.statements
+                            .push(format!("AggregatorLib.ecc_mul(buf, {});", start));
+                    }
+
+                    None
+                }
+                EvalOps::MSM(_psl, _) => {
+                    /*
+                    assert!(self.msm_len.len() <= MAX_MSM_COUNT);
+                    let start: usize = MSM_BUF_START + self.msm_len.len() * 2;
 
                     self.msm_index += 1;
                     self.msm_len.push(psl.len());
@@ -486,6 +576,30 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
                         self.statements
                             .push(format!("buf[{}] = {};", start + idx + 2, s_str));
 
+                        if SOLIDITY_DEBUG {
+                            let start = start + if i == 0 { 0 } else { 2 };
+                            let p_value = self.eval_point_pos(p).coordinates().unwrap();
+                            let s_value = self.eval_scalar_pos(s);
+                            self.statements.push(format!(
+                                "require(buf[{}] == {}, \"ops {}.0\");",
+                                start,
+                                field_to_bn(p_value.x()).to_str_radix(10),
+                                i
+                            ));
+                            self.statements.push(format!(
+                                "require(buf[{}] == {}, \"ops {}.1\");",
+                                start + 1,
+                                field_to_bn(p_value.y()).to_str_radix(10),
+                                i
+                            ));
+                            self.statements.push(format!(
+                                "require(buf[{}] == {}, \"ops {}.2\");",
+                                start + 2,
+                                field_to_bn(&s_value).to_str_radix(10),
+                                i
+                            ));
+                        }
+
                         if i > 0 {
                             self.statements
                                 .push(format!("AggregatorLib.ecc_mul_add(buf, {});", start));
@@ -493,30 +607,7 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
                             self.statements
                                 .push(format!("AggregatorLib.ecc_mul(buf, {});", start));
                         }
-
-                        if SOLIDITY_DEBUG {
-                            let p_value = self.eval_point_pos(p).coordinates().unwrap();
-                            let s_value = self.eval_scalar_pos(s);
-                            self.statements.push(format!(
-                                "require(buf[{}] == {}, \"ops {}.0\");",
-                                start + i * 3,
-                                field_to_bn(p_value.x()).to_str_radix(10),
-                                i
-                            ));
-                            self.statements.push(format!(
-                                "require(buf[{}] == {}, \"ops {}.1\");",
-                                start + i * 3 + 1,
-                                field_to_bn(p_value.y()).to_str_radix(10),
-                                i
-                            ));
-                            self.statements.push(format!(
-                                "require(buf[{}] == {}, \"ops {}.2\");",
-                                start + i * 3 + 2,
-                                field_to_bn(&s_value).to_str_radix(10),
-                                i
-                            ));
-                        }
-                    }
+                    } */
 
                     None
                 }
@@ -535,7 +626,7 @@ pub fn solidity_codegen_with_proof<E: MultiMillerLoop, D: Digest + Clone>(
     tera_context: &mut tera::Context,
     check: bool,
 ) -> Vec<String> {
-    let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey], &vec![]);
+    let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey], &vec![], true, &vec![]);
 
     let instance_commitments =
         instance_to_instance_commitment(params, &[vkey], vec![&vec![instances.clone()]])[0].clone();
@@ -578,11 +669,8 @@ pub fn solidity_codegen_with_proof<E: MultiMillerLoop, D: Digest + Clone>(
             .collect::<Vec<_>>(),
     );
 
-    tera_context.insert("msm_w_x_len", &ctx.msm_len[0]);
-    tera_context.insert("msm_w_g_len", &ctx.msm_len[1]);
-
-    tera_context.insert("msm_w_x_start", &*TEMP_BUF_MAX);
-    tera_context.insert("msm_w_g_start", &(*TEMP_BUF_MAX + *MSM_BUF_SIZE));
+    tera_context.insert("msm_w_x_start", &MSM_BUF_START);
+    tera_context.insert("msm_w_g_start", &(MSM_BUF_START + 2));
 
     if SOLIDITY_DEBUG {
         tera_context.insert(
@@ -594,15 +682,24 @@ pub fn solidity_codegen_with_proof<E: MultiMillerLoop, D: Digest + Clone>(
         );
     }
 
-    ctx.statements
-        .chunks(SOLIDITY_VERIFY_STEP_MAX_SIZE)
-        .map(|c| {
-            c.iter()
-                .map(|x| format!("{}\n", x))
-                .collect::<Vec<_>>()
-                .concat()
-        })
-        .collect()
+    let mut res = vec![ctx.statements[..SOLIDITY_VERIFY_FIRST_STEP_MAX_SIZE]
+        .iter()
+        .map(|x| format!("{}\n", x))
+        .collect::<Vec<_>>()
+        .concat()];
+
+    res.append(
+        &mut ctx.statements[SOLIDITY_VERIFY_FIRST_STEP_MAX_SIZE..]
+            .chunks(SOLIDITY_VERIFY_STEP_MAX_SIZE)
+            .map(|c| {
+                c.iter()
+                    .map(|x| format!("{}\n", x))
+                    .collect::<Vec<_>>()
+                    .concat()
+            })
+            .collect(),
+    );
+    res
 }
 
 pub fn solidity_aux_gen<E: MultiMillerLoop, D: Digest + Clone>(
@@ -624,7 +721,7 @@ pub fn solidity_aux_gen_data<E: MultiMillerLoop, D: Digest + Clone>(
     proofs: Vec<u8>,
     check: bool,
 ) -> Vec<E::Scalar> {
-    let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey], &vec![]);
+    let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey], &vec![], true, &vec![]);
 
     let instance_commitments =
         instance_to_instance_commitment(params, &[vkey], vec![&vec![instances.clone()]])[0].clone();

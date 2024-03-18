@@ -7,7 +7,6 @@ use crate::api::transcript::AstTranscriptReader;
 use crate::pcheckpoint;
 use crate::pconst;
 use crate::pinstance;
-use crate::scheckpoint;
 use crate::sconst;
 use crate::spow;
 use halo2_proofs::arithmetic::BaseExt;
@@ -26,6 +25,7 @@ pub struct VerifierParamsBuilder<'a, E: MultiMillerLoop> {
     pub(crate) proof_index: usize,
     pub(crate) params: &'a ParamsVerifier<E>,
     pub(crate) vk: &'a VerifyingKey<E::G1Affine>,
+    pub(crate) use_gwc: bool,
 }
 
 impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>>
@@ -200,9 +200,20 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
             })
             .collect::<Vec<_>>();
 
-        let v = scheckpoint!("v".to_owned(), transcript.squeeze_challenge());
-        let u = scheckpoint!("u".to_owned(), transcript.squeeze_challenge());
-        let w = transcript.read_n_points(rotations.len());
+        let (multiopen_commitments, multiopen_challenges) = if self.use_gwc {
+            // gwc
+            let v = transcript.squeeze_challenge();
+            let u = transcript.squeeze_challenge();
+            (transcript.read_n_points(rotations.len()), vec![v, u])
+        } else {
+            // shplonk
+            let y = transcript.squeeze_challenge();
+            let v = transcript.squeeze_challenge();
+            let h1 = transcript.read_point();
+            let u = transcript.squeeze_challenge();
+            let h2 = transcript.read_point();
+            (vec![h1, h2], vec![y, v, u])
+        };
 
         // Prepare ast for calculation.
         let omega_neg_l = sconst!(omega.pow_vartime([l as u64]).invert().unwrap());
@@ -223,12 +234,9 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
             (0..=l as usize)
                 .map(|i| {
                     let wi = &ws[i];
-                    scheckpoint!(
-                        format!("ls{}", l - i as u32),
                         ((wi / sconst!(C::ScalarExt::from(n as u64)))
                             * (xn.clone() - sconst!(one)))
                             / (x.clone() - wi.clone())
-                    )
                 })
                 .rev()
                 .collect::<Vec<_>>()
@@ -260,7 +268,7 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
                 permutation_evals,
                 vanish_commitments,
                 random_commitment,
-                w,
+                multiopen_commitments,
                 random_eval,
                 beta,
                 gamma,
@@ -272,8 +280,7 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
                 x_inv,
                 xn,
                 y,
-                u,
-                v,
+                multiopen_challenges,
                 omega,
                 ls,
                 l_blind,

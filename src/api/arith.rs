@@ -40,7 +40,7 @@ pub enum AstPoint<C: CurveAffine> {
     FromConst(C),
     FromTranscript(Rc<AstTranscript<C>>),
     FromInstance(usize, usize),
-    MultiExp(Vec<(Rc<Self>, Rc<AstScalar<C>>)>),
+    MultiExp(Vec<(Rc<Self>, Rc<AstScalar<C>>)>, usize), // msm group: usize
     CheckPoint(String, Rc<Self>), // for debug
 }
 
@@ -91,6 +91,13 @@ macro_rules! scheckpoint {
 }
 
 impl<C: CurveAffine> AstScalar<C> {
+    pub fn check_const_and_get(&self) -> Option<C::ScalarExt> {
+        match self {
+            AstScalar::FromConst(v) => Some(*v),
+            _ => None,
+        }
+    }
+
     pub fn is_const_zero(&self) -> bool {
         match self {
             AstScalar::FromConst(v) => v == &C::ScalarExt::zero(),

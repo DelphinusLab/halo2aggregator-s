@@ -46,7 +46,8 @@ pub enum EvalOps {
     ScalarDiv(EvalPos, EvalPos),
     ScalarPow(EvalPos, u32),
 
-    MSM(Vec<(EvalPos, EvalPos)>),
+    MSM(Vec<(EvalPos, EvalPos)>, EvalPos), // add last MSMSlice for dependence
+    MSMSlice((EvalPos, EvalPos), Option<EvalPos>, usize), // usize: msm group
 
     CheckPoint(String, EvalPos), // for debug purpose
 }
@@ -64,8 +65,14 @@ impl EvalOps {
             EvalOps::ScalarMul(a, b, _) => vec![a, b],
             EvalOps::ScalarDiv(a, b) => vec![a, b],
             EvalOps::ScalarPow(a, _) => vec![a],
-            EvalOps::MSM(psl) => {
-                let mut deps = vec![];
+            EvalOps::MSMSlice((a, b), last, _) => {
+                let mut deps = last.as_ref().map(|x| vec![x]).unwrap_or(vec![]);
+                deps.push(a);
+                deps.push(b);
+                deps
+            }
+            EvalOps::MSM(psl, a) => {
+                let mut deps = vec![a];
                 for (p, s) in psl {
                     deps.push(p);
                     deps.push(s);
@@ -106,11 +113,19 @@ impl EvalOps {
                 EvalOps::ScalarDiv(a.map(reverse_order), b.map(reverse_order))
             }
             EvalOps::ScalarPow(a, n) => EvalOps::ScalarPow(a.map(reverse_order), *n),
-            EvalOps::MSM(psl) => EvalOps::MSM({
-                psl.iter()
-                    .map(|(p, s)| (p.map(reverse_order), s.map(reverse_order)))
-                    .collect()
-            }),
+            EvalOps::MSM(psl, last_msm_slice) => EvalOps::MSM(
+                {
+                    psl.iter()
+                        .map(|(p, s)| (p.map(reverse_order), s.map(reverse_order)))
+                        .collect()
+                },
+                last_msm_slice.map(reverse_order),
+            ),
+            EvalOps::MSMSlice((a, b), last, msm_group) => EvalOps::MSMSlice(
+                (a.map(reverse_order), b.map(reverse_order)),
+                last.as_ref().map(|x| x.map(reverse_order)),
+                *msm_group,
+            ),
             EvalOps::CheckPoint(n, a) => EvalOps::CheckPoint(n.clone(), a.map(reverse_order)),
         }
     }
@@ -273,17 +288,22 @@ impl<C: CurveAffine> EvalContext<C> {
             }
             AstPoint::FromTranscript(t) => self.translate_ast_transcript(t),
             AstPoint::FromInstance(i, j) => EvalPos::Instance(*i, *j),
-            AstPoint::MultiExp(psl) => {
+            AstPoint::MultiExp(psl, group) => {
                 let mut sl = vec![];
                 let mut pl = vec![];
-                for (_, x) in psl {
-                    sl.push(self.translate_ast_scalar(x));
+                let mut last = None;
+                for (p, s) in psl {
+                    let s = self.translate_ast_scalar(s);
+                    let p = self.translate_ast_point(p);
+                    sl.push(s.clone());
+                    pl.push(p.clone());
+                    let v = self.push_op(EvalOps::MSMSlice((p, s), last, *group));
+                    last = Some(v);
                 }
-
-                for (x, _) in psl {
-                    pl.push(self.translate_ast_point(x));
-                }
-                self.push_op(EvalOps::MSM(pl.into_iter().zip(sl.into_iter()).collect()))
+                self.push_op(EvalOps::MSM(
+                    pl.into_iter().zip(sl.into_iter()).collect(),
+                    last.unwrap(),
+                ))
             }
             AstPoint::CheckPoint(tag, a) => {
                 let a = self.translate_ast_point(a);

@@ -116,14 +116,15 @@ impl<E: MultiMillerLoop, EC: EncodedChallenge<E::G1Affine>, T: TranscriptRead<E:
                 EvalOps::ScalarPow(a, n) => {
                     (None, Some(self.eval_scalar_pos(a).pow_vartime([*n as u64])))
                 }
-                EvalOps::MSM(psl) => (
-                    psl.into_iter()
-                        .map(|(p, s)| {
-                            (self.eval_point_pos(p) * self.eval_scalar_pos(s)).to_affine()
-                        })
-                        .reduce(|acc, p| (acc + p).to_affine()),
-                    None,
-                ),
+                EvalOps::MSM(_, last) => (Some(self.eval_point_pos(last)), None),
+                EvalOps::MSMSlice((p, s), last, _) => {
+                    let curr = (self.eval_point_pos(p) * self.eval_scalar_pos(s)).to_affine();
+                    let acc = last
+                        .as_ref()
+                        .map(|x| (self.eval_point_pos(x) + curr).to_affine())
+                        .unwrap_or(curr);
+                    (Some(acc), None)
+                }
                 EvalOps::CheckPoint(tag, v) => {
                     if false {
                         println!("checkpoint {}: {:?}", tag, self.eval_any_pos(v));
@@ -148,8 +149,19 @@ pub fn verify_single_proof<E: MultiMillerLoop>(
     instances: &Vec<Vec<E::Scalar>>,
     proof: Vec<u8>,
     hash: TranscriptHash,
+    use_shplonk_as_default: bool,
+    proofs_with_shplonk: &Vec<usize>,
 ) {
-    verify_proofs(params, &[vkey], vec![instances], vec![proof], hash, vec![])
+    verify_proofs(
+        params,
+        &[vkey],
+        vec![instances],
+        vec![proof],
+        hash,
+        &vec![],
+        use_shplonk_as_default,
+        proofs_with_shplonk,
+    )
 }
 
 pub fn verify_proofs<E: MultiMillerLoop>(
@@ -158,9 +170,17 @@ pub fn verify_proofs<E: MultiMillerLoop>(
     instances: Vec<&Vec<Vec<E::Scalar>>>,
     proofs: Vec<Vec<u8>>,
     hash: TranscriptHash,
-    commitment_check: Vec<[usize; 4]>,
+    commitment_check: &Vec<[usize; 4]>,
+    use_shplonk_as_default: bool,
+    proofs_with_shplonk: &Vec<usize>,
 ) {
-    let (w_x, w_g, advices) = verify_aggregation_proofs(params, vkey, &vec![]);
+    let (w_x, w_g, advices) = verify_aggregation_proofs(
+        params,
+        vkey,
+        commitment_check,
+        use_shplonk_as_default,
+        proofs_with_shplonk,
+    );
 
     let instance_commitments = instance_to_instance_commitment(params, vkey, instances);
 
