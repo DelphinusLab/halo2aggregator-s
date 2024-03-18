@@ -5,6 +5,9 @@ pub mod native_verifier;
 pub mod solidity_verifier;
 pub mod transcript;
 
+pub use halo2ecc_s::circuit::pairing_chip::PairingChipOps;
+pub use halo2ecc_s::context::NativeScalarEccContext;
+
 #[test]
 fn test_batch_no_rec() {
     use circuits::samples::simple::SimpleCircuit;
