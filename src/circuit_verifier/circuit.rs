@@ -1,7 +1,7 @@
 use ark_std::end_timer;
 use ark_std::start_timer;
 use halo2_proofs::arithmetic::CurveAffine;
-use halo2_proofs::circuit::floor_planner::V1;
+use halo2_proofs::circuit::floor_planner::FlatFloorPlanner;
 use halo2_proofs::circuit::Layouter;
 use halo2_proofs::plonk::Circuit;
 use halo2_proofs::plonk::Column;
@@ -63,7 +63,7 @@ impl<C: CurveAffine> AggregatorCircuit<C> {
 
 impl<C: CurveAffine> Circuit<C::Scalar> for AggregatorCircuit<C> {
     type Config = AggregatorChipConfig;
-    type FloorPlanner = V1;
+    type FloorPlanner = FlatFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
         self.clone()
@@ -94,9 +94,7 @@ impl<C: CurveAffine> Circuit<C::Scalar> for AggregatorCircuit<C> {
         let range_chip = RangeChip::<C::Scalar>::new(config.range_chip_config);
         let select_chip = SelectChip::new(config.select_chip_config);
 
-        let mut instance_cells = None;
-
-        layouter.assign_region(
+        let instance_cells = layouter.assign_region(
             || "base",
             |mut region| {
                 let timer = start_timer!(|| "assign");
@@ -104,7 +102,7 @@ impl<C: CurveAffine> Circuit<C::Scalar> for AggregatorCircuit<C> {
                     self.records
                         .assign_all(&mut region, &base_chip, &range_chip, &select_chip)?;
 
-                instance_cells = Some(
+                let r = Some(
                     self.instances
                         .iter()
                         .map(|instance| {
@@ -118,7 +116,8 @@ impl<C: CurveAffine> Circuit<C::Scalar> for AggregatorCircuit<C> {
                         .collect::<Vec<_>>(),
                 );
                 end_timer!(timer);
-                Ok(())
+
+                Ok(r)
             },
         )?;
 
@@ -162,7 +161,7 @@ impl<C: CurveAffine> AggregatorNoSelectCircuit<C> {
 
 impl<C: CurveAffine> Circuit<C::Scalar> for AggregatorNoSelectCircuit<C> {
     type Config = AggregatorNoSelectChipConfig;
-    type FloorPlanner = V1;
+    type FloorPlanner = FlatFloorPlanner;
 
     fn without_witnesses(&self) -> Self {
         self.clone()
@@ -190,9 +189,7 @@ impl<C: CurveAffine> Circuit<C::Scalar> for AggregatorNoSelectCircuit<C> {
         let base_chip = BaseChip::new(config.base_chip_config);
         let range_chip = RangeChip::<C::Scalar>::new(config.range_chip_config);
 
-        let mut instance_cells = None;
-
-        layouter.assign_region(
+        let instance_cells = layouter.assign_region(
             || "base",
             |mut region| {
                 let timer = start_timer!(|| "assign");
@@ -203,7 +200,7 @@ impl<C: CurveAffine> Circuit<C::Scalar> for AggregatorNoSelectCircuit<C> {
                     None,
                 )?;
 
-                instance_cells = Some(
+                let r = Some(
                     self.instances
                         .iter()
                         .map(|instance| {
@@ -217,7 +214,8 @@ impl<C: CurveAffine> Circuit<C::Scalar> for AggregatorNoSelectCircuit<C> {
                         .collect::<Vec<_>>(),
                 );
                 end_timer!(timer);
-                Ok(())
+
+                Ok(r)
             },
         )?;
 

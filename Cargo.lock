@@ -574,7 +574,7 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.1.0-beta.1"
-source = "git+https://github.com/DelphinusLab/halo2-gpu-specific.git#600c9d1e01d75effe3d683bde81dc34b7f6ec62f"
+source = "git+https://github.com/DelphinusLab/halo2-gpu-specific.git#6e6aa43d74db4adfedba9daddb0a5151abddc124"
 dependencies = [
  "ark-std 0.4.0",
  "blake2b_simd",
@@ -620,7 +620,7 @@ dependencies = [
 [[package]]
 name = "halo2ecc-s"
 version = "0.3.2"
-source = "git+https://github.com/lanbones/halo2ecc-s.git?tag=bisect-lookup-0.3.5#b40949a2995fd21baac4a805969f3a59f2144123"
+source = "git+https://github.com/lanbones/halo2ecc-s.git?tag=bisect-lookup-0.4.0#a651956da4d478f09161d7e02b970f0638e053ae"
 dependencies = [
  "halo2_proofs",
  "num-bigint",
