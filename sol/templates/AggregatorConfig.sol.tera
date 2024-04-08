@@ -139,13 +139,6 @@ library AggregatorConfig {
         {% endif %}
         {% set i = i + 1 %}
         pos = 1;
-        // delta
-        buf[{{ i + buf_start }}] = squeeze_challenge(absorbing, pos);
-        {% if challenges %}
-        require(buf[{{ i + buf_start }}] == {{ challenges | nth(n = i) }}, "challenge {{ i }}");
-        {% endif %}
-        {% set i = i + 1 %}
-        pos = 1;
         for (uint i = 0; i < {{ permutation_products + lookups + shuffles + 1 }}; i ++) {
             AggregatorLib.check_on_curve(transcript[transcript_pos], transcript[transcript_pos + 1]);
             absorbing[pos++] = transcript[transcript_pos++];

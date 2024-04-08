@@ -98,7 +98,7 @@ impl<C: CurveAffine> Evaluated<C> {
         let one = &sconst!(C::ScalarExt::one());
 
         let x = &params.x;
-        let delta = &params.field_delta;
+        let delta = &params.delta;
         let beta = &params.beta;
         let gamma = &params.gamma;
         let l_0 = params.ls.last().unwrap();

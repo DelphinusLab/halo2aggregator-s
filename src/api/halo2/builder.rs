@@ -117,7 +117,7 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
             .map(|x| x.polys.clone())
             .collect::<Vec<_>>()
             .concat();
-        let field_delta = sconst!(C::ScalarExt::DELTA);
+        let delta = sconst!(C::ScalarExt::DELTA);
 
         let mut rotations = HashSet::<i32>::new();
         for i in iter::empty()
@@ -155,7 +155,6 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
 
         let beta = transcript.squeeze_challenge();
         let gamma = transcript.squeeze_challenge();
-        let challenge_delta = transcript.squeeze_challenge();
 
         let permutation_product_commitments =
             transcript.read_n_points(n_permutation_product_commitments);
@@ -291,8 +290,7 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
                 beta,
                 gamma,
                 theta,
-                challenge_delta,
-                field_delta,
+                delta,
                 x,
                 x_next,
                 x_last,

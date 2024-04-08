@@ -6,6 +6,7 @@ use crate::api::halo2::verifier::VerifierParams;
 use crate::api::transcript::AstTranscript;
 use crate::api::transcript::AstTranscriptReader;
 use crate::sconst;
+use crate::spow;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::Field;
 use halo2_proofs::plonk::Expression;
@@ -48,18 +49,16 @@ impl<C: CurveAffine> Evaluated<C> {
         let z_x = &self.product_eval;
 
         let beta = &params.beta;
-        let gamma = &params.gamma;
-        let delta = &params.challenge_delta;
         let theta = &params.theta;
         let l_0 = params.ls.last().unwrap();
         let l_last = &params.ls[0];
         let l_blind = &params.l_blind;
-
         let (input_eval, table_eval) = self
             .shuffle_group
             .iter()
-            .zip([beta, gamma, delta])
-            .map(|(expressions, challenge)| {
+            .enumerate()
+            .map(|(i, expressions)| {
+                let challenge = &spow!(beta.clone(), 1 + i as u32);
                 let input_eval = expressions
                     .0
                     .iter()
