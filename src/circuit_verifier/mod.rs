@@ -35,7 +35,6 @@ use halo2ecc_s::context::NativeScalarEccContext;
 use std::cell::RefCell;
 use std::io;
 use std::rc::Rc;
-use std::sync::Arc;
 
 pub mod circuit;
 pub mod transcript;
@@ -531,10 +530,8 @@ where
         for ai in assigned_instances.iter() {
             ctx.0
                 .ctx
-                .borrow()
+                .borrow_mut()
                 .records
-                .lock()
-                .unwrap()
                 .enable_permute(&ai.cell);
         }
 
@@ -627,10 +624,8 @@ where
         for ai in assigned_instances.iter() {
             ctx.0
                 .ctx
-                .borrow()
+                .borrow_mut()
                 .records
-                .lock()
-                .unwrap()
                 .enable_permute(&ai.cell);
         }
 
@@ -644,13 +639,13 @@ where
 
     let circuit = if config.use_select_chip {
         AggregatorCircuit::new(
-            Rc::new(Arc::try_unwrap(ctx.records).unwrap().into_inner().unwrap()),
+            Rc::new(ctx.records),
             assigned_instances,
         )
         .into()
     } else {
         AggregatorNoSelectCircuit::new(
-            Rc::new(Arc::try_unwrap(ctx.records).unwrap().into_inner().unwrap()),
+            Rc::new(ctx.records),
             assigned_instances,
         )
         .into()

@@ -620,8 +620,9 @@ dependencies = [
 [[package]]
 name = "halo2ecc-s"
 version = "0.3.2"
-source = "git+https://github.com/lanbones/halo2ecc-s.git?tag=bisect-lookup-0.4.0#eef56995f5729083d54b89faa30d5f90277acc22"
+source = "git+https://github.com/lanbones/halo2ecc-s.git?tag=bisect-lookup-0.5.5-dff56e36d#dff56e36da5ae1dcf844a8a66d818a8b8e888b24"
 dependencies = [
+ "ark-std 0.4.0",
  "halo2_proofs",
  "num-bigint",
  "num-integer",
