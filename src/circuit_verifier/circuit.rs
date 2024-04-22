@@ -219,6 +219,8 @@ impl<C: CurveAffine> Circuit<C::Scalar> for AggregatorNoSelectCircuit<C> {
             },
         )?;
 
+        assert!(instance_cells.is_some());
+
         match instance_cells {
             Some(instance_cells) => {
                 range_chip.init_table(&mut layouter)?;

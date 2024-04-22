@@ -207,11 +207,7 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
                     .map(|(_, s)| eval_scalar_pos!(s).clone())
                     .collect();
 
-                #[cfg(feature = "unsafe")]
                 let res = (Some(circuit.msm_unsafe(&pl, &sl)?), None);
-
-                #[cfg(not(feature = "unsafe"))]
-                let res = (Some(circuit.msm(&pl, &sl)), None);
 
                 res
             }
@@ -329,6 +325,7 @@ where
         NativeScalarEccContext::<E::G1Affine>::new_without_select_chip(ctx)
     };
 
+    // Build AST tree.
     let (w_x, w_g, advices) = verify_aggregation_proofs(
         params,
         vkey,
@@ -339,6 +336,8 @@ where
 
     let instance_commitments = instance_to_instance_commitment(params, vkey, instances.clone());
 
+    // Push commitment ast entry to targets vector.
+    // Then context_eval can return their coresponding cells in circuit.
     let mut targets = vec![w_x.0, w_g.0];
 
     for idx in &config.commitment_check {
@@ -358,21 +357,30 @@ where
         targets.push(advices[idx[0]][idx[1]].0.clone());
     }
 
+    // The translate() apply typological sorting for entries in targets vector.
     let c = EvalContext::translate(&targets[..]);
+
     let (pl, mut il, assigned_constant_hash) = match config.hash {
         TranscriptHash::Poseidon => {
             let mut t = vec![];
+            // Prepare Transcript Chip for each proof.
             for i in 0..proofs.len() {
                 let it = PoseidonRead::init(&proofs[i][..]);
                 t.push(PoseidonChipRead::init(it, &mut ctx));
             }
+
+            // The last Transcript Chip is for challenge used to batch pairing.
             let empty = vec![];
             let it = PoseidonRead::init(&empty[..]);
             t.push(PoseidonChipRead::init(it, &mut ctx));
 
+            // To uniform circuit from fixed commitments/scalars,
+            // the fixed commitments/scalars will assigned as witness,
+            // ans expose a hash at instance[0].
             let mut constant_hasher =
                 PoseidonChipRead::init(PoseidonRead::init(&empty[..]), &mut ctx);
 
+            // The context_eval() constructs circuit.
             context_eval::<E, _>(
                 c,
                 &instance_commitments
@@ -387,42 +395,69 @@ where
         _ => unreachable!(),
     };
 
+    // Advice column commitment check
     for check in pl[0..absorb_start_idx].chunks(2).skip(1) {
         ctx.ecc_assert_equal(&check[0], &check[1]);
     }
 
+    // Absorb: remove an encoded commitment (of target circuit)
+    //         from instance commitment (of last round aggregator).
+    // new_instance_commitment =
+    //         instance_commitment - MSM(encoded points, params.g1[row..row + encoded_len])
     for (proof_idx_of_target, columns, proof_idx_of_prev_agg, expose_row) in
         config.absorb_instance.iter()
     {
+        // Encode commitment to scalar vec.
         let encoded_c = ctx.ecc_encode(&il[*proof_idx_of_target][*columns]);
+
+        // Aggregator circuit only has 1 instance column.
+        assert!(il[*proof_idx_of_prev_agg].len() == 1);
         let instance_commit = il[*proof_idx_of_prev_agg][0].clone();
+
+        // Encoded scalars must be 3-element vec.
+        assert!(encoded_c.len() == 3);
         let g0 = ctx.assign_constant_point(&params.g_lagrange[*expose_row].to_curve());
         let g1 = ctx.assign_constant_point(&params.g_lagrange[*expose_row + 1].to_curve());
         let g2 = ctx.assign_constant_point(&params.g_lagrange[*expose_row + 2].to_curve());
+
+        // Do MSM
         let msm_c = ctx.msm_unsafe(&vec![g0, g1, g2], &encoded_c)?;
+
+        // Do substract
         let diff_commit = ctx.ecc_neg(&msm_c);
         let instance_commit_curv = ctx.to_point_with_curvature(instance_commit);
         let update_commit = ctx.ecc_add(&instance_commit_curv, &diff_commit);
         il[*proof_idx_of_prev_agg][0] = update_commit;
     }
 
+    // Generate the aggregator hash H,
+    // it can determine the aggregator round number and target circuits.
+    // H_0 = Hash(constant_hash)
+    // H_i = Hash(H_{i-1}, constant_hash), i > 0.
     let assigned_final_hash = {
         let empty = vec![];
         let mut hasher = PoseidonChipRead::init(PoseidonRead::init(&empty[..]), &mut ctx);
 
-        // il[target_aggregator_circuit's hash instance col] -= params[0] * hash
         for (proof_index, instance_col, hash) in
             &config.target_aggregator_constant_hash_instance_offset
         {
+            // The value is restricted in current version, because aggregator only has one instance column.
+            assert!(*instance_col == 0);
+            // To avoid incorrect config in current version.
+            assert!(*hash == instances[*proof_index][*instance_col][0]);
+
             let assigned_hash = ctx.base_integer_chip().base_chip().assign(*hash);
             hasher.common_scalar(&mut ctx, &assigned_hash);
 
+            // Absorb the H_{i-1} from the last round aggregator's instance commitment.
+            // il[target_aggregator_circuit's hash instance col] -= params[0] * hash
             let mut points = vec![];
             let mut scalars = vec![];
+            // The aggregator hash is always placed at row 0.
             points.push(ctx.assign_constant_point(&(-params.g_lagrange[0]).to_curve()));
             scalars.push(assigned_hash);
 
-            let diff_commitment = ctx.msm(&points, &scalars);
+            let diff_commitment = ctx.msm_unsafe(&points, &scalars)?;
             let instance_commit = il[*proof_index][*instance_col].clone();
             let instance_commit_curv = ctx.to_point_with_curvature(instance_commit);
             let update_commit = ctx.ecc_add(&instance_commit_curv, &diff_commitment);
@@ -434,6 +469,7 @@ where
         hasher.squeeze(&mut ctx)
     };
 
+    // Expose advice commitments as encoded scalars into aggregator's instance
     for (i, c) in pl[absorb_start_idx..expose_start_idx].iter().enumerate() {
         let encoded_c = ctx.ecc_encode(c);
         let [proof_index, instance_offset, g_index] = config.absorb[i].0;
@@ -452,6 +488,8 @@ where
         );
 
         let instance_commit = il[proof_index][instance_offset].clone();
+        // Encoded scalars must be 3-element vec.
+        assert!(encoded_c.len() == 3);
         let g0 = ctx.assign_constant_point(&params.g_lagrange[g_index].to_curve());
         let g1 = ctx.assign_constant_point(&params.g_lagrange[g_index + 1].to_curve());
         let g2 = ctx.assign_constant_point(&params.g_lagrange[g_index + 2].to_curve());
@@ -462,30 +500,35 @@ where
         il[proof_index][instance_offset] = update_commit;
     }
 
-    assert!(pl[0].z.0.val == E::Scalar::zero());
-    assert!(pl[1].z.0.val == E::Scalar::zero());
+    // Check pairing result for debug purpose.
+    {
+        // Assert because circuit does it in multi_miller_loop()
+        assert!(pl[0].z.0.val == E::Scalar::zero());
+        assert!(pl[1].z.0.val == E::Scalar::zero());
 
-    let w_x = E::G1Affine::from_xy(
-        ctx.base_integer_chip().get_w(&pl[0].x),
-        ctx.base_integer_chip().get_w(&pl[0].y),
-    )
-    .unwrap();
-    let w_g = E::G1Affine::from_xy(
-        ctx.base_integer_chip().get_w(&pl[1].x),
-        ctx.base_integer_chip().get_w(&pl[1].y),
-    )
-    .unwrap();
+        let w_x = E::G1Affine::from_xy(
+            ctx.base_integer_chip().get_w(&pl[0].x),
+            ctx.base_integer_chip().get_w(&pl[0].y),
+        )
+        .unwrap();
+        let w_g = E::G1Affine::from_xy(
+            ctx.base_integer_chip().get_w(&pl[1].x),
+            ctx.base_integer_chip().get_w(&pl[1].y),
+        )
+        .unwrap();
 
-    let s_g2_prepared = E::G2Prepared::from(params.s_g2);
-    let n_g2_prepared = E::G2Prepared::from(-params.g2);
-    let success = bool::from(
-        E::multi_miller_loop(&[(&w_x, &s_g2_prepared), (&w_g, &n_g2_prepared)])
-            .final_exponentiation()
-            .is_identity(),
-    );
+        let s_g2_prepared = E::G2Prepared::from(params.s_g2);
+        let n_g2_prepared = E::G2Prepared::from(-params.g2);
+        let success = bool::from(
+            E::multi_miller_loop(&[(&w_x, &s_g2_prepared), (&w_g, &n_g2_prepared)])
+                .final_exponentiation()
+                .is_identity(),
+        );
 
-    assert!(success);
+        assert!(success);
+    }
 
+    // Do pairing in circuit.
     {
         use halo2ecc_s::assign::AssignedCondition;
         use halo2ecc_s::assign::AssignedG2Affine;
@@ -514,9 +557,8 @@ where
         ctx.check_pairing(&[(&pl[0], &assigned_s_g2), (&pl[1], &assigned_g2)]);
     }
 
-    // Fake instance is not the real instance of the final aggregator.
-    // The final aggregator should hash all fake instance and target circuit instance to get the real instance.
     let (assigned_instances, instances, shadow_instances) = if !config.is_final_aggregator {
+        // Aggregator's instance is [aggregator_hash, target circuits' instance commitments, exposed advice commitments].
         let mut assigned_instances = vec![assigned_final_hash];
         assigned_instances.append(
             &mut vec![&il.concat()[..], &pl[expose_start_idx..pl.len()]]
@@ -528,33 +570,34 @@ where
         );
 
         for ai in assigned_instances.iter() {
-            ctx.0
-                .ctx
-                .borrow_mut()
-                .records
-                .enable_permute(&ai.cell);
+            ctx.0.ctx.borrow_mut().records.enable_permute(&ai.cell);
         }
 
         let instances = assigned_instances.iter().map(|x| x.val).collect::<Vec<_>>();
 
         (assigned_instances, instances, vec![])
     } else {
+        // Final aggregator's instance is different for reducing solidity gas.
+        // It doesn't expose target circuit's instance commitment but hash them with shadow instance.
+        // The shadow instance contains aggregator_hash and exposed commitments (as encoded scalars).
         let mut hash_list = vec![];
         for (proof_idx, max_row_of_cols) in config.target_proof_max_instance.iter().enumerate() {
             for (column_idx, max_row) in max_row_of_cols.iter().enumerate() {
                 let mut start_row = 0;
                 let end_row = *max_row;
 
+                // Skip instance because they has been absorbed in previous steps.
                 if let Some((_, skips)) = config
                     .prev_aggregator_skip_instance
                     .iter()
                     .find(|(pi, _)| *pi == proof_idx)
                 {
-                    // aggregagtor only has one instance column
+                    // Aggregagtor only has one instance column.
                     assert!(column_idx == 0);
                     start_row += skips;
                 }
 
+                // Calculate instance commitment in circuit.
                 let instance_commitment = if end_row > start_row {
                     let mut sl = vec![];
                     for row_idx in start_row..end_row {
@@ -575,11 +618,7 @@ where
                         pl.push(assigned_p);
                     }
 
-                    #[cfg(feature = "unsafe")]
                     let instance_commitment = ctx.msm_unsafe(&pl, &sl)?;
-
-                    #[cfg(not(feature = "unsafe"))]
-                    let instance_commitment = ctx.msm(&pl, &sl);
 
                     instance_commitment
                 } else {
@@ -589,6 +628,7 @@ where
                     instance_commitment
                 };
 
+                // The instance commitment calculated in circuit should be same with the one in assigned.
                 ctx.ecc_assert_equal(&instance_commitment, &il[proof_idx][column_idx]);
             }
         }
@@ -610,7 +650,7 @@ where
             .collect::<Vec<_>>();
 
         println!(
-            "hash_list before fake instance {:?}",
+            "hash_list before shadow instance {:?}",
             assigned_shadow_instances
                 .iter()
                 .map(|x| x.val)
@@ -622,11 +662,7 @@ where
         let assigned_instances = vec![ctx.0.ctx.borrow_mut().hash(&hash_list[..])];
 
         for ai in assigned_instances.iter() {
-            ctx.0
-                .ctx
-                .borrow_mut()
-                .records
-                .enable_permute(&ai.cell);
+            ctx.0.ctx.borrow_mut().records.enable_permute(&ai.cell);
         }
 
         let instances = assigned_instances.iter().map(|x| x.val).collect::<Vec<_>>();
@@ -635,20 +671,15 @@ where
     };
 
     let ctx: Context<_> = ctx.into();
-    println!("offset {} {} {}", ctx.base_offset, ctx.range_offset, ctx.select_offset);
+    println!(
+        "offset {} {} {}",
+        ctx.base_offset, ctx.range_offset, ctx.select_offset
+    );
 
     let circuit = if config.use_select_chip {
-        AggregatorCircuit::new(
-            Rc::new(ctx.records),
-            assigned_instances,
-        )
-        .into()
+        AggregatorCircuit::new(Rc::new(ctx.records), assigned_instances).into()
     } else {
-        AggregatorNoSelectCircuit::new(
-            Rc::new(ctx.records),
-            assigned_instances,
-        )
-        .into()
+        AggregatorNoSelectCircuit::new(Rc::new(ctx.records), assigned_instances).into()
     };
 
     Ok((
