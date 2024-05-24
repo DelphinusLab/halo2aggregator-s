@@ -13,8 +13,10 @@ use ark_std::rand::rngs::OsRng;
 use ark_std::start_timer;
 use halo2_proofs::arithmetic::BaseExt;
 use halo2_proofs::arithmetic::CurveAffine;
+use halo2_proofs::arithmetic::Engine;
 use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::arithmetic::MultiMillerLoop;
+use halo2_proofs::pairing::group::ff::PrimeField;
 use halo2_proofs::pairing::group::Curve;
 use halo2_proofs::plonk::create_proof_ext;
 use halo2_proofs::plonk::keygen_pk;
@@ -155,7 +157,10 @@ pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
     hash: TranscriptHash,
     try_load_proof: bool,
     use_shplonk: bool,
-) -> Vec<u8> {
+) -> Vec<u8>
+where
+    <<E as Engine>::Scalar as PrimeField>::Repr: std::hash::Hash + std::cmp::Eq,
+{
     if let Some(cache_file) = &cache_file_opt {
         if try_load_proof && Path::exists(&cache_file) {
             return load_proof(&cache_file);
@@ -260,6 +265,7 @@ pub fn run_circuit_unsafe_full_pass_no_rec<
 )>
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
+    <<E as Engine>::Scalar as PrimeField>::Repr: std::hash::Hash + std::cmp::Eq,
 {
     run_circuit_unsafe_full_pass::<E, C>(
         cache_folder,
@@ -394,6 +400,7 @@ pub fn run_circuit_unsafe_full_pass<
 )>
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
+    <<E as Engine>::Scalar as PrimeField>::Repr: std::hash::Hash + std::cmp::Eq,
 {
     let hash = config.hash;
 
@@ -583,6 +590,7 @@ pub fn run_circuit_with_agg_unsafe_full_pass<
 )>
 where
     NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
+    <<E as Engine>::Scalar as PrimeField>::Repr: std::hash::Hash + std::cmp::Eq,
 {
     // 1. setup params
     let params =
