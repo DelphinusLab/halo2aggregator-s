@@ -1,5 +1,6 @@
 use super::protocols::lookup;
 use super::protocols::permutation;
+use super::protocols::shuffle;
 use super::verifier::VerifierParams;
 use crate::api::arith::*;
 use crate::api::transcript::AstTranscript;
@@ -71,7 +72,15 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
             .columns
             .chunks(self.vk.cs.degree() - 2)
             .len();
-
+        let shuffle_groups = cs.shuffles.group(self.vk.cs.degree());
+        let shuffle_groups = shuffle_groups
+            .iter()
+            .map(|v| {
+                v.0.iter()
+                    .map(|v| (v.input_expressions.clone(), v.shuffle_expressions.clone()))
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
         // Prepare ast for constants.
         let l = cs.blinding_factors() as u32 + 1;
         let n = self.params.n as u32;
@@ -150,6 +159,7 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
         let permutation_product_commitments =
             transcript.read_n_points(n_permutation_product_commitments);
         let lookup_product_commitments = transcript.read_n_points(self.vk.cs.lookups.len());
+        let shuffle_product_commitments = transcript.read_n_points(shuffle_groups.len());
 
         let random_commitment = transcript.read_point();
         let y = transcript.squeeze_challenge();
@@ -188,6 +198,20 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
                     )
                 },
             )
+            .collect();
+
+        let shuffle_evaluated = shuffle_product_commitments
+            .into_iter()
+            .enumerate()
+            .map(|(index, shuffle_product_commitment)| {
+                shuffle::Evaluated::build_from_transcript(
+                    index,
+                    shuffle_product_commitment,
+                    &self.key,
+                    shuffle_groups[index].clone(),
+                    &mut transcript,
+                )
+            })
             .collect();
 
         let fixed_commitments = self
@@ -254,6 +278,7 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
                 n,
                 l,
                 lookup_evaluated,
+                shuffle_evaluated,
                 permutation_evaluated,
                 instance_commitments,
                 instance_evals,

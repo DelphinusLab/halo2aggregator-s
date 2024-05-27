@@ -3,6 +3,7 @@ use super::format_fixed_commitment_key;
 use super::format_instance_commitment_key;
 use super::protocols::lookup;
 use super::protocols::permutation;
+use super::protocols::shuffle;
 use super::protocols::vanish;
 use super::query::CommitQuery;
 use super::query::EvaluationQuery;
@@ -29,6 +30,7 @@ pub struct VerifierParams<C: CurveAffine> {
     pub l: u32,
 
     pub(crate) lookup_evaluated: Vec<lookup::Evaluated<C>>,
+    pub(crate) shuffle_evaluated: Vec<shuffle::Evaluated<C>>,
     pub permutation_evaluated: permutation::Evaluated<C>,
 
     pub instance_commitments: Vec<AstPointRc<C>>,
@@ -105,6 +107,11 @@ impl<C: CurveAffine> VerifierParams<C> {
                     .iter()
                     .flat_map(|e| e.expressions(self)),
             )
+            .chain(
+                self.shuffle_evaluated
+                    .iter()
+                    .flat_map(|e| e.expressions(self)),
+            )
             .collect()
     }
 
@@ -133,6 +140,7 @@ impl<C: CurveAffine> VerifierParams<C> {
             let advice_evals = &self.advice_evals;
             let permutation = &self.permutation_evaluated;
             let lookups = &self.lookup_evaluated;
+            let shuffles = &self.shuffle_evaluated;
 
             for (query_index, &(column, at)) in self.instance_queries.iter().enumerate() {
                 queries.push(EvaluationQuery::new(
@@ -156,6 +164,7 @@ impl<C: CurveAffine> VerifierParams<C> {
 
             queries.append(&mut permutation.queries(self));
             queries.append(&mut lookups.iter().flat_map(|p| p.queries(self)).collect());
+            queries.append(&mut shuffles.iter().flat_map(|p| p.queries(self)).collect());
         }
 
         for (query_index, &(column, at)) in self.fixed_queries.iter().enumerate() {
