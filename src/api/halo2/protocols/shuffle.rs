@@ -98,7 +98,7 @@ impl<C: CurveAffine> Evaluated<C> {
             EvaluationQuery::new(
                 1,
                 x_next.clone(),
-                format!("{}_product_next_commitment", self.key),
+                format!("{}_product_commitment", self.key),
                 self.product_commitment.clone(),
                 self.product_next_eval.clone(),
             ),
