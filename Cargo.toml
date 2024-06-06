@@ -22,6 +22,3 @@ lazy_static = "1.4.0"
 default = []
 profile = ["ark-std/print-trace", "halo2ecc-s/profile", "halo2ecc-s/profile"]
 cuda = ["halo2_proofs/cuda", "halo2ecc-s/cuda"]
-
-[patch."https://github.com/DelphinusLab/halo2-gpu-specific.git"]
-halo2_proofs = { git = "https://github.com/mooreland/halo2-gpu-specific.git", branch = "add_shuffle" }
