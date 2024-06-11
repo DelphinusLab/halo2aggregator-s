@@ -24,21 +24,22 @@ fn test_batch_no_rec() {
     let path = Path::new(path);
     let (circuit1, instance1) = SimpleCircuit::<Fr>::random_new_with_instance();
     let (circuit2, instance2) = SimpleCircuit::<Fr>::random_new_with_instance();
-    let (circuit, instances, shadow_instances, _) = run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
-        path,
-        "simple-circuit",
-        8,
-        vec![circuit1, circuit2],
-        vec![instance1, instance2],
-        vec![],
-        TranscriptHash::Poseidon,
-        vec![],
-        vec![],
-        vec![vec![1], vec![1]],
-        true,
-    )
-    .unwrap();
-    let circuit = circuit.circuit_with_select_chip.unwrap();
+    let (circuit, instances, shadow_instances, _) =
+        run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
+            path,
+            "simple-circuit",
+            8,
+            vec![circuit1, circuit2],
+            vec![instance1, instance2],
+            vec![],
+            TranscriptHash::Poseidon,
+            vec![],
+            vec![],
+            vec![vec![1], vec![1]],
+            true,
+        )
+        .unwrap();
+    let circuit = circuit.circuit_without_select_chip.unwrap();
 
     run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
         path,
@@ -87,11 +88,8 @@ fn test_single_rec() {
     let (circuit, target_instances) = SimpleCircuit::<Fr>::default_with_instance();
 
     println!("build agg 0");
-    let mut config = AggregatorConfig::default_aggregator_config(
-        TranscriptHash::Poseidon,
-        vec![vec![1]],
-        false,
-    );
+    let mut config =
+        AggregatorConfig::default_aggregator_config(TranscriptHash::Poseidon, vec![vec![1]], false);
 
     let (agg_l0, agg_l0_instances, agg_l0_shadow_instances, hash) =
         run_circuit_unsafe_full_pass::<Bn256, _>(
