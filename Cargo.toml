@@ -20,5 +20,5 @@ lazy_static = "1.4.0"
 
 [features]
 default = []
-profile = ["ark-std/print-trace"]
+profile = ["ark-std/print-trace", "halo2ecc-s/profile", "halo2ecc-s/profile"]
 cuda = ["halo2_proofs/cuda", "halo2ecc-s/cuda"]
