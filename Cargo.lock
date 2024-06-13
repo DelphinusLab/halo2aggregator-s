@@ -391,7 +391,7 @@ source = "git+https://github.com/lanbones/ec-gpu#36b9abf8611347e2fe44f21a2f3607e
 [[package]]
 name = "ec-gpu-gen"
 version = "0.4.0"
-source = "git+https://github.com/lanbones/ec-gpu?branch=halo2-opt-v2#e03cdef1dd41bcc251fd46839c41711b0ae2099e"
+source = "git+https://github.com/lanbones/ec-gpu?branch=halo2-opt-v2#aedc591657644f047f25a2e089f0b489eba0bf38"
 dependencies = [
  "ark-std",
  "bitvec",
