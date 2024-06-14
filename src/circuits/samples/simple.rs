@@ -13,6 +13,7 @@ use halo2_proofs::poly::Rotation;
 #[derive(Clone)]
 pub struct SimpleConfig {
     advices: [Column<Advice>; 2],
+    shuffles: [Column<Advice>; 2],
     sel: Column<Fixed>,
 }
 
@@ -61,6 +62,7 @@ impl<F: FieldExt> Circuit<F> for SimpleCircuit<F> {
             meta.named_advice_column("a".to_string()),
             meta.advice_column(),
         ];
+        let shuffles = [meta.advice_column(), meta.advice_column()];
         let instance = meta.instance_column();
         let sel = meta.fixed_column();
 
@@ -87,13 +89,36 @@ impl<F: FieldExt> Circuit<F> for SimpleCircuit<F> {
         meta.enable_equality(advices[0]);
         meta.enable_equality(advices[1]);
 
-        meta.shuffle("shuffle", |meta| {
+        //for shuffle_groups
+        meta.shuffle("shuffle1", |meta| {
             let a = meta.query_advice(advices[0], Rotation(0));
             let b = meta.query_advice(advices[1], Rotation(0));
-            vec![(a, b)]
+            let sf_a = meta.query_advice(shuffles[0], Rotation(0));
+            let sf_b = meta.query_advice(shuffles[1], Rotation(0));
+            vec![(a, sf_a), (b, sf_b)]
+        });
+        meta.shuffle("shuffle2", |meta| {
+            let a = meta.query_advice(advices[0], Rotation(0));
+            let sf_a = meta.query_advice(shuffles[0], Rotation(0));
+            vec![(a, sf_a)]
+        });
+        meta.shuffle("shuffle3", |meta| {
+            let b = meta.query_advice(advices[1], Rotation(0));
+            let sf_b = meta.query_advice(shuffles[1], Rotation(0));
+            vec![(b, sf_b)]
+        });
+        meta.shuffle("shuffle4", |meta| {
+            let a = meta.query_advice(advices[0], Rotation(0));
+            let sf_a = meta.query_advice(shuffles[0], Rotation(0));
+            let sel = meta.query_fixed(sel, Rotation(0));
+            vec![(sel.clone() * a, sel * sf_a)]
         });
 
-        SimpleConfig { advices, sel }
+        SimpleConfig {
+            advices,
+            shuffles,
+            sel,
+        }
     }
 
     fn synthesize(&self, config: Self::Config, layouter: impl Layouter<F>) -> Result<(), Error> {
@@ -102,12 +127,17 @@ impl<F: FieldExt> Circuit<F> for SimpleCircuit<F> {
             |region| {
                 region.assign_advice(|| "a", config.advices[0], 0, || Ok(self.a))?;
                 region.assign_advice(|| "b", config.advices[1], 0, || Ok(self.b))?;
+                region.assign_advice(|| "shuffle_a", config.shuffles[0], 0, || Ok(self.a))?;
+                region.assign_advice(|| "shuffle_b", config.shuffles[1], 0, || Ok(self.b))?;
+
                 region.assign_fixed(|| "sel", config.sel, 0, || Ok(F::one()))?;
                 region.assign_fixed(|| "sel", config.sel, 1, || Ok(F::zero()))?;
 
                 if self.a != self.b {
                     region.assign_advice(|| "a", config.advices[0], 1, || Ok(self.b))?;
                     region.assign_advice(|| "b", config.advices[1], 1, || Ok(self.a))?;
+                    region.assign_advice(|| "shuffle_a", config.shuffles[0], 1, || Ok(self.b))?;
+                    region.assign_advice(|| "shuffle_b", config.shuffles[1], 1, || Ok(self.a))?;
                 }
 
                 Ok(())
