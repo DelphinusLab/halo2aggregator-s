@@ -188,6 +188,9 @@ impl<C: CurveAffine> EvalContext<C> {
         match ast {
             AstScalar::FromConst(x) => {
                 let mut pos = self.const_scalars.len();
+                // Keep scalar dedup because
+                // 1. It is hard to have different dedup after reviewing sconst!.
+                // 2. It increase solidity size without dedup.
                 for (i, s) in self.const_scalars.iter().enumerate() {
                     if s == x {
                         pos = i;
@@ -275,15 +278,8 @@ impl<C: CurveAffine> EvalContext<C> {
         let ast: &AstPoint<C> = ast.as_ref();
         match ast {
             AstPoint::FromConst(c) => {
-                let mut pos = self.const_points.len();
-                for (i, p) in self.const_points.iter().enumerate() {
-                    if p == c {
-                        pos = i;
-                    }
-                }
-                if pos == self.const_points.len() {
-                    self.const_points.push(*c);
-                }
+                let pos = self.const_points.len();
+                self.const_points.push(*c);
                 EvalPos::Constant(pos.try_into().unwrap())
             }
             AstPoint::FromTranscript(t) => self.translate_ast_transcript(t),
