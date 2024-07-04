@@ -28,7 +28,7 @@ func (u256Api *U256API) ToBits(
 	bits := []frontend.Variable{}
 	for i := range x {
 		for j := range x[i] {
-			bits = append(bits, u256Api.api.ToBinary(x[i][j].Val, 8))
+			bits = append(bits, u256Api.api.ToBinary(x[i][j].Val, 8)...)
 		}
 	}
 	return bits
@@ -39,7 +39,10 @@ func U64FromBits(
 	u64Api *uints.BinaryField[uints.U64],
 	bits []frontend.Variable,
 ) uints.U64 {
-	return u64Api.ValueOf(api.FromBinary(bits[0:64]))
+	if u64Api == nil {
+		panic("u64Api")
+	}
+	return u64Api.ValueOf(api.FromBinary(bits...))
 }
 
 func (u256Api *U256API) FromBits(
@@ -48,8 +51,8 @@ func (u256Api *U256API) FromBits(
 	res := U256{}
 	res[0] = U64FromBits(u256Api.api, u256Api.u64Api, bits[0:64])
 	res[1] = U64FromBits(u256Api.api, u256Api.u64Api, bits[64:128])
-	res[2] = U64FromBits(u256Api.api, u256Api.u64Api, bits[128:196])
-	res[3] = U64FromBits(u256Api.api, u256Api.u64Api, bits[196:256])
+	res[2] = U64FromBits(u256Api.api, u256Api.u64Api, bits[128:192])
+	res[3] = U64FromBits(u256Api.api, u256Api.u64Api, bits[192:256])
 	return res
 }
 

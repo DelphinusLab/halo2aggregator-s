@@ -110,8 +110,8 @@ func (halo2Api *Halo2VerifierAPI) getChallengesShPlonkCircuit(
 		{halo2Api.config.NbPermutationGroups + halo2Api.config.NbLookups + 1, 1, 0}, // y
 		{halo2Api.config.Degree, 1, halo2Api.config.NbEvals},                        // x
 		{0, 2, 0}, // y, v in multiopen
-		{1, 1, 0}, // u in multiopen
-		{1, 0, 0}, //
+		//{1, 1, 0}, // u in multiopen
+		//{1, 0, 0}, //
 	}
 
 	for i := range opSeq {

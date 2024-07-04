@@ -46,11 +46,12 @@ func NewBN254API(
 }
 
 func (bn254Api *BN254API) BN254FpToU256(input *emulated.Element[emparams.BN254Fp]) U256 {
+	input = bn254Api.fpFieldApi.Reduce(input)
 	bits := bn254Api.fpFieldApi.ToBits(input)
 
 	// padding zero
 	for i := len(bits); i < 256; i++ {
-		bits = append(bits, new(big.Int).SetUint64(0))
+		bits = append(bits, 0)
 	}
 
 	// check overflow bits
@@ -68,17 +69,12 @@ func (bn254Api *BN254API) ToBN254Fp(input U256) *emulated.Element[emparams.BN254
 
 	fpBits := int(fp.NbLimbs() * fp.BitsPerLimb())
 
-	// padding zero
-	for i := len(bits); i < fpBits; i++ {
-		bits = append(bits, new(big.Int).SetUint64(0))
-	}
-
 	// check overflow bits
 	for i := fpBits; i < len(bits); i++ {
 		bn254Api.api.AssertIsEqual(bits[i], 0)
 	}
 
-	element := bn254Api.fpFieldApi.FromBits(bits)
+	element := bn254Api.fpFieldApi.FromBits(bits...)
 	return element
 }
 
@@ -87,17 +83,14 @@ func (bn254Api *BN254API) ToBn254Fr(input frontend.Variable) *emulated.Element[e
 	bits := bn254Api.api.ToBinary(input)
 
 	frBits := int(fr.NbLimbs() * fr.BitsPerLimb())
-	// padding zero
-	for i := len(bits); i < frBits; i++ {
-		bits = append(bits, new(big.Int).SetUint64(0))
-	}
 
 	// check overflow bits
 	for i := frBits; i < len(bits); i++ {
 		bn254Api.api.AssertIsEqual(bits[i], 0)
 	}
 
-	element := bn254Api.frFieldApi.FromBits(bits)
+	element := bn254Api.frFieldApi.FromBits(bits...)
+
 	return element
 }
 

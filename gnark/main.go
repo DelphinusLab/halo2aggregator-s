@@ -19,7 +19,7 @@ func loadProofStr() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return strings.Split(string(data), "\n"), nil
+	return strings.Split(strings.Trim(string(data), " \n"), "\n"), nil
 }
 
 func loadInstanceStr() ([]string, error) {
@@ -27,11 +27,11 @@ func loadInstanceStr() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return strings.Split(string(data), "\n"), nil
+	return strings.Split(strings.Trim(string(data), " \n"), "\n"), nil
 }
 
 func loadHalo2VerifierConfig() (Halo2VerifierConfig, error) {
-	res := Halo2VerifierConfig{}
+	var res Halo2VerifierConfig
 
 	data, err := os.ReadFile("aggregator_config.json")
 	if err != nil {
@@ -84,7 +84,7 @@ func main() {
 	if _, err := os.Stat("gnark_setup/groth16_pk"); os.IsNotExist(err) {
 		log.Println("[Start] setup")
 
-		pk, vk, err := groth16.Setup(r1cs)
+		pk, vk, err = groth16.Setup(r1cs)
 		if err != nil {
 			panic(err)
 		}
@@ -125,7 +125,7 @@ func main() {
 		if err != nil {
 			log.Fatalln(err)
 		}
-		pk := groth16.NewProvingKey(ecc.BN254)
+		pk = groth16.NewProvingKey(ecc.BN254)
 		_, err = pk.ReadFrom(fpk)
 		if err != nil {
 			log.Fatalln(err)
@@ -134,7 +134,7 @@ func main() {
 		if err != nil {
 			log.Fatalln(err)
 		}
-		vk := groth16.NewVerifyingKey(ecc.BN254)
+		vk = groth16.NewVerifyingKey(ecc.BN254)
 		_, err = vk.ReadFrom(fvk)
 		if err != nil {
 			log.Fatalln(err)
@@ -146,7 +146,7 @@ func main() {
 	// 2a. Fill witness and instance
 	witnessCircuit := Halo2VerifierCircuit{
 		Proof:    make([]frontend.Variable, len(proofStr)),
-		Instance: make([]frontend.Variable, 1),
+		Instance: make([]frontend.Variable, len(instanceStr)),
 	}
 
 	for i := 0; i < len(proofStr); i++ {
