@@ -3,31 +3,69 @@ package main
 
 import (
 	"encoding/json"
-	"github.com/consensys/gnark/backend/groth16"
-	"github.com/consensys/gnark/frontend/cs/r1cs"
 	"log"
 	"math/big"
 	"os"
+	"strings"
 
 	"github.com/consensys/gnark-crypto/ecc"
+	"github.com/consensys/gnark/backend/groth16"
 	"github.com/consensys/gnark/frontend"
+	"github.com/consensys/gnark/frontend/cs/r1cs"
 )
 
-func loadProofStr() []string {
-	return []string{}
+func loadProofStr() ([]string, error) {
+	data, err := os.ReadFile("proof.data")
+	if err != nil {
+		return nil, err
+	}
+	return strings.Split(string(data), "\n"), nil
 }
 
-func loadInstanceStr() []string {
-	return []string{}
+func loadInstanceStr() ([]string, error) {
+	data, err := os.ReadFile("instance.data")
+	if err != nil {
+		return nil, err
+	}
+	return strings.Split(string(data), "\n"), nil
+}
+
+func loadHalo2VerifierConfig() (Halo2VerifierConfig, error) {
+	res := Halo2VerifierConfig{}
+
+	data, err := os.ReadFile("aggregator_config.json")
+	if err != nil {
+		return res, err
+	}
+
+	err = json.Unmarshal(data, &res)
+	if err != nil {
+		return res, err
+	}
+
+	return res, nil
 }
 
 func main() {
-	proofStr := loadProofStr()
-	instanceStr := loadInstanceStr()
+	proofStr, err := loadProofStr()
+	if err != nil {
+		panic(err)
+	}
 
-	aggCircuit := AggregatorCircuit{
-		Proof: make([]frontend.Variable, len(proofStr)),
-		Inst:  make([]frontend.Variable, len(instanceStr)),
+	instanceStr, err := loadInstanceStr()
+	if err != nil {
+		panic(err)
+	}
+
+	config, err := loadHalo2VerifierConfig()
+	if err != nil {
+		panic(err)
+	}
+
+	aggCircuit := Halo2VerifierCircuit{
+		config:   config,
+		Proof:    make([]frontend.Variable, len(proofStr)),
+		Instance: make([]frontend.Variable, len(instanceStr)),
 	}
 
 	r1cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &aggCircuit)
@@ -37,10 +75,11 @@ func main() {
 
 	// 1. Setup
 	if _, err := os.Stat("gnark_setup"); os.IsNotExist(err) {
-		os.MkDir("gnark_setup")
+		os.Mkdir("gnark_setup", os.ModePerm)
 	}
 
-	vk, pk := nil
+	var pk groth16.ProvingKey
+	var vk groth16.VerifyingKey
 
 	if _, err := os.Stat("gnark_setup/groth16_pk"); os.IsNotExist(err) {
 		log.Println("[Start] setup")
@@ -105,9 +144,9 @@ func main() {
 	}
 
 	// 2a. Fill witness and instance
-	witnessCircuit := AggregatorCircuit{
-		Proof: make([]frontend.Variable, len(proofStr)),
-		Inst:  make([]frontend.Variable, 1),
+	witnessCircuit := Halo2VerifierCircuit{
+		Proof:    make([]frontend.Variable, len(proofStr)),
+		Instance: make([]frontend.Variable, 1),
 	}
 
 	for i := 0; i < len(proofStr); i++ {
@@ -117,7 +156,7 @@ func main() {
 
 	for i := 0; i < len(instanceStr); i++ {
 		instance, _ := big.NewInt(0).SetString(instanceStr[i], 10)
-		witnessCircuit.Inst[i] = instance
+		witnessCircuit.Instance[i] = instance
 	}
 
 	// 2b. Generate r1cs witness

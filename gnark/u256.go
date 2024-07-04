@@ -1,18 +1,72 @@
 package main
 
+import (
+	"github.com/consensys/gnark/frontend"
+	"github.com/consensys/gnark/std/math/uints"
+
+	"encoding/binary"
+	"math/big"
+)
+
 type U256 [4]uints.U64
 
-func U256ToBits(
-	api frontend.API,
+type U256API struct {
+	api    frontend.API
+	u64Api *uints.BinaryField[uints.U64]
+}
+
+func NewU256API(api frontend.API, u64Api *uints.BinaryField[uints.U64]) *U256API {
+	return &U256API{
+		api:    api,
+		u64Api: u64Api,
+	}
+}
+
+func (u256Api *U256API) ToBits(
 	x U256,
 ) []frontend.Variable {
 	bits := []frontend.Variable{}
 	for i := range x {
 		for j := range x[i] {
-			bits = append(bits, api.ToBinary(x[i][j].Val, 8))
+			bits = append(bits, u256Api.api.ToBinary(x[i][j].Val, 8))
 		}
 	}
 	return bits
+}
+
+func U64FromBits(
+	api frontend.API,
+	u64Api *uints.BinaryField[uints.U64],
+	bits []frontend.Variable,
+) uints.U64 {
+	return u64Api.ValueOf(api.FromBinary(bits[0:64]))
+}
+
+func (u256Api *U256API) FromBits(
+	bits []frontend.Variable,
+) U256 {
+	res := U256{}
+	res[0] = U64FromBits(u256Api.api, u256Api.u64Api, bits[0:64])
+	res[1] = U64FromBits(u256Api.api, u256Api.u64Api, bits[64:128])
+	res[2] = U64FromBits(u256Api.api, u256Api.u64Api, bits[128:196])
+	res[3] = U64FromBits(u256Api.api, u256Api.u64Api, bits[196:256])
+	return res
+}
+
+func NewU256(
+	x big.Int,
+) U256 {
+	bytes := make([]byte, 32)
+	bytes = x.FillBytes(bytes)
+
+	res := U256{}
+
+	res[0] = uints.NewU64(binary.LittleEndian.Uint64(bytes[0:8]))
+	res[1] = uints.NewU64(binary.LittleEndian.Uint64(bytes[8:16]))
+	res[2] = uints.NewU64(binary.LittleEndian.Uint64(bytes[16:24]))
+	res[3] = uints.NewU64(binary.LittleEndian.Uint64(bytes[24:]))
+
+	return res
 }
 
 /*
@@ -25,22 +79,6 @@ func ToU256Hint(field *big.Int, inputs []*big.Int, outputs []*big.Int) error {
 	}
 
 	return nil
-}
-
-func NewU256(
-	x big.int,
-) U256 {
-	bytes := make([]byte, 32)
-	bytes = x.FillBytes(bytes)
-
-	res := new(U256)
-
-	res[0] = new(big.int).FillBytes(bytes[0:8])
-	res[1] = new(big.int).FillBytes(bytes[8:16])
-	res[2] = new(big.int).FillBytes(bytes[16:24])
-	res[3] = new(big.int).FillBytes(bytes[24:])
-
-	return res
 }
 
 func ToU256(
@@ -74,35 +112,5 @@ func ToU256(
 }
 
 
-func U64FromBits(
-	api frontend.API,
-	u64Api *BinaryField[U64],
-	bits []frontend.Variable,
-) U64 {
-	u64Api, err := uints.New[uints.U64](api)
-	if err != nil {
-		return nil, err
-	}
 
-	u64Api.ValueOf(api.FromBinary(bits[0:64]))
-
-}
-
-func U256FromBits(
-	api frontend.API,
-	bits []frontend.Variable,
-) (U256, error) {
-	u64Api, err := uints.New[uints.U64](api)
-	if err != nil {
-		return nil, err
-	}
-
-	res := new(U256)
-	res[0] = U64FromBits(api, u64Api, bits[0:64])
-	res[1] = U64FromBits(api, u64Api, bits[64:128])
-	res[2] = U64FromBits(api, u64Api, bits[128:196])
-	res[3] = U64FromBits(api, u64Api, bits[196:256])
-
-	return res, nil
-}
 */

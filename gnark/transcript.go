@@ -1,44 +1,59 @@
 package main
 
+import (
+	"fmt"
+	"math/big"
+
+	"github.com/consensys/gnark/frontend"
+	"github.com/consensys/gnark/std/algebra/emulated/sw_emulated"
+	"github.com/consensys/gnark/std/hash/sha2"
+	"github.com/consensys/gnark/std/math/emulated/emparams"
+	"github.com/consensys/gnark/std/math/uints"
+)
+
 func squeezeChallenge(
 	api frontend.API,
-	sha2Api hash.BinaryFixedLengthHasher,
 	absorbing *[]uints.U8,
 	challenges *[]frontend.Variable,
-) {
+) error {
 	for i := 0; i < 32; i++ {
-		*absorbing = append(*absorbing, 0)
+		*absorbing = append(*absorbing, uints.NewU8(0))
 	}
 
-	sha2Api.Write(absorbing)
-	res := h.Sum()
+	sha2Api, err := sha2.New(api)
+	if err != nil {
+		return err
+	}
+
+	sha2Api.Write(*absorbing)
+	res := sha2Api.Sum()
 	if len(res) != 32 {
 		panic("sha2 returned value not 32 bytes")
 	}
 
 	base := big.NewInt(1)
-	sum := res[0]
+	sum := res[0].Val
 	for i := 1; i < 32; i++ {
-		base = base.Lsh(8)
-		sum = api.Add(sum, api.Mul(res[i], base))
+		base = base.Lsh(base, 8)
+		sum = api.Add(sum, api.Mul(res[i].Val, base))
 	}
 
 	*absorbing = res
 	*challenges = append(*challenges, sum)
+
+	return nil
 }
 
 func commonU256(
 	api frontend.API,
 	absorbing *[]uints.U8,
-	transcript *[]U256,
+	x U256,
 ) {
-	for i := range transcript[0] {
-		for j := range transcript[0][i] {
-			*absorbing = append(*absorbing, transcript[0][i][j])
+	for i := range x {
+		for j := range x[i] {
+			*absorbing = append(*absorbing, x[i][j])
 		}
 	}
-
-	*transcript = *transcript[1:]
 }
 
 func commonScalar(
@@ -46,72 +61,75 @@ func commonScalar(
 	absorbing *[]uints.U8,
 	transcript *[]U256,
 ) {
-	commonU256(api, absorbing, transcript)
+	commonU256(api, absorbing, (*transcript)[0])
+	*transcript = (*transcript)[1:]
 }
 
 func commonPoint(
 	api frontend.API,
-	bn254Api BN254API,
+	bn254Api *BN254API,
 	absorbing *[]uints.U8,
 	transcript *[]U256,
-	commitments *[]BN254AffinePoint,
+	commitments *[]*sw_emulated.AffinePoint[emparams.BN254Fp],
 ) {
-	p := bn254Api.AssertOnCurve(api, *points[0], *points[1])
+	p := bn254Api.AssertOnCurve((*transcript)[0], (*transcript)[1])
 	*commitments = append(*commitments, p)
 
-	commonU256(api, absorbing, transcript)
-	commonU256(api, absorbing, transcript)
+	commonU256(api, absorbing, (*transcript)[0])
+	commonU256(api, absorbing, (*transcript)[1])
+	*transcript = (*transcript)[2:]
 }
 
-func (config AggregatorConfig) GetChallengesShPlonkCircuit(
-	api frontend.API,
-	bn254Api BN254API,
-	instanceCommitment []U256,
+// Return challenges and commitments
+func (halo2Api *Halo2VerifierAPI) getChallengesShPlonkCircuit(
+	instanceCommitment *sw_emulated.AffinePoint[emparams.BN254Fp],
 	transcript []U256,
-) ([]frontend.Variable, []BN254AffinePoint, error) {
-	sha2Api, err := sha2.New(api)
-	if err != nil {
-		return err
-	}
-
-	absorbing := []frontend.U8{}
+) ([]frontend.Variable, []*sw_emulated.AffinePoint[emparams.BN254Fp], error) {
+	absorbing := []uints.U8{}
 	challenges := []frontend.Variable{}
-	commitments := []BN254AffinePoint{}
+	commitments := []*sw_emulated.AffinePoint[emparams.BN254Fp]{}
 
-	challengeInitScalar := new(big.Int).SetString(AggregatorConfig.ChallengeInitScalar, 10)
+	challengeInitScalar, succeed := new(big.Int).SetString(halo2Api.config.ChallengeInitScalar, 10)
+	if !succeed {
+		return challenges, commitments, fmt.Errorf("invalid ChallengeInitScalar %s", halo2Api.config.ChallengeInitScalar)
+	}
 	{
 		bytes := make([]byte, 32)
 		bytes = challengeInitScalar.FillBytes(bytes)
 		for i := 0; i < 32; i++ {
-			absorbing = append(absorbing, uints.New8(bytes[i]))
+			absorbing = append(absorbing, uints.NewU8(bytes[i]))
 		}
 	}
 
-	// TODO common instanceCommitment
-	// commonPoint(api, bn254Api, absorbing, instanceCommitment)
+	commonU256(halo2Api.api, &absorbing, halo2Api.bn254Api.BN254FpToU256(&(*instanceCommitment).X))
+	commonU256(halo2Api.api, &absorbing, halo2Api.bn254Api.BN254FpToU256(&(*instanceCommitment).Y))
 
-	opSeq := [][3]int{
-		[3]int{config.NbAdvices, 1, 0},                                 // theta
-		[3]int{config.NbLookups * 2, 2, 0},                             // beta, gamma
-		[3]int{config.NbPermutationGroup + config.NbLookups + 1, 1, 0}, // y
-		[3]int{config.Degree, 1, config.nbEvals},                       // x
-		[3]int{0, 2, 0},                                                // y, v in multiopen
-		[3]int{1, 1, 0},                                                //u in multiopen
+	opSeq := [][3]uint32{
+		{halo2Api.config.NbAdvices, 1, 0},                                           // theta
+		{halo2Api.config.NbLookups * 2, 2, 0},                                       // beta, gamma
+		{halo2Api.config.NbPermutationGroups + halo2Api.config.NbLookups + 1, 1, 0}, // y
+		{halo2Api.config.Degree, 1, halo2Api.config.NbEvals},                        // x
+		{0, 2, 0}, // y, v in multiopen
+		{1, 1, 0}, // u in multiopen
+		{1, 0, 0}, //
 	}
 
 	for i := range opSeq {
-		for j := 0; j < opSeq[i][0]; j++ {
-			commonPoint(api, bn254Api, absorbing, transcript, commitments)
+		for j := uint32(0); j < opSeq[i][0]; j++ {
+			commonPoint(halo2Api.api, halo2Api.bn254Api, &absorbing, &transcript, &commitments)
 		}
 
-		for j := 0; j < opSeq[i][1]; j++ {
-			squeezeChallenge(api, sha2Api, absorbing, challenges)
+		for j := uint32(0); j < opSeq[i][1]; j++ {
+			err := squeezeChallenge(halo2Api.api, &absorbing, &challenges)
+			if err != nil {
+				return challenges, commitments, err
+			}
 		}
 
-		for j := 0; j < opSeq[i][2]; j++ {
-			commonScalar(api, absorbing, transcript)
+		for j := uint32(0); j < opSeq[i][2]; j++ {
+			commonScalar(halo2Api.api, &absorbing, &transcript)
 		}
 	}
 
-	bn254Api.AssertOnCurve(api, transcript[i:i+2])
+	return challenges, commitments, nil
 }

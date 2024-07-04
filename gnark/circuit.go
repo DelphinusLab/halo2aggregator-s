@@ -1,127 +1,156 @@
 package main
 
 import (
-	"bytes"
-	"github.com/consensys/gnark-crypto/ecc/bn254/fp"
-	"math/big"
-
 	"github.com/consensys/gnark/frontend"
-	"github.com/consensys/gnark/std/algebra/emulated/sw_bn254"
+	"github.com/consensys/gnark/std/algebra/emulated/sw_emulated"
+	"github.com/consensys/gnark/std/math/emulated/emparams"
 	"github.com/consensys/gnark/std/math/uints"
-	"github.com/ethereum/go-ethereum/crypto"
+
+	"fmt"
+	"math/big"
 )
 
-func (config AggregatorConfig) CalcSingleInstanceCommitment(api frontend.API, index int, buf frontend.Variable) (BN254AffinePoint, error) {
-	x, err := NewU256(new(big.Int).SetString(config.VerifyCircuitLagrangeCommitments[index][0], 10))
-	if err != nil {
-		return err
-	}
-
-	y, err := NewU256(new(big.Int).SetString(config.VerifyCircuitLagrangeCommitments[index][1], 10))
-	if err != nil {
-		return err
-	}
-
-	res, err := BN254ScalarMulOnConstPoint(api, [2]big.int{x, y}, buf[2])
-	if err != nil {
-		return err
-	}
-
-	return res, err
+type Halo2VerifierCircuit struct {
+	config   Halo2VerifierConfig
+	Proof    []frontend.Variable
+	Instance []frontend.Variable `gnark:",public"`
 }
 
-func (config AggregatorConfig) CalcInstanceCommitment(api frontend.API, buf []frontend.Variable) (BN254AffinePoint, error) {
-	x, err := NewU256(new(big.Int).SetString(config.VerifyCircuitLagrangeCommitments[0][0], 10))
-	if err != nil {
-		return err
-	}
-
-	y, err := NewU256(new(big.Int).SetString(config.VerifyCircuitLagrangeCommitments[0][1], 10))
-	if err != nil {
-		return err
-	}
-
-	res, err := BN254ScalarMulOnConstPoint(api, [2]big.int{x, y}, buf[2])
-	if err != nil {
-		return err
-	}
-
-	return res, err
+type Halo2VerifierAPI struct {
+	config   Halo2VerifierConfig
+	api      frontend.API
+	u64Api   *uints.BinaryField[uints.U64]
+	u256Api  *U256API
+	bn254Api *BN254API
 }
 
-type AggregatorCircuit struct {
-	Proof []frontend.Variable
-	Inst  []frontend.Variable `gnark:",public"`
+func NewHalo2VerifierAPI(config Halo2VerifierConfig, api frontend.API, u64Api *uints.BinaryField[uints.U64], u256Api *U256API, bn254Api *BN254API) Halo2VerifierAPI {
+	return Halo2VerifierAPI{
+		config:   config,
+		api:      api,
+		u64Api:   u64Api,
+		u256Api:  u256Api,
+		bn254Api: bn254Api,
+	}
 }
 
-func proofToU256(api frontend.API, proof []frontend.Variable) ([]U256, error) {
-	if len(proof) % 4 != 0 {
-		return nil, fmt.Errorf("invalid proof size")
+func (halo2Api *Halo2VerifierAPI) calcSingleInstanceCommitment(index int, instance frontend.Variable) (*sw_emulated.AffinePoint[emparams.BN254Fp], error) {
+	x, succeed := new(big.Int).SetString(halo2Api.config.VerifyCircuitGLagrange[index][0], 10)
+	if !succeed {
+		return nil, fmt.Errorf("invalid x in VerifyCircuitGLagrange at %d, with value %s", index, halo2Api.config.VerifyCircuitGLagrange[index][0])
+	}
+	y, succeed := new(big.Int).SetString(halo2Api.config.VerifyCircuitGLagrange[index][1], 10)
+	if !succeed {
+		return nil, fmt.Errorf("invalid y in VerifyCircuitGLagrange at %d, with value %s", index, halo2Api.config.VerifyCircuitGLagrange[index][1])
 	}
 
-	u64Api, err := uints.New[uints.U64](api)
+	return halo2Api.bn254Api.BN254ScalarMulConstant([2]big.Int{*x, *y}, instance), nil
+}
+
+func (halo2Api *Halo2VerifierAPI) calcInstanceCommitment(instances []frontend.Variable) (*sw_emulated.AffinePoint[emparams.BN254Fp], error) {
+	acc, err := halo2Api.calcSingleInstanceCommitment(0, instances[0])
 	if err != nil {
 		return nil, err
 	}
 
-	transcript := make([]U256, len(Proof) / 4)
+	for i := 1; i < len(instances); i++ {
+		p, err := halo2Api.calcSingleInstanceCommitment(i, instances[i])
+		if err != nil {
+			return nil, err
+		}
+
+		acc = halo2Api.bn254Api.BN254AddG1(acc, p)
+	}
+	return acc, nil
+}
+
+func (halo2Api *Halo2VerifierAPI) proofToU256(proof []frontend.Variable) ([]U256, error) {
+	if len(proof)%32 != 0 {
+		return nil, fmt.Errorf("invalid proof size")
+	}
+
+	transcript := make([]U256, len(proof)/32)
 	for i := range transcript {
-		transcript[i][0] = u64Api.ValueOf(proof[i * 4])
-		transcript[i][1] = u64Api.ValueOf(proof[i * 4 + 1])
-		transcript[i][2] = u64Api.ValueOf(proof[i * 4 + 2])
-		transcript[i][3] = u64Api.ValueOf(proof[i * 4 + 3])
+		for j := 0; j < 4; j++ {
+			for k := 0; k < 8; k++ {
+				transcript[i][j][k] = halo2Api.u64Api.ByteValueOf(proof[i*32+j*8+k])
+			}
+		}
 	}
 
 	return transcript, nil
 }
 
-func (circuit *AggregatorCircuit) Define(api frontend.API) error {
-	// Use U256 because Fp modulus > Fq modulus in BN254
-	buf := new([128]U256)
-	transcript, err := proofToU256(api, circuit.Proof)
-
-	buf[2], err := ToU256(api, circuit.Inst[0])
-
-	err = CalcVerifyCircuitLagrange(api, buf[:])
+func (circuit *Halo2VerifierCircuit) Define(api frontend.API) error {
+	u64Api, err := uints.New[uints.U64](api)
 	if err != nil {
 		return err
 	}
 
-	err = GetChallengesShPlonkCircuit(api, buf[:], circuit.Proof)
+	u256Api := NewU256API(api, u64Api)
+
+	bn254Api, err := NewBN254API(api, u256Api)
 	if err != nil {
 		return err
 	}
 
-/*
-	buf, err = VerifyProof(api, circuit.Proof, buf)
+	halo2Api := NewHalo2VerifierAPI(circuit.config, api, u64Api, u256Api, bn254Api)
+
+	transcript, err := halo2Api.proofToU256(circuit.Proof)
 	if err != nil {
 		return err
 	}
 
-	for i := 10; i < 14; i++ {
-		err = api.AssertIsDifferent(buf[i], 0)
-		if err != nil {
-			return err
-		}
-	}
-
-	g1Points, err := FillVerifyCircuitsG1(api, buf[10], buf[11], buf[12], buf[13])
+	instanceCommitment, err := halo2Api.calcInstanceCommitment(circuit.Instance)
 	if err != nil {
 		return err
 	}
-	g2Points := FillVerifyCircuitsG2()
 
-	// Do pairing
-	pairing, err := sw_bn254.NewPairing(api)
+	_, _, err = halo2Api.getChallengesShPlonkCircuit(instanceCommitment, transcript)
 	if err != nil {
-		return fmt.Errorf("NewPairing: %w", err)
+		return err
 	}
-	err = pairing.PairingCheck(
-		g1Points,
-		g2Points,
-	)
-	if err != nil {
-		return fmt.Errorf("pair: %w", err)
-	}
-*/
+
+	/*
+	   buf, err = VerifyProof(api, circuit.Proof, buf)
+
+	   	if err != nil {
+	   		return err
+	   	}
+
+	   	for i := 10; i < 14; i++ {
+	   		err = api.AssertIsDifferent(buf[i], 0)
+	   		if err != nil {
+	   			return err
+	   		}
+	   	}
+
+	   g1Points, err := FillVerifyCircuitsG1(api, buf[10], buf[11], buf[12], buf[13])
+
+	   	if err != nil {
+	   		return err
+	   	}
+
+	   g2Points := FillVerifyCircuitsG2()
+
+	   // Do pairing
+	   pairing, err := sw_bn254.NewPairing(api)
+
+	   	if err != nil {
+	   		return fmt.Errorf("NewPairing: %w", err)
+	   	}
+
+	   err = pairing.PairingCheck(
+
+	   	g1Points,
+	   	g2Points,
+
+	   )
+
+	   	if err != nil {
+	   		return fmt.Errorf("pair: %w", err)
+	   	}
+	*/
+
+	return nil
 }
