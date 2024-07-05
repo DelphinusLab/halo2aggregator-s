@@ -124,10 +124,17 @@ func (circuit *Halo2VerifierCircuit) Define(api frontend.API) error {
 		}
 	}
 
-	_, _, _, err = halo2Api.getChallengesShPlonkCircuit(instanceCommitments, transcript)
+	challenges, commitments, evals, err := halo2Api.getChallengesShPlonkCircuit(instanceCommitments, transcript)
 	if err != nil {
 		return err
 	}
+
+	p1, p2 := halo2Api.verify(instanceCommitments, commitments, evals, challenges)
+
+	// TODO p1 p2 != identity
+
+	api.Println(p1)
+	api.Println(p2)
 
 	/*
 	   buf, err = VerifyProof(api, circuit.Proof, buf)

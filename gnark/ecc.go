@@ -123,20 +123,24 @@ func (bn254Api *BN254API) BN254ScalarMul(
 	return p
 }
 
+func (bn254Api *BN254API) BN254FromConstant(
+	point [2]big.Int,
+) *sw_emulated.AffinePoint[emparams.BN254Fp] {
+	x := emulated.ValueOf[emparams.BN254Fp](point[0])
+	y := emulated.ValueOf[emparams.BN254Fp](point[1])
+	return &sw_emulated.AffinePoint[emparams.BN254Fp]{
+		X: x,
+		Y: y,
+	}
+}
+
 func (bn254Api *BN254API) BN254ScalarMulConstant(
 	point [2]big.Int,
 	scalar frontend.Variable,
 ) *sw_emulated.AffinePoint[emparams.BN254Fp] {
-	x := emulated.ValueOf[emparams.BN254Fp](point[0])
-	y := emulated.ValueOf[emparams.BN254Fp](point[1])
-	ps := sw_emulated.AffinePoint[emparams.BN254Fp]{
-		X: x,
-		Y: y,
-	}
-
+	p := bn254Api.BN254FromConstant(point)
 	scalarFr := bn254Api.ToBn254Fr(scalar)
-	p := bn254Api.curveApi.ScalarMul(&ps, scalarFr)
-	return p
+	return bn254Api.curveApi.ScalarMul(p, scalarFr)
 }
 
 func (bn254Api *BN254API) BN254AddG1(
