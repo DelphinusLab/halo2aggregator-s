@@ -16,9 +16,7 @@ func squeezeChallenge(
 	absorbing *[]uints.U8,
 	challenges *[]frontend.Variable,
 ) error {
-	for i := 0; i < 32; i++ {
-		*absorbing = append(*absorbing, uints.NewU8(0))
-	}
+	*absorbing = append(*absorbing, uints.NewU8(0))
 
 	sha2Api, err := sha2.New(api)
 	if err != nil {
@@ -31,11 +29,12 @@ func squeezeChallenge(
 		panic("sha2 returned value not 32 bytes")
 	}
 
+	// Pack bytes in BE
 	base := big.NewInt(1)
-	sum := res[0].Val
+	sum := res[31].Val
 	for i := 1; i < 32; i++ {
 		base = base.Lsh(base, 8)
-		sum = api.Add(sum, api.Mul(res[i].Val, base))
+		sum = api.Add(sum, api.Mul(res[31-i].Val, base))
 	}
 
 	*absorbing = res
@@ -49,8 +48,9 @@ func commonU256(
 	absorbing *[]uints.U8,
 	x U256,
 ) {
-	for i := range x {
-		for j := range x[i] {
+	// Append bytes in BE
+	for i := 3; i >= 0; i-- {
+		for j := 7; j >= 0; j-- {
 			*absorbing = append(*absorbing, x[i][j])
 		}
 	}
@@ -82,16 +82,17 @@ func commonPoint(
 
 // Return challenges and commitments
 func (halo2Api *Halo2VerifierAPI) getChallengesShPlonkCircuit(
-	instanceCommitment *sw_emulated.AffinePoint[emparams.BN254Fp],
+	instanceCommitments []*sw_emulated.AffinePoint[emparams.BN254Fp],
 	transcript []U256,
-) ([]frontend.Variable, []*sw_emulated.AffinePoint[emparams.BN254Fp], error) {
+) ([]frontend.Variable, []*sw_emulated.AffinePoint[emparams.BN254Fp], []frontend.Variable, error) {
 	absorbing := []uints.U8{}
 	challenges := []frontend.Variable{}
 	commitments := []*sw_emulated.AffinePoint[emparams.BN254Fp]{}
+	evals := []frontend.Variable{}
 
 	challengeInitScalar, succeed := new(big.Int).SetString(halo2Api.config.ChallengeInitScalar, 10)
 	if !succeed {
-		return challenges, commitments, fmt.Errorf("invalid ChallengeInitScalar %s", halo2Api.config.ChallengeInitScalar)
+		return challenges, commitments, evals, fmt.Errorf("invalid ChallengeInitScalar %s", halo2Api.config.ChallengeInitScalar)
 	}
 	{
 		bytes := make([]byte, 32)
@@ -101,8 +102,10 @@ func (halo2Api *Halo2VerifierAPI) getChallengesShPlonkCircuit(
 		}
 	}
 
-	commonU256(halo2Api.api, &absorbing, halo2Api.bn254Api.BN254FpToU256(&(*instanceCommitment).X))
-	commonU256(halo2Api.api, &absorbing, halo2Api.bn254Api.BN254FpToU256(&(*instanceCommitment).Y))
+	for i := range instanceCommitments {
+		commonU256(halo2Api.api, &absorbing, halo2Api.bn254Api.BN254FpToU256(&(*instanceCommitments[i]).X))
+		commonU256(halo2Api.api, &absorbing, halo2Api.bn254Api.BN254FpToU256(&(*instanceCommitments[i]).Y))
+	}
 
 	opSeq := [][3]uint32{
 		{halo2Api.config.NbAdvices, 1, 0},                                           // theta
@@ -110,8 +113,8 @@ func (halo2Api *Halo2VerifierAPI) getChallengesShPlonkCircuit(
 		{halo2Api.config.NbPermutationGroups + halo2Api.config.NbLookups + 1, 1, 0}, // y
 		{halo2Api.config.Degree, 1, halo2Api.config.NbEvals},                        // x
 		{0, 2, 0}, // y, v in multiopen
-		//{1, 1, 0}, // u in multiopen
-		//{1, 0, 0}, //
+		{1, 1, 0}, // u in multiopen
+		{1, 0, 0}, //
 	}
 
 	for i := range opSeq {
@@ -122,14 +125,19 @@ func (halo2Api *Halo2VerifierAPI) getChallengesShPlonkCircuit(
 		for j := uint32(0); j < opSeq[i][1]; j++ {
 			err := squeezeChallenge(halo2Api.api, &absorbing, &challenges)
 			if err != nil {
-				return challenges, commitments, err
+				return challenges, commitments, evals, err
 			}
 		}
 
 		for j := uint32(0); j < opSeq[i][2]; j++ {
+			evals = append(evals, halo2Api.u256Api.ToValue(transcript[0]))
 			commonScalar(halo2Api.api, &absorbing, &transcript)
 		}
 	}
 
-	return challenges, commitments, nil
+	for i := range challenges {
+		halo2Api.api.Println(challenges[i])
+	}
+
+	return challenges, commitments, evals, nil
 }

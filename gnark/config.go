@@ -1,5 +1,10 @@
 package main
 
+type Halo2VerifierProofData struct {
+	Instance   [][]string `json:"instance"`
+	Transcript []string   `json:"transcript"`
+}
+
 type Halo2VerifierConfig struct {
 	VerifyCircuitGLagrange [][]string `json:"verify_circuit_g_lagrange"`
 	ChallengeInitScalar    string     `json:"challenge_init_scalar"`

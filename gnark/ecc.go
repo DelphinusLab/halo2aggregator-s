@@ -146,6 +146,15 @@ func (bn254Api *BN254API) BN254AddG1(
 	return bn254Api.curveApi.Add(a, b)
 }
 
+func (bn254Api *BN254API) BN254ScalarMulAndAddG1(
+	point *sw_emulated.AffinePoint[emparams.BN254Fp],
+	scalar frontend.Variable,
+	b *sw_emulated.AffinePoint[emparams.BN254Fp],
+) *sw_emulated.AffinePoint[emparams.BN254Fp] {
+	a := bn254Api.BN254ScalarMul(point, scalar)
+	return bn254Api.curveApi.Add(a, b)
+}
+
 /*
 func U256FromElement[T emulated.FieldParams](api frontend.API, input emulated.Element[T]) (U256, error) {
 	var fp = T

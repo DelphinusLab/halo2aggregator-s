@@ -3,10 +3,10 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"math/big"
 	"os"
-	"strings"
 
 	"github.com/consensys/gnark-crypto/ecc"
 	"github.com/consensys/gnark/backend/groth16"
@@ -14,26 +14,26 @@ import (
 	"github.com/consensys/gnark/frontend/cs/r1cs"
 )
 
-func loadProofStr() ([]string, error) {
-	data, err := os.ReadFile("proof.data")
-	if err != nil {
-		return nil, err
-	}
-	return strings.Split(strings.Trim(string(data), " \n"), "\n"), nil
-}
+func loadProofData() (Halo2VerifierProofData, error) {
+	var res Halo2VerifierProofData
 
-func loadInstanceStr() ([]string, error) {
-	data, err := os.ReadFile("instance.data")
+	data, err := os.ReadFile("halo2_verifier_proof.json")
 	if err != nil {
-		return nil, err
+		return res, err
 	}
-	return strings.Split(strings.Trim(string(data), " \n"), "\n"), nil
+
+	err = json.Unmarshal(data, &res)
+	if err != nil {
+		return res, err
+	}
+
+	return res, nil
 }
 
 func loadHalo2VerifierConfig() (Halo2VerifierConfig, error) {
 	var res Halo2VerifierConfig
 
-	data, err := os.ReadFile("aggregator_config.json")
+	data, err := os.ReadFile("halo2_verifier_config.json")
 	if err != nil {
 		return res, err
 	}
@@ -47,12 +47,7 @@ func loadHalo2VerifierConfig() (Halo2VerifierConfig, error) {
 }
 
 func main() {
-	proofStr, err := loadProofStr()
-	if err != nil {
-		panic(err)
-	}
-
-	instanceStr, err := loadInstanceStr()
+	proofData, err := loadProofData()
 	if err != nil {
 		panic(err)
 	}
@@ -62,10 +57,14 @@ func main() {
 		panic(err)
 	}
 
+	defalutInstance := make([][]frontend.Variable, len(proofData.Instance))
+	for i := range proofData.Instance {
+		defalutInstance[i] = make([]frontend.Variable, len(proofData.Instance[i]))
+	}
 	aggCircuit := Halo2VerifierCircuit{
-		config:   config,
-		Proof:    make([]frontend.Variable, len(proofStr)),
-		Instance: make([]frontend.Variable, len(instanceStr)),
+		config:     config,
+		Instance:   defalutInstance,
+		Transcript: make([]frontend.Variable, len(proofData.Transcript)),
 	}
 
 	r1cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &aggCircuit)
@@ -143,20 +142,31 @@ func main() {
 		log.Println("[End] load pk vk")
 	}
 
+	succeed := true
+
 	// 2a. Fill witness and instance
+	instance := make([][]frontend.Variable, len(proofData.Instance))
+	for i := range proofData.Instance {
+		instance[i] = make([]frontend.Variable, len(proofData.Instance[i]))
+		for j := range proofData.Instance[i] {
+			instance[i][j], succeed = big.NewInt(0).SetString(proofData.Instance[i][j], 10)
+			if !succeed {
+				fmt.Errorf("invalid instance", proofData.Instance[i][j])
+			}
+		}
+	}
+	transcript := make([]frontend.Variable, len(proofData.Transcript))
+	for i := range proofData.Transcript {
+		transcript[i], succeed = big.NewInt(0).SetString(proofData.Transcript[i], 10)
+		if !succeed {
+			fmt.Errorf("invalid transcript", proofData.Transcript[i])
+		}
+	}
+
 	witnessCircuit := Halo2VerifierCircuit{
-		Proof:    make([]frontend.Variable, len(proofStr)),
-		Instance: make([]frontend.Variable, len(instanceStr)),
-	}
-
-	for i := 0; i < len(proofStr); i++ {
-		proof, _ := big.NewInt(0).SetString(proofStr[i], 10)
-		witnessCircuit.Proof[i] = proof
-	}
-
-	for i := 0; i < len(instanceStr); i++ {
-		instance, _ := big.NewInt(0).SetString(instanceStr[i], 10)
-		witnessCircuit.Instance[i] = instance
+		config:     config,
+		Transcript: transcript,
+		Instance:   instance,
 	}
 
 	// 2b. Generate r1cs witness

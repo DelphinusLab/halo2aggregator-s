@@ -56,6 +56,18 @@ func (u256Api *U256API) FromBits(
 	return res
 }
 
+func (u256Api *U256API) ToValue(
+	value U256,
+) frontend.Variable {
+	shift := big.NewInt(1)
+	res := u256Api.u64Api.ToValue(value[0])
+	for i := 1; i < 4; i++ {
+		shift = shift.Lsh(shift, 64)
+		res = u256Api.api.Add(res, u256Api.api.Mul(shift, u256Api.u64Api.ToValue(value[i])))
+	}
+	return res
+}
+
 func NewU256(
 	x big.Int,
 ) U256 {

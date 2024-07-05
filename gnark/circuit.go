@@ -11,9 +11,9 @@ import (
 )
 
 type Halo2VerifierCircuit struct {
-	config   Halo2VerifierConfig
-	Proof    []frontend.Variable
-	Instance []frontend.Variable `gnark:",public"`
+	config     Halo2VerifierConfig
+	Instance   [][]frontend.Variable `gnark:",public"`
+	Transcript []frontend.Variable
 }
 
 type Halo2VerifierAPI struct {
@@ -32,6 +32,20 @@ func NewHalo2VerifierAPI(config Halo2VerifierConfig, api frontend.API, u64Api *u
 		u256Api:  u256Api,
 		bn254Api: bn254Api,
 	}
+}
+
+func ScalarPow(api frontend.API, x frontend.Variable, n uint) frontend.Variable {
+	var acc frontend.Variable = 1
+	base := x
+
+	for n > 0 {
+		if n&1 == 1 {
+			acc = api.Mul(acc, base)
+		}
+		base = api.Mul(base, base)
+	}
+
+	return acc
 }
 
 func (halo2Api *Halo2VerifierAPI) calcSingleInstanceCommitment(index int, instance frontend.Variable) (*sw_emulated.AffinePoint[emparams.BN254Fp], error) {
@@ -96,17 +110,21 @@ func (circuit *Halo2VerifierCircuit) Define(api frontend.API) error {
 
 	halo2Api := NewHalo2VerifierAPI(circuit.config, api, u64Api, u256Api, bn254Api)
 
-	transcript, err := halo2Api.proofToU256(circuit.Proof)
+	transcript, err := halo2Api.proofToU256(circuit.Transcript)
 	if err != nil {
 		return err
 	}
 
-	instanceCommitment, err := halo2Api.calcInstanceCommitment(circuit.Instance)
-	if err != nil {
-		return err
+	instanceCommitments := make([]*sw_emulated.AffinePoint[emparams.BN254Fp], len(circuit.Instance))
+
+	for i := range circuit.Instance {
+		instanceCommitments[i], err = halo2Api.calcInstanceCommitment(circuit.Instance[i])
+		if err != nil {
+			return err
+		}
 	}
 
-	_, _, err = halo2Api.getChallengesShPlonkCircuit(instanceCommitment, transcript)
+	_, _, _, err = halo2Api.getChallengesShPlonkCircuit(instanceCommitments, transcript)
 	if err != nil {
 		return err
 	}
