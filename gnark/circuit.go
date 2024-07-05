@@ -1,7 +1,9 @@
 package main
 
 import (
+	"github.com/consensys/gnark-crypto/ecc/bn254"
 	"github.com/consensys/gnark/frontend"
+	"github.com/consensys/gnark/std/algebra/emulated/sw_bn254"
 	"github.com/consensys/gnark/std/algebra/emulated/sw_emulated"
 	"github.com/consensys/gnark/std/math/emulated/emparams"
 	"github.com/consensys/gnark/std/math/uints"
@@ -79,6 +81,30 @@ func (halo2Api *Halo2VerifierAPI) calcInstanceCommitment(instances []frontend.Va
 	return acc, nil
 }
 
+func (halo2Api *Halo2VerifierAPI) GetVerifyCircuitsG2Affine() []sw_bn254.G2Affine {
+	res := make([]sw_bn254.G2Affine, 2)
+
+	fmt.Println(halo2Api.config.VerifyCircuitG2Affine)
+	for i := 0; i < 2; i++ {
+		g := bn254.G2Affine{}
+		g.X.SetString(
+			halo2Api.config.VerifyCircuitG2Affine[i][0],
+			halo2Api.config.VerifyCircuitG2Affine[i][1],
+		)
+		g.Y.SetString(
+			halo2Api.config.VerifyCircuitG2Affine[i][2],
+			halo2Api.config.VerifyCircuitG2Affine[i][3],
+		)
+		fmt.Println(g)
+		if !g.IsOnCurve() {
+			panic("invalid g2")
+		}
+		res[i] = sw_bn254.NewG2Affine(g)
+	}
+
+	return res
+}
+
 func (halo2Api *Halo2VerifierAPI) proofToU256(proof []frontend.Variable) ([]U256, error) {
 	if len(proof)%32 != 0 {
 		return nil, fmt.Errorf("invalid proof size")
@@ -131,52 +157,22 @@ func (circuit *Halo2VerifierCircuit) Define(api frontend.API) error {
 	}
 
 	p1, p2 := halo2Api.verify(instanceCommitments, commitments, evals, challenges)
+	g2Points := halo2Api.GetVerifyCircuitsG2Affine()
 
-	// TODO p1 p2 != identity
+	// Do pairing
+	pairingApi, err := sw_bn254.NewPairing(api)
+	if err != nil {
+		return fmt.Errorf("NewPairing: %w", err)
+	}
 
-	api.Println(p1)
-	api.Println(p2)
+	err = pairingApi.PairingCheck(
+		[]*sw_emulated.AffinePoint[emparams.BN254Fp]{p1, p2},
+		[]*sw_bn254.G2Affine{&g2Points[0], &g2Points[1]},
+	)
 
-	/*
-	   buf, err = VerifyProof(api, circuit.Proof, buf)
-
-	   	if err != nil {
-	   		return err
-	   	}
-
-	   	for i := 10; i < 14; i++ {
-	   		err = api.AssertIsDifferent(buf[i], 0)
-	   		if err != nil {
-	   			return err
-	   		}
-	   	}
-
-	   g1Points, err := FillVerifyCircuitsG1(api, buf[10], buf[11], buf[12], buf[13])
-
-	   	if err != nil {
-	   		return err
-	   	}
-
-	   g2Points := FillVerifyCircuitsG2()
-
-	   // Do pairing
-	   pairing, err := sw_bn254.NewPairing(api)
-
-	   	if err != nil {
-	   		return fmt.Errorf("NewPairing: %w", err)
-	   	}
-
-	   err = pairing.PairingCheck(
-
-	   	g1Points,
-	   	g2Points,
-
-	   )
-
-	   	if err != nil {
-	   		return fmt.Errorf("pair: %w", err)
-	   	}
-	*/
+	if err != nil {
+		return fmt.Errorf("pair: %w", err)
+	}
 
 	return nil
 }

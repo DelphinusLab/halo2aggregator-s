@@ -7,6 +7,7 @@ type Halo2VerifierProofData struct {
 
 type Halo2VerifierConfig struct {
 	VerifyCircuitGLagrange [][]string `json:"verify_circuit_g_lagrange"`
+	VerifyCircuitG2Affine  [][]string `json:"verify_circuit_g2"`
 	ChallengeInitScalar    string     `json:"challenge_init_scalar"`
 	Degree                 uint32     `json:"degree"`
 	NbAdvices              uint32     `json:"nb_advices"`

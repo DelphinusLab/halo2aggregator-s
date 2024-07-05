@@ -4,6 +4,7 @@ use halo2_proofs::arithmetic::MultiMillerLoop;
 use halo2_proofs::plonk::VerifyingKey;
 use halo2_proofs::poly::commitment::ParamsVerifier;
 use halo2ecc_s::utils::field_to_bn;
+use num_bigint::BigUint;
 use serde::Deserialize;
 use serde::Serialize;
 use sha2::Sha256;
@@ -13,6 +14,7 @@ mod codegen;
 #[derive(Serialize, Deserialize)]
 struct AggregatorConfig {
     verify_circuit_g_lagrange: Vec<[String; 2]>,
+    verify_circuit_g2: Vec<[String; 4]>,
     challenge_init_scalar: String,
     nb_advices: u32,
     nb_lookups: u32,
@@ -100,8 +102,35 @@ pub fn gnark_render<E: MultiMillerLoop>(
         - 1
         + 5 * nb_lookups;
 
+    let g2field_to_bn = |f: &<E::G2Affine as CurveAffine>::Base| {
+        let mut bytes: Vec<u8> = Vec::new();
+        f.write(&mut bytes).unwrap();
+        (
+            BigUint::from_bytes_le(&bytes[32..64]),
+            BigUint::from_bytes_le(&bytes[..32]),
+        )
+    };
+
+    let g2_to_str = |g2: E::G2Affine| {
+        let c = g2.coordinates().unwrap();
+        let x = g2field_to_bn(c.x());
+        let y = g2field_to_bn(c.y());
+        [
+            x.1.to_str_radix(10),
+            x.0.to_str_radix(10),
+            y.1.to_str_radix(10),
+            y.0.to_str_radix(10),
+        ]
+    };
+
+    let verify_circuit_g2 = vec![
+        g2_to_str(verify_circuit_params.s_g2),
+        g2_to_str(-verify_circuit_params.g2),
+    ];
+
     let config = AggregatorConfig {
         verify_circuit_g_lagrange,
+        verify_circuit_g2,
         challenge_init_scalar,
         nb_advices,
         nb_lookups,
