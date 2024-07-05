@@ -67,10 +67,12 @@ func main() {
 		Transcript: make([]frontend.Variable, len(proofData.Transcript)),
 	}
 
+	log.Println("[Start] Compile")
 	r1cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &aggCircuit)
 	if err != nil {
 		panic(err)
 	}
+	log.Println("[End] Compile")
 
 	// 1. Setup
 	if _, err := os.Stat("gnark_setup"); os.IsNotExist(err) {

@@ -18,6 +18,7 @@ use halo2_proofs::transcript::Transcript;
 use halo2_proofs::transcript::TranscriptRead;
 use halo2ecc_s::utils::field_to_bn;
 use sha2::Digest;
+use std::collections::HashMap;
 use std::io::Read;
 
 struct GnarkEvalContext<R: Read, E: MultiMillerLoop, D: Digest> {
@@ -33,6 +34,11 @@ struct GnarkEvalContext<R: Read, E: MultiMillerLoop, D: Digest> {
     values: Vec<(Option<E::G1Affine>, Option<E::Scalar>)>,
     finals: Vec<E::G1Affine>,
 
+    deps: Vec<usize>,
+    lifetime: Vec<usize>,
+
+    max_idx: usize,
+
     statements: Vec<String>,
 }
 
@@ -42,6 +48,7 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> GnarkEvalContext<R, E, D> {
         instance_commitments: Vec<E::G1Affine>,
         t: ShaRead<R, E::G1Affine, Challenge255<E::G1Affine>, D>,
     ) -> Self {
+        let ops_len = c.ops.len();
         Self {
             c,
             instance_commitments,
@@ -53,6 +60,9 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> GnarkEvalContext<R, E, D> {
             commiment_idx: 0,
             eval_idx: 0,
             statements: vec![],
+            deps: vec![0; ops_len],
+            lifetime: vec![0; ops_len],
+            max_idx: 0,
         }
     }
 
@@ -77,6 +87,16 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> GnarkEvalContext<R, E, D> {
         match pos {
             EvalPos::Ops(i) => self.values[*i],
             _ => unreachable!(),
+        }
+    }
+
+    fn tag_lifetime(&mut self, to: &EvalPos, curr: usize) {
+        match to {
+            EvalPos::Ops(i) => {
+                self.lifetime[*i] = curr;
+                self.deps[*i] += 1;
+            }
+            _ => {}
         }
     }
 
@@ -145,98 +165,186 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> GnarkEvalContext<R, E, D> {
             .collect();
     }
 
-    fn render_scalar_pos(&self, pos: &EvalPos) -> String {
+    fn render_scalar_pos(
+        &mut self,
+        pos: &EvalPos,
+        op_res_map: &HashMap<usize, String>,
+        op_t_idx_map: &HashMap<usize, usize>,
+        available_idx: &mut Vec<usize>,
+    ) -> String {
         match pos {
             EvalPos::Constant(i) => format!("const_scalars[{}]", *i),
             EvalPos::Empty => unreachable!(),
             EvalPos::Instance(_, _) => unreachable!(),
-            EvalPos::Ops(i) => format!("t{}", *i),
+            EvalPos::Ops(i) => {
+                self.deps[*i] -= 1;
+                if self.deps[*i] == 0 {
+                    if let Some(idx) = op_t_idx_map.get(i) {
+                        available_idx.push(*idx)
+                    }
+                }
+                op_res_map.get(i).unwrap().clone()
+            }
         }
     }
 
-    fn render_point_pos(&self, pos: &EvalPos) -> String {
+    fn render_point_pos(&mut self, pos: &EvalPos, op_res_map: &HashMap<usize, String>) -> String {
         match pos {
             EvalPos::Constant(i) => format!("const_points[{}]", *i),
             EvalPos::Empty => unreachable!(),
             EvalPos::Instance(_, i) => format!("instanceCommitments[{}]", *i),
-            EvalPos::Ops(i) => format!("t{}", *i),
+            EvalPos::Ops(i) => op_res_map.get(i).unwrap().clone(),
         }
     }
 
     pub fn code_gen(&mut self) {
+        // first tag lifetime
+        for (i, op) in self.c.ops.clone().iter().enumerate() {
+            self.lifetime.push(i);
+            self.deps.push(0);
+            match op {
+                EvalOps::ScalarMul(a, b, _) => {
+                    self.tag_lifetime(a, i);
+                    self.tag_lifetime(b, i);
+                }
+                EvalOps::ScalarAdd(a, b) => {
+                    self.tag_lifetime(a, i);
+                    self.tag_lifetime(b, i);
+                }
+                EvalOps::ScalarSub(a, b) => {
+                    self.tag_lifetime(a, i);
+                    self.tag_lifetime(b, i);
+                }
+                EvalOps::ScalarDiv(a, b) => {
+                    self.tag_lifetime(a, i);
+                    self.tag_lifetime(b, i);
+                }
+                EvalOps::ScalarPow(a, _) => {
+                    self.tag_lifetime(a, i);
+                }
+                EvalOps::MSMSlice((a, b), c, _) => {
+                    self.tag_lifetime(a, i);
+                    self.tag_lifetime(b, i);
+                    if let Some(c) = c {
+                        self.tag_lifetime(c, i);
+                    }
+                }
+                EvalOps::CheckPoint(_, a) => {
+                    self.tag_lifetime(a, i);
+                }
+                _ => {}
+            }
+        }
+
+        let mut available_idx = vec![];
+
+        let alloc_idx = |available_idx: &mut Vec<usize>, max_idx: &mut usize| {
+            if available_idx.is_empty() {
+                let idx = *max_idx;
+                *max_idx += 1;
+                return idx;
+            }
+            available_idx.pop().unwrap()
+        };
+
+        let mut op_res_map = HashMap::new();
+        let mut op_t_idx_map = HashMap::new();
+
         for (i, op) in self.c.ops.clone().iter().enumerate() {
             match op {
                 EvalOps::CheckPoint(_, _) => (),
                 EvalOps::TranscriptReadScalar(_, _) => {
-                    self.statements
-                        .push(format!("t{} := evals[{}]", i, self.eval_idx));
+                    op_res_map.insert(i, format!("evals[{}]", self.eval_idx));
                     self.eval_idx += 1;
                 }
                 EvalOps::TranscriptReadPoint(_, _) => {
-                    self.statements
-                        .push(format!("t{} := commitments[{}]", i, self.commiment_idx));
+                    op_res_map.insert(i, format!("commitments[{}]", self.commiment_idx));
                     self.commiment_idx += 1;
                 }
                 EvalOps::TranscriptSqueeze(_, _) => {
-                    self.statements
-                        .push(format!("t{} := challenges[{}]", i, self.challenge_idx));
+                    op_res_map.insert(i, format!("challenges[{}]", self.challenge_idx));
                     self.challenge_idx += 1;
                 }
                 EvalOps::ScalarMul(a, b, _) => {
+                    const OP: &str = "Mul";
+                    let a_expr =
+                        self.render_scalar_pos(a, &op_res_map, &op_t_idx_map, &mut available_idx);
+                    let b_expr =
+                        self.render_scalar_pos(b, &op_res_map, &op_t_idx_map, &mut available_idx);
+                    let t_idx = alloc_idx(&mut available_idx, &mut self.max_idx);
+                    op_t_idx_map.insert(i, t_idx);
                     self.statements.push(format!(
-                        "t{} := halo2Api.api.Mul({}, {})",
-                        i,
-                        self.render_scalar_pos(a),
-                        self.render_scalar_pos(b)
+                        "t[{}]= halo2Api.api.{}({}, {})",
+                        t_idx, OP, a_expr, b_expr
                     ));
+                    op_res_map.insert(i, format!("t[{}]", t_idx));
                 }
                 EvalOps::ScalarAdd(a, b) => {
+                    const OP: &str = "Add";
+                    let a_expr =
+                        self.render_scalar_pos(a, &op_res_map, &op_t_idx_map, &mut available_idx);
+                    let b_expr =
+                        self.render_scalar_pos(b, &op_res_map, &op_t_idx_map, &mut available_idx);
+                    let t_idx = alloc_idx(&mut available_idx, &mut self.max_idx);
+                    op_t_idx_map.insert(i, t_idx);
                     self.statements.push(format!(
-                        "t{} := halo2Api.api.Add({}, {})",
-                        i,
-                        self.render_scalar_pos(a),
-                        self.render_scalar_pos(b)
+                        "t[{}]= halo2Api.api.{}({}, {})",
+                        t_idx, OP, a_expr, b_expr
                     ));
+                    op_res_map.insert(i, format!("t[{}]", t_idx));
                 }
                 EvalOps::ScalarSub(a, b) => {
+                    const OP: &str = "Sub";
+                    let a_expr =
+                        self.render_scalar_pos(a, &op_res_map, &op_t_idx_map, &mut available_idx);
+                    let b_expr =
+                        self.render_scalar_pos(b, &op_res_map, &op_t_idx_map, &mut available_idx);
+                    let t_idx = alloc_idx(&mut available_idx, &mut self.max_idx);
+                    op_t_idx_map.insert(i, t_idx);
                     self.statements.push(format!(
-                        "t{} := halo2Api.api.Sub({}, {})",
-                        i,
-                        self.render_scalar_pos(a),
-                        self.render_scalar_pos(b)
+                        "t[{}]= halo2Api.api.{}({}, {})",
+                        t_idx, OP, a_expr, b_expr
                     ));
+                    op_res_map.insert(i, format!("t[{}]", t_idx));
                 }
                 EvalOps::ScalarDiv(a, b) => {
+                    const OP: &str = "Div";
+                    let a_expr =
+                        self.render_scalar_pos(a, &op_res_map, &op_t_idx_map, &mut available_idx);
+                    let b_expr =
+                        self.render_scalar_pos(b, &op_res_map, &op_t_idx_map, &mut available_idx);
+                    let t_idx = alloc_idx(&mut available_idx, &mut self.max_idx);
+                    op_t_idx_map.insert(i, t_idx);
                     self.statements.push(format!(
-                        "t{} := halo2Api.api.Div({}, {})",
-                        i,
-                        self.render_scalar_pos(a),
-                        self.render_scalar_pos(b)
+                        "t[{}]= halo2Api.api.{}({}, {})",
+                        t_idx, OP, a_expr, b_expr
                     ));
+                    op_res_map.insert(i, format!("t[{}]", t_idx));
                 }
                 EvalOps::ScalarPow(a, n) => {
+                    let a_expr =
+                        self.render_scalar_pos(a, &op_res_map, &op_t_idx_map, &mut available_idx);
+                    let t_idx = alloc_idx(&mut available_idx, &mut self.max_idx);
+                    op_t_idx_map.insert(i, t_idx);
                     self.statements.push(format!(
-                        "t{} := ScalarPow(halo2Api.api, {}, {})",
-                        i,
-                        self.render_scalar_pos(a),
-                        *n
+                        "t[{}] = ScalarPow(halo2Api.api, {}, {})",
+                        t_idx, a_expr, *n
                     ));
+                    op_res_map.insert(i, format!("t[{}]", t_idx));
                 }
                 EvalOps::MSMSlice((p, s), last, group) => {
+                    let s_expr =
+                        self.render_scalar_pos(s, &op_res_map, &op_t_idx_map, &mut available_idx);
+                    let p_expr = self.render_point_pos(p, &op_res_map);
                     if let Some(_) = last {
                         self.statements.push(format!(
                             "p{} = halo2Api.bn254Api.BN254ScalarMulAndAddG1({}, {}, p{})",
-                            *group,
-                            self.render_point_pos(p),
-                            self.render_scalar_pos(s),
-                            *group
+                            *group, p_expr, s_expr, *group
                         ));
                     } else {
                         self.statements.push(format!(
                             "p{} := halo2Api.bn254Api.BN254ScalarMul({}, {})",
-                            *group,
-                            self.render_point_pos(p),
-                            self.render_scalar_pos(s)
+                            *group, p_expr, s_expr,
                         ));
                     }
                 }
@@ -296,6 +404,7 @@ pub fn gnark_codegen_with_proof<E: MultiMillerLoop, D: Digest + Clone>(
     let mut statements_pre = vec![
         format!("x := big.NewInt(0)"),
         format!("y := big.NewInt(0)"),
+        format!("t := make([]frontend.Variable, {})", ctx.max_idx),
         format!(
             "const_scalars := make([]frontend.Variable, {})",
             ctx.c.const_scalars.len()
@@ -325,7 +434,7 @@ pub fn gnark_codegen_with_proof<E: MultiMillerLoop, D: Digest + Clone>(
         ));
         statements_pre.push(format!(
             "y, _ = new(big.Int).SetString(\"{}\",10)",
-            field_to_bn(cp.coordinates().unwrap().x()).to_str_radix(10)
+            field_to_bn(cp.coordinates().unwrap().y()).to_str_radix(10)
         ));
         statements_pre.push(format!(
             "const_points[{}].X = emulated.ValueOf[emparams.BN254Fp](x)",

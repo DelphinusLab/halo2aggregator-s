@@ -43,6 +43,7 @@ func ScalarPow(api frontend.API, x frontend.Variable, n uint) frontend.Variable 
 			acc = api.Mul(acc, base)
 		}
 		base = api.Mul(base, base)
+		n >>= 1
 	}
 
 	return acc
