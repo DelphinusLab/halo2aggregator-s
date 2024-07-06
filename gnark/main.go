@@ -61,14 +61,14 @@ func main() {
 	for i := range proofData.Instance {
 		defalutInstance[i] = make([]frontend.Variable, len(proofData.Instance[i]))
 	}
-	aggCircuit := Halo2VerifierCircuit{
+	halo2VerifierCircuit := Halo2VerifierCircuit{
 		config:     config,
 		Instance:   defalutInstance,
 		Transcript: make([]frontend.Variable, len(proofData.Transcript)),
 	}
 
 	log.Println("[Start] Compile")
-	r1cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &aggCircuit)
+	r1cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &halo2VerifierCircuit)
 	if err != nil {
 		panic(err)
 	}
