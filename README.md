@@ -48,3 +48,26 @@ The solidity code generation depends on the `sol` folder. You can download it fr
 4. call `solidity_aux_gen()` to prepare aux input for solidity verify. It will prepare scalar division result used by the verification to reduce gas.
 
 See test `test_solidity_render` for sample.
+
+## Gnark Verifier
+See test_gnark_render as example.
+
+```
+cargo test test_gnark_render --release
+cd gnark
+go build && ./gnark-halo2-verify
+mkdir -p sol/contracts
+cp gnark_setup/contract_groth16.sol sol/contracts
+cd sol
+yarn
+yarn start
+```
+
+Spawn a terminal under folder `gnark/sol`
+```
+npx truffle test
+```
+
+Notice
+1. The instance of gnark circuit is the keccak hash of shadow instance, so compute it in your contract.
+2. The transcript hash of gnark circuit only supports sha256
