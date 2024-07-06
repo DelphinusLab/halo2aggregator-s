@@ -84,7 +84,6 @@ func (halo2Api *Halo2VerifierAPI) calcInstanceCommitment(instances []frontend.Va
 func (halo2Api *Halo2VerifierAPI) GetVerifyCircuitsG2Affine() []sw_bn254.G2Affine {
 	res := make([]sw_bn254.G2Affine, 2)
 
-	fmt.Println(halo2Api.config.VerifyCircuitG2Affine)
 	for i := 0; i < 2; i++ {
 		g := bn254.G2Affine{}
 		g.X.SetString(
@@ -95,7 +94,6 @@ func (halo2Api *Halo2VerifierAPI) GetVerifyCircuitsG2Affine() []sw_bn254.G2Affin
 			halo2Api.config.VerifyCircuitG2Affine[i][2],
 			halo2Api.config.VerifyCircuitG2Affine[i][3],
 		)
-		fmt.Println(g)
 		if !g.IsOnCurve() {
 			panic("invalid g2")
 		}
