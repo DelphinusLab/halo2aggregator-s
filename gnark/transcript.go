@@ -135,9 +135,5 @@ func (halo2Api *Halo2VerifierAPI) getChallengesShPlonkCircuit(
 		}
 	}
 
-	for i := range challenges {
-		halo2Api.api.Println(challenges[i])
-	}
-
 	return challenges, commitments, evals, nil
 }
