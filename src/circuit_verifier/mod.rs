@@ -7,6 +7,7 @@ use crate::circuit_verifier::circuit::AggregatorCircuit;
 use crate::circuit_verifier::circuit::AggregatorCircuitOption;
 use crate::circuit_verifier::circuit::AggregatorNoSelectCircuit;
 use crate::circuits::utils::instance_to_instance_commitment;
+use crate::circuits::utils::miller_loop_compute_c_wi;
 use crate::circuits::utils::AggregatorConfig;
 use crate::circuits::utils::TranscriptHash;
 use crate::transcript::poseidon::PoseidonRead;
@@ -27,6 +28,7 @@ use halo2ecc_s::circuit::ecc_chip::EccBaseIntegerChipWrapper;
 use halo2ecc_s::circuit::ecc_chip::EccChipBaseOps;
 use halo2ecc_s::circuit::ecc_chip::EccChipScalarOps;
 use halo2ecc_s::circuit::ecc_chip::UnsafeError;
+use halo2ecc_s::circuit::fq12::Fq12ChipOps;
 use halo2ecc_s::circuit::keccak_chip::KeccakChipOps;
 use halo2ecc_s::circuit::pairing_chip::PairingChipOps;
 use halo2ecc_s::context::Context;
@@ -233,7 +235,7 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
     ))
 }
 
-pub fn build_single_proof_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
+pub fn build_single_proof_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper + GtHelper>(
     params: &ParamsVerifier<E>,
     vkey: &VerifyingKey<E::G1Affine>,
     instances: &Vec<Vec<E::Scalar>>,
@@ -251,7 +253,7 @@ where
     build_aggregate_verify_circuit(params, &[vkey], vec![instances], vec![proof], config)
 }
 
-pub fn build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
+pub fn build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper + GtHelper>(
     params: &ParamsVerifier<E>,
     vkey: &[&VerifyingKey<E::G1Affine>],
     instances: Vec<&Vec<Vec<E::Scalar>>>,
@@ -293,13 +295,70 @@ impl G2AffineBaseHelper for Bn256 {
     }
 }
 
+pub trait GtHelper: MultiMillerLoop {
+    fn decode_gt(
+        b: Self::Gt,
+    ) -> (
+        (
+            (
+                <Self::G1Affine as CurveAffine>::Base,
+                <Self::G1Affine as CurveAffine>::Base,
+            ),
+            (
+                <Self::G1Affine as CurveAffine>::Base,
+                <Self::G1Affine as CurveAffine>::Base,
+            ),
+            (
+                <Self::G1Affine as CurveAffine>::Base,
+                <Self::G1Affine as CurveAffine>::Base,
+            ),
+        ),
+        (
+            (
+                <Self::G1Affine as CurveAffine>::Base,
+                <Self::G1Affine as CurveAffine>::Base,
+            ),
+            (
+                <Self::G1Affine as CurveAffine>::Base,
+                <Self::G1Affine as CurveAffine>::Base,
+            ),
+            (
+                <Self::G1Affine as CurveAffine>::Base,
+                <Self::G1Affine as CurveAffine>::Base,
+            ),
+        ),
+    );
+}
+
+impl GtHelper for Bn256 {
+    fn decode_gt(
+        a: Self::Gt,
+    ) -> (
+        ((Fq, Fq), (Fq, Fq), (Fq, Fq)),
+        ((Fq, Fq), (Fq, Fq), (Fq, Fq)),
+    ) {
+        (
+            (
+                (a.0.c0.c0.c0, a.0.c0.c0.c1),
+                (a.0.c0.c1.c0, a.0.c0.c1.c1),
+                (a.0.c0.c2.c0, a.0.c0.c2.c1),
+            ),
+            (
+                (a.0.c1.c0.c0, a.0.c1.c0.c1),
+                (a.0.c1.c1.c0, a.0.c1.c1.c1),
+                (a.0.c1.c2.c0, a.0.c1.c2.c1),
+            ),
+        )
+    }
+}
+
 /* expose: expose target circuits' commitments to current aggregator circuits' instance
  * absorb: absorb target circuits' commitments to target aggregator circuits' instance
  * target_aggregator_constant_hash_instance: instance_offset of target_aggregator for constant_hash
  * prev_constant_hash: all previous constant_hash (hash of all circuits' constant values) of aggregators layer
  * layer_idx: current aggregator's layer index
  */
-pub fn _build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper>(
+pub fn _build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper + GtHelper>(
     params: &ParamsVerifier<E>,
     vkey: &[&VerifyingKey<E::G1Affine>],
     instances: Vec<&Vec<Vec<E::Scalar>>>,
@@ -501,7 +560,7 @@ where
     }
 
     // Check pairing result for debug purpose.
-    {
+    let (c, wi) = {
         // Assert because circuit does it in multi_miller_loop()
         assert!(pl[0].z.0.val == E::Scalar::zero());
         assert!(pl[1].z.0.val == E::Scalar::zero());
@@ -519,14 +578,21 @@ where
 
         let s_g2_prepared = E::G2Prepared::from(params.s_g2);
         let n_g2_prepared = E::G2Prepared::from(-params.g2);
+        let f = E::multi_miller_loop(&[(&w_x, &s_g2_prepared), (&w_g, &n_g2_prepared)]);
+        //verify pairing with final exponent
+        let success = bool::from(f.final_exponentiation().is_identity());
+        assert!(success);
+
+        //TODO add Config for bn256 only for this c_wi scheme
+        //verify pairing with c and wi scheme
+        let (c, wi) = miller_loop_compute_c_wi::<E>(f);
         let success = bool::from(
-            E::multi_miller_loop(&[(&w_x, &s_g2_prepared), (&w_g, &n_g2_prepared)])
-                .final_exponentiation()
+            E::multi_miller_loop_c_wi(&c, &wi, &[(&w_x, &s_g2_prepared), (&w_g, &n_g2_prepared)])
                 .is_identity(),
         );
-
         assert!(success);
-    }
+        (c, wi)
+    };
 
     // Do pairing in circuit.
     {
@@ -554,7 +620,13 @@ where
 
         let assigned_s_g2 = AssignedG2Affine::new(assigned_s_g2_x, assigned_s_g2_y, z);
         let assigned_g2 = AssignedG2Affine::new(assigned_g2_x, assigned_g2_y, z);
-        ctx.check_pairing(&[(&pl[0], &assigned_s_g2), (&pl[1], &assigned_g2)]);
+        let c_assigned = ctx.fq12_assign_value(E::decode_gt(c));
+        let wi_assigned = ctx.fq12_assign_value(E::decode_gt(wi));
+        ctx.check_pairing_c_wi(
+            &c_assigned,
+            &wi_assigned,
+            &[(&pl[0], &assigned_s_g2), (&pl[1], &assigned_g2)],
+        );
     }
 
     let (assigned_instances, instances, shadow_instances) = if !config.is_final_aggregator {
