@@ -2,6 +2,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -9,9 +10,10 @@ import (
 	"os"
 
 	"github.com/consensys/gnark-crypto/ecc"
-	"github.com/consensys/gnark/backend/groth16"
+	"github.com/consensys/gnark/backend"
+	"github.com/consensys/gnark/backend/solidity"
 	"github.com/consensys/gnark/frontend"
-	"github.com/consensys/gnark/frontend/cs/r1cs"
+	gnarkio "github.com/consensys/gnark/io"
 )
 
 func loadProofData() (Halo2VerifierProofData, error) {
@@ -67,93 +69,53 @@ func main() {
 		Transcript: make([]frontend.Variable, len(proofData.Transcript)),
 	}
 
+	var (
+		backendID       = backend.GROTH16
+		curveID         = ecc.BN254
+		concreteBackend Backend
+	)
+
+	// 1. compile
 	log.Println("[Start] Compile")
-	r1cs, err := frontend.Compile(ecc.BN254.ScalarField(), r1cs.NewBuilder, &halo2VerifierCircuit)
+	ccs, err := Compile(&halo2VerifierCircuit, curveID, backendID, []frontend.CompileOption{frontend.IgnoreUnconstrainedInputs()})
 	if err != nil {
 		panic(err)
 	}
 	log.Println("[End] Compile")
 
-	// 1. Setup
-	if _, err := os.Stat("gnark_setup"); os.IsNotExist(err) {
-		os.Mkdir("gnark_setup", os.ModePerm)
+	switch backendID {
+	case backend.GROTH16:
+		concreteBackend = GrothBackend
+	case backend.PLONK:
+		concreteBackend = PlonkBackend
+	default:
+		panic("backend not implemented")
 	}
 
-	var pk groth16.ProvingKey
-	var vk groth16.VerifyingKey
+	// 2. setup
+	pk, vk, err := concreteBackend.Setup(ccs, curveID)
+	if err != nil {
+		panic(err)
+	}
 
-	if _, err := os.Stat("gnark_setup/groth16_pk"); os.IsNotExist(err) {
-		log.Println("[Start] setup")
-
-		pk, vk, err = groth16.Setup(r1cs)
-		if err != nil {
-			panic(err)
-		}
-
-		fpk, err := os.Create("gnark_setup/groth16_pk")
-		if err != nil {
-			log.Fatalln(err)
-		}
-		_, err = pk.WriteRawTo(fpk)
-		if err != nil {
-			log.Fatalln(err)
-		}
-
-		fvk, err := os.Create("gnark_setup/groth16_vk")
-		if err != nil {
-			log.Fatalln(err)
-		}
-		_, err = vk.WriteRawTo(fvk)
-		if err != nil {
-			log.Fatalln(err)
-		}
-
-		// Generate solidity code on setup
-		f, err := os.Create("gnark_setup/contract_groth16.sol")
-		if err != nil {
-			log.Fatalln(err)
-		}
-		err = vk.ExportSolidity(f)
-		if err != nil {
-			log.Fatalln(err)
-		}
-
-		log.Println("[End] setup")
-	} else {
-		log.Println("[Start] load pk vk")
-
-		fpk, err := os.Open("gnark_setup/groth16_pk")
-		if err != nil {
-			log.Fatalln(err)
-		}
-		pk = groth16.NewProvingKey(ecc.BN254)
-		_, err = pk.ReadFrom(fpk)
-		if err != nil {
-			log.Fatalln(err)
-		}
-		fvk, err := os.Open("gnark_setup/groth16_vk")
-		if err != nil {
-			log.Fatalln(err)
-		}
-		vk = groth16.NewVerifyingKey(ecc.BN254)
-		_, err = vk.ReadFrom(fvk)
-		if err != nil {
-			log.Fatalln(err)
-		}
-
-		log.Println("[End] load pk vk")
+	var proverOpts []backend.ProverOption
+	var verifierOpts []backend.VerifierOption
+	if backendID == backend.GROTH16 {
+		// additionally, we use sha256 as hash to field (fixed in Solidity contract)
+		proverOpts = append(proverOpts, backend.WithProverHashToFieldFunction(sha256.New()))
+		verifierOpts = append(verifierOpts, backend.WithVerifierHashToFieldFunction(sha256.New()))
 	}
 
 	succeed := true
 
-	// 2a. Fill witness and instance
+	// 3a. Fill witness and instance
 	instance := make([][]frontend.Variable, len(proofData.Instance))
 	for i := range proofData.Instance {
 		instance[i] = make([]frontend.Variable, len(proofData.Instance[i]))
 		for j := range proofData.Instance[i] {
 			instance[i][j], succeed = big.NewInt(0).SetString(proofData.Instance[i][j], 10)
 			if !succeed {
-				fmt.Errorf("invalid instance", proofData.Instance[i][j])
+				_ = fmt.Errorf("invalid instance", proofData.Instance[i][j])
 			}
 		}
 	}
@@ -161,7 +123,7 @@ func main() {
 	for i := range proofData.Transcript {
 		transcript[i], succeed = big.NewInt(0).SetString(proofData.Transcript[i], 10)
 		if !succeed {
-			fmt.Errorf("invalid transcript", proofData.Transcript[i])
+			_ = fmt.Errorf("invalid transcript", proofData.Transcript[i])
 		}
 	}
 
@@ -171,18 +133,18 @@ func main() {
 		Instance:   instance,
 	}
 
-	// 2b. Generate r1cs witness
-	witness, err := frontend.NewWitness(&witnessCircuit, ecc.BN254.ScalarField())
+	// 3b. Generate witness
+	witness, err := frontend.NewWitness(&witnessCircuit, curveID.ScalarField())
 	if err != nil {
-		panic(err)
+		log.Fatalln(err)
 	}
 
-	// 3. Generate Proof
+	// 4. Generate Proof
 	log.Println("[Start] prove")
 
-	proof, err := groth16.Prove(r1cs, pk, witness)
+	proof, err := concreteBackend.Prove(ccs, pk, witness, proverOpts...)
 	if err != nil {
-		panic(err)
+		log.Fatalln(err)
 	}
 	proofJSON, _ := json.MarshalIndent(proof, "", "    ")
 	_ = os.WriteFile("gnark_proof.json", proofJSON, 0644)
@@ -190,14 +152,14 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	_, err = proof.WriteRawTo(fProof)
+	_, err = proof.(gnarkio.WriterRawTo).WriteRawTo(fProof)
 	if err != nil {
 		log.Fatalln(err)
 	}
 
 	log.Println("[End] proof")
 
-	// 4. Verify proof
+	// 5. Verify Proof
 	log.Println("[Start] verify")
 
 	publicWitness, err := witness.Public()
@@ -219,10 +181,12 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	err = groth16.Verify(proof, vk, publicWitness)
+	err = concreteBackend.Verify(proof, vk, publicWitness, verifierOpts...)
 	if err != nil {
 		panic(err)
 	}
 
 	log.Println("[End] verify")
+
+	SolidityVerification(backendID, vk.(solidity.VerifyingKey), proof, publicWitness, nil)
 }

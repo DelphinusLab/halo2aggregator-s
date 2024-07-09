@@ -6,7 +6,7 @@ toolchain go1.21.0
 
 require (
 	github.com/consensys/gnark v0.10.0
-	github.com/consensys/gnark-crypto v0.12.2-0.20240215234832-d72fcb379d3e
+	github.com/consensys/gnark-crypto v0.12.2-0.20240703135258-5d8b5fab1afb
 	github.com/ethereum/go-ethereum v1.14.5
 	golang.org/x/crypto v0.22.0
 )
@@ -36,3 +36,5 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
+
+replace github.com/consensys/gnark => github.com/consensys/gnark v0.10.1-0.20240703142413-d94368b154d7
