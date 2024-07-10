@@ -85,10 +85,10 @@ func (halo2Api *Halo2VerifierAPI) getChallengesShPlonkCircuit(
 	instanceCommitments []*sw_emulated.AffinePoint[emparams.BN254Fp],
 	transcript []U256,
 ) ([]frontend.Variable, []*sw_emulated.AffinePoint[emparams.BN254Fp], []frontend.Variable, error) {
-	absorbing := []uints.U8{}
-	challenges := []frontend.Variable{}
-	commitments := []*sw_emulated.AffinePoint[emparams.BN254Fp]{}
-	evals := []frontend.Variable{}
+	var absorbing []uints.U8
+	var challenges []frontend.Variable
+	var commitments []*sw_emulated.AffinePoint[emparams.BN254Fp]
+	var evals []frontend.Variable
 
 	challengeInitScalar, succeed := new(big.Int).SetString(halo2Api.config.ChallengeInitScalar, 10)
 	if !succeed {
