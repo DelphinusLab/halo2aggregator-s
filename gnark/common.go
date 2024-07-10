@@ -13,6 +13,7 @@ import (
 
 	"github.com/consensys/gnark-crypto/ecc"
 	fr_bn254 "github.com/consensys/gnark-crypto/ecc/bn254/fr"
+	bn254kzg "github.com/consensys/gnark-crypto/ecc/bn254/kzg"
 	"github.com/consensys/gnark-crypto/kzg"
 	"github.com/consensys/gnark/backend"
 	"github.com/consensys/gnark/backend/groth16"
@@ -50,9 +51,13 @@ func GeneratePkVk(cs constraint.ConstraintSystem, prover backend.ID) (any, any) 
 			log.Fatalln(err)
 		}
 	case backend.PLONK:
-		var srs, srsLagrange kzg.SRS
+		var (
+			srs         kzg.SRS = new(bn254kzg.SRS)
+			srsLagrange kzg.SRS = new(bn254kzg.SRS)
+		)
+		var err error
 		if _, err := os.Stat(PlonkSrsName); errors.Is(err, os.ErrNotExist) {
-			srs, srsLagrange, err := unsafekzg.NewSRS(cs)
+			srs, srsLagrange, err = unsafekzg.NewSRS(cs)
 			if err != nil {
 				panic(err)
 			}
@@ -143,8 +148,8 @@ func ReadPkVk(id backend.ID, curveID ecc.ID) (any, any) {
 		pk = groth16.NewProvingKey(curveID)
 		vk = groth16.NewVerifyingKey(curveID)
 	case backend.PLONK:
-		pkPath = Groth16PkPath
-		vkPath = Groth16VkPath
+		pkPath = PlonkPkPath
+		vkPath = PlonkVkPath
 		pk = plonk.NewProvingKey(curveID)
 		vk = plonk.NewVerifyingKey(curveID)
 	default:
@@ -239,7 +244,7 @@ var (
 					panic(err)
 				}
 			}
-			pk, vk := GeneratePkVk(ccs, backend.GROTH16)
+			pk, vk := GeneratePkVk(ccs, backend.PLONK)
 			return pk, vk, nil
 		},
 		Prove: func(ccs constraint.ConstraintSystem, pk any, fullWitness witness.Witness, opts ...backend.ProverOption) (proof any, err error) {

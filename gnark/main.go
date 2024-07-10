@@ -70,7 +70,7 @@ func main() {
 	}
 
 	var (
-		backendID       = backend.GROTH16
+		backendID       = backend.PLONK
 		curveID         = ecc.BN254
 		concreteBackend Backend
 	)
@@ -93,10 +93,12 @@ func main() {
 	}
 
 	// 2. setup
+	log.Println("[Start] Setup")
 	pk, vk, err := concreteBackend.Setup(ccs, curveID)
 	if err != nil {
 		panic(err)
 	}
+	log.Println("[End] Setup")
 
 	var proverOpts []backend.ProverOption
 	var verifierOpts []backend.VerifierOption
