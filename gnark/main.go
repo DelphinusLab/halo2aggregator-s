@@ -4,6 +4,7 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"math/big"
@@ -49,6 +50,24 @@ func loadHalo2VerifierConfig() (Halo2VerifierConfig, error) {
 }
 
 func main() {
+	var backendIDString, curveIDString string
+	var isSetup bool
+
+	flag.StringVar(&backendIDString, "backendID", "GROTH16", "Specify the backend ID (e.g., PLONK, GROTH16)")
+	flag.StringVar(&curveIDString, "curveID", "BN254", "Specify the curve ID (e.g., BN254, BLS12_381)")
+	flag.BoolVar(&isSetup, "setup", true, "Whether to setup to generate pk,vk")
+	flag.Parse()
+
+	backendID, err := parseBackendID(backendIDString)
+	if err != nil {
+		log.Fatalf("Invalid backendID: %v", err)
+	}
+
+	curveID, err := parseCurveID(curveIDString)
+	if err != nil {
+		log.Fatalf("Invalid curveID: %v", err)
+	}
+
 	proofData, err := loadProofData()
 	if err != nil {
 		panic(err)
@@ -70,8 +89,6 @@ func main() {
 	}
 
 	var (
-		backendID       = backend.PLONK
-		curveID         = ecc.BN254
 		concreteBackend Backend
 	)
 
@@ -94,7 +111,7 @@ func main() {
 
 	// 2. setup
 	log.Println("[Start] Setup")
-	pk, vk, err := concreteBackend.Setup(ccs, curveID)
+	pk, vk, err := concreteBackend.Setup(ccs, curveID, isSetup)
 	if err != nil {
 		panic(err)
 	}
@@ -191,4 +208,26 @@ func main() {
 	log.Println("[End] verify")
 
 	SolidityVerification(backendID, vk.(solidity.VerifyingKey), proof, publicWitness, nil)
+}
+
+func parseBackendID(backendIDString string) (backend.ID, error) {
+	switch backendIDString {
+	case "PLONK":
+		return backend.PLONK, nil
+	case "GROTH16":
+		return backend.GROTH16, nil
+	default:
+		return 0, fmt.Errorf("unsupported backend ID: %s", backendIDString)
+	}
+}
+
+func parseCurveID(curveIDString string) (ecc.ID, error) {
+	switch curveIDString {
+	case "BN254":
+		return ecc.BN254, nil
+	case "BLS12_381":
+		return ecc.BLS12_381, nil
+	default:
+		return 0, fmt.Errorf("unsupported curve ID: %s", curveIDString)
+	}
 }

@@ -207,7 +207,7 @@ func Compile(circuit frontend.Circuit, curveID ecc.ID, backendID backend.ID, com
 	return ccs, nil
 }
 
-type fnSetup func(ccs constraint.ConstraintSystem, curve ecc.ID) (any, any, error)
+type fnSetup func(ccs constraint.ConstraintSystem, curve ecc.ID, isSetup bool) (any, any, error)
 type fnProve func(ccs constraint.ConstraintSystem, pk any, fullWitness witness.Witness, opts ...backend.ProverOption) (proof any, err error)
 type fnVerify func(proof, vk any, publicWitness witness.Witness, opts ...backend.VerifierOption) error
 
@@ -220,13 +220,18 @@ type Backend struct {
 
 var (
 	GrothBackend = Backend{
-		Setup: func(ccs constraint.ConstraintSystem, curve ecc.ID) (any, any, error) {
+		Setup: func(ccs constraint.ConstraintSystem, curve ecc.ID, isSetup bool) (any, any, error) {
+			var pk, vk any
 			if _, err := os.Stat("gnark_setup"); os.IsNotExist(err) {
 				if err := os.Mkdir("gnark_setup", os.ModePerm); err != nil {
 					panic(err)
 				}
 			}
-			pk, vk := GeneratePkVk(ccs, backend.GROTH16)
+			if isSetup {
+				pk, vk = GeneratePkVk(ccs, backend.GROTH16)
+			} else {
+				pk, vk = ReadPkVk(backend.GROTH16, curve)
+			}
 			return pk, vk, nil
 		},
 		Prove: func(ccs constraint.ConstraintSystem, pk any, fullWitness witness.Witness, opts ...backend.ProverOption) (proof any, err error) {
@@ -238,13 +243,18 @@ var (
 	}
 
 	PlonkBackend = Backend{
-		Setup: func(ccs constraint.ConstraintSystem, curve ecc.ID) (any, any, error) {
+		Setup: func(ccs constraint.ConstraintSystem, curve ecc.ID, isSetup bool) (any, any, error) {
+			var pk, vk any
 			if _, err := os.Stat("gnark_setup"); os.IsNotExist(err) {
 				if err := os.Mkdir("gnark_setup", os.ModePerm); err != nil {
 					panic(err)
 				}
 			}
-			pk, vk := GeneratePkVk(ccs, backend.PLONK)
+			if isSetup {
+				pk, vk = GeneratePkVk(ccs, backend.PLONK)
+			} else {
+				pk, vk = ReadPkVk(backend.PLONK, curve)
+			}
 			return pk, vk, nil
 		},
 		Prove: func(ccs constraint.ConstraintSystem, pk any, fullWitness witness.Witness, opts ...backend.ProverOption) (proof any, err error) {
