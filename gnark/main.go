@@ -94,7 +94,7 @@ func main() {
 
 	// 1. compile
 	log.Println("[Start] Compile")
-	ccs, err := Compile(&halo2VerifierCircuit, curveID, backendID, []frontend.CompileOption{frontend.IgnoreUnconstrainedInputs()})
+	ccs, err := Compile(&halo2VerifierCircuit, curveID, backendID, []frontend.CompileOption{})
 	if err != nil {
 		panic(err)
 	}
