@@ -678,7 +678,7 @@ dependencies = [
 [[package]]
 name = "halo2ecc-s"
 version = "0.3.2"
-source = "git+https://github.com/DelphinusLab/halo2ecc-s.git?branch=moore/miller_loop_c_wi#11b81c8e99886739c2bc1c56271fa5335bb5486b"
+source = "git+https://github.com/DelphinusLab/halo2ecc-s.git?branch=moore/miller_loop_c_wi#5195fb30e3fef13783d6d94a464d68839caa5240"
 dependencies = [
  "ark-std",
  "halo2_proofs",
@@ -981,7 +981,7 @@ dependencies = [
 [[package]]
 name = "pairing_bn256"
 version = "0.1.1"
-source = "git+https://github.com/mooreland/pairing?branch=paring_with_c_wi#f73c0848f0b304145f337e4cd7b90c3c541c6823"
+source = "git+https://github.com/mooreland/pairing?branch=paring_with_c_wi#b790d9c88e3049e88d2f0d136feaf35d41e2d47b"
 dependencies = [
  "bls12_381",
  "ec-gpu",

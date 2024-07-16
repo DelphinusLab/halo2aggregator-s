@@ -15,6 +15,7 @@ use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::Field;
 use halo2_proofs::arithmetic::MillerLoopResult;
 use halo2_proofs::arithmetic::MultiMillerLoop;
+use halo2_proofs::arithmetic::MultiMillerLoopOnProvePairing;
 use halo2_proofs::pairing::bn256::Bn256;
 use halo2_proofs::pairing::bn256::Fq;
 use halo2_proofs::pairing::bn256::Fq2;
@@ -30,6 +31,7 @@ use halo2ecc_s::circuit::ecc_chip::EccChipScalarOps;
 use halo2ecc_s::circuit::ecc_chip::UnsafeError;
 use halo2ecc_s::circuit::fq12::Fq12ChipOps;
 use halo2ecc_s::circuit::keccak_chip::KeccakChipOps;
+use halo2ecc_s::circuit::pairing_chip::PairingChipOnProvePairingOps;
 use halo2ecc_s::circuit::pairing_chip::PairingChipOps;
 use halo2ecc_s::context::Context;
 use halo2ecc_s::context::IntegerContext;
@@ -235,7 +237,9 @@ fn context_eval<E: MultiMillerLoop, R: io::Read>(
     ))
 }
 
-pub fn build_single_proof_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper + GtHelper>(
+pub fn build_single_proof_verify_circuit<
+    E: MultiMillerLoop + G2AffineBaseHelper + GtHelper + MultiMillerLoopOnProvePairing,
+>(
     params: &ParamsVerifier<E>,
     vkey: &VerifyingKey<E::G1Affine>,
     instances: &Vec<Vec<E::Scalar>>,
@@ -248,12 +252,14 @@ pub fn build_single_proof_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper
     E::Scalar,
 )
 where
-    NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
+    NativeScalarEccContext<E::G1Affine>: PairingChipOnProvePairingOps<E::G1Affine, E::Scalar>,
 {
     build_aggregate_verify_circuit(params, &[vkey], vec![instances], vec![proof], config)
 }
 
-pub fn build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper + GtHelper>(
+pub fn build_aggregate_verify_circuit<
+    E: MultiMillerLoop + G2AffineBaseHelper + GtHelper + MultiMillerLoopOnProvePairing,
+>(
     params: &ParamsVerifier<E>,
     vkey: &[&VerifyingKey<E::G1Affine>],
     instances: Vec<&Vec<Vec<E::Scalar>>>,
@@ -266,7 +272,7 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper + 
     E::Scalar,
 )
 where
-    NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
+    NativeScalarEccContext<E::G1Affine>: PairingChipOnProvePairingOps<E::G1Affine, E::Scalar>,
 {
     let mut rest_tries = 100;
     let mut res = None;
@@ -358,7 +364,9 @@ impl GtHelper for Bn256 {
  * prev_constant_hash: all previous constant_hash (hash of all circuits' constant values) of aggregators layer
  * layer_idx: current aggregator's layer index
  */
-pub fn _build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper + GtHelper>(
+pub fn _build_aggregate_verify_circuit<
+    E: MultiMillerLoop + G2AffineBaseHelper + GtHelper + MultiMillerLoopOnProvePairing,
+>(
     params: &ParamsVerifier<E>,
     vkey: &[&VerifyingKey<E::G1Affine>],
     instances: Vec<&Vec<Vec<E::Scalar>>>,
@@ -374,7 +382,7 @@ pub fn _build_aggregate_verify_circuit<E: MultiMillerLoop + G2AffineBaseHelper +
     UnsafeError,
 >
 where
-    NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
+    NativeScalarEccContext<E::G1Affine>: PairingChipOnProvePairingOps<E::G1Affine, E::Scalar>,
 {
     let ctx = Rc::new(RefCell::new(Context::new()));
     let ctx = IntegerContext::<<E::G1Affine as CurveAffine>::Base, E::Scalar>::new(ctx);
@@ -560,7 +568,7 @@ where
     }
 
     // Check pairing result for debug purpose.
-    let (c, wi) = {
+    let pairing_c_wi = {
         // Assert because circuit does it in multi_miller_loop()
         assert!(pl[0].z.0.val == E::Scalar::zero());
         assert!(pl[1].z.0.val == E::Scalar::zero());
@@ -583,15 +591,22 @@ where
         let success = bool::from(f.final_exponentiation().is_identity());
         assert!(success);
 
-        //TODO add Config for bn256 only for this c_wi scheme
-        //verify pairing with c and wi scheme
-        let (c, wi) = miller_loop_compute_c_wi::<E>(f);
-        let success = bool::from(
-            E::multi_miller_loop_c_wi(&c, &wi, &[(&w_x, &s_g2_prepared), (&w_g, &n_g2_prepared)])
+        if E::support_on_prove_pairing() {
+            //verify pairing with c and wi scheme
+            let (c, wi) = miller_loop_compute_c_wi::<E>(f);
+            let success = bool::from(
+                E::multi_miller_loop_c_wi(
+                    &c,
+                    &wi,
+                    &[(&w_x, &s_g2_prepared), (&w_g, &n_g2_prepared)],
+                )
                 .is_identity(),
-        );
-        assert!(success);
-        (c, wi)
+            );
+            assert!(success);
+            Some((c, wi))
+        } else {
+            None
+        }
     };
 
     // Do pairing in circuit.
@@ -620,13 +635,17 @@ where
 
         let assigned_s_g2 = AssignedG2Affine::new(assigned_s_g2_x, assigned_s_g2_y, z);
         let assigned_g2 = AssignedG2Affine::new(assigned_g2_x, assigned_g2_y, z);
-        let c_assigned = ctx.fq12_assign_value(E::decode_gt(c));
-        let wi_assigned = ctx.fq12_assign_value(E::decode_gt(wi));
-        ctx.check_pairing_c_wi(
-            &c_assigned,
-            &wi_assigned,
-            &[(&pl[0], &assigned_s_g2), (&pl[1], &assigned_g2)],
-        );
+        if let Some((c, wi)) = pairing_c_wi {
+            let c_assigned = ctx.fq12_assign_value(E::decode_gt(c));
+            let wi_assigned = ctx.fq12_assign_value(E::decode_gt(wi));
+            ctx.check_pairing_c_wi(
+                &c_assigned,
+                &wi_assigned,
+                &[(&pl[0], &assigned_s_g2), (&pl[1], &assigned_g2)],
+            );
+        } else {
+            ctx.check_pairing(&[(&pl[0], &assigned_s_g2), (&pl[1], &assigned_g2)]);
+        }
     }
 
     let (assigned_instances, instances, shadow_instances) = if !config.is_final_aggregator {

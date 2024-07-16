@@ -16,6 +16,7 @@ use halo2_proofs::arithmetic::BaseExt;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::arithmetic::MultiMillerLoop;
+use halo2_proofs::arithmetic::MultiMillerLoopOnProvePairing;
 use halo2_proofs::pairing::group::Curve;
 use halo2_proofs::plonk::create_proof_ext;
 use halo2_proofs::plonk::keygen_pk;
@@ -29,7 +30,7 @@ use halo2_proofs::poly::commitment::ParamsVerifier;
 use halo2_proofs::transcript::Blake2bRead;
 use halo2_proofs::transcript::Blake2bWrite;
 use halo2_proofs::transcript::Transcript;
-use halo2ecc_s::circuit::pairing_chip::PairingChipOps;
+use halo2ecc_s::circuit::pairing_chip::PairingChipOnProvePairingOps;
 use halo2ecc_s::context::NativeScalarEccContext;
 use std::io::Read;
 use std::io::Write;
@@ -240,7 +241,7 @@ pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
 
 /* CARE: unsafe means that to review before used in real production */
 pub fn run_circuit_unsafe_full_pass_no_rec<
-    E: MultiMillerLoop + G2AffineBaseHelper + GtHelper,
+    E: MultiMillerLoop + G2AffineBaseHelper + GtHelper + MultiMillerLoopOnProvePairing,
     C: Circuit<E::Scalar>,
 >(
     cache_folder: &Path,
@@ -261,7 +262,7 @@ pub fn run_circuit_unsafe_full_pass_no_rec<
     E::Scalar,
 )>
 where
-    NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
+    NativeScalarEccContext<E::G1Affine>: PairingChipOnProvePairingOps<E::G1Affine, E::Scalar>,
 {
     run_circuit_unsafe_full_pass::<E, C>(
         cache_folder,
@@ -377,7 +378,7 @@ impl<F: FieldExt> AggregatorConfig<F> {
 /* CARE: unsafe means that to review before used in production */
 pub fn run_circuit_unsafe_full_pass<
     'a,
-    E: MultiMillerLoop + G2AffineBaseHelper + GtHelper,
+    E: MultiMillerLoop + G2AffineBaseHelper + GtHelper + MultiMillerLoopOnProvePairing,
     C: Circuit<E::Scalar>,
 >(
     cache_folder: &'a Path,
@@ -395,7 +396,7 @@ pub fn run_circuit_unsafe_full_pass<
     E::Scalar,
 )>
 where
-    NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
+    NativeScalarEccContext<E::G1Affine>: PairingChipOnProvePairingOps<E::G1Affine, E::Scalar>,
 {
     let hash = config.hash;
 
@@ -563,7 +564,7 @@ where
 
 /* CARE: unsafe means that to review before used in real production */
 pub fn run_circuit_with_agg_unsafe_full_pass<
-    E: MultiMillerLoop + G2AffineBaseHelper + GtHelper,
+    E: MultiMillerLoop + G2AffineBaseHelper + GtHelper + MultiMillerLoopOnProvePairing,
     C: Circuit<E::Scalar>,
 >(
     cache_folder: &Path,
@@ -583,7 +584,7 @@ pub fn run_circuit_with_agg_unsafe_full_pass<
     E::Scalar,
 )>
 where
-    NativeScalarEccContext<E::G1Affine>: PairingChipOps<E::G1Affine, E::Scalar>,
+    NativeScalarEccContext<E::G1Affine>: PairingChipOnProvePairingOps<E::G1Affine, E::Scalar>,
 {
     // 1. setup params
     let params =
@@ -670,8 +671,14 @@ use halo2_proofs::arithmetic::Field;
 use num_bigint::BigUint;
 use num_traits::Num;
 use num_traits::ToPrimitive;
-// use halo2_proofs::pairing::bn256::G2Affine;
 
+// refer https://github.com/BitVM/BitVM/blob/main/src/fflonk/compute_c_wi.rs
+// refer table 3 of https://eprint.iacr.org/2009/457.pdf
+// a: Fp12 which is cubic residue
+// c: random Fp12 which is cubic non-residue
+// s: satisfying p^12 - 1 = 3^s * t
+// t: satisfying p^12 - 1 = 3^s * t
+// k: k = (t + 1) // 3
 fn tonelli_shanks_cubic<E: MultiMillerLoop + G2AffineBaseHelper + GtHelper>(
     a: E::Gt,
     c: E::Gt,
@@ -679,18 +686,12 @@ fn tonelli_shanks_cubic<E: MultiMillerLoop + G2AffineBaseHelper + GtHelper>(
     t: BigUint,
     k: BigUint,
 ) -> E::Gt {
-    // let mut r = a.pow(t.to_u64_digits());
     let mut r = a.pow_vartime(t.to_u64_digits());
     let e = 3_u32.pow(s - 1);
     let exp = 3_u32.pow(s) * &t;
 
     // compute cubic root of (a^t)^-1, say h
-    let (mut h, cc, mut c) = (
-        E::Gt::one(),
-        // c.pow([e as u64]),
-        c.pow_vartime([e as u64]),
-        c.invert().unwrap(),
-    );
+    let (mut h, cc, mut c) = (E::Gt::one(), c.pow_vartime([e as u64]), c.invert().unwrap());
     for i in 1..(s as i32) {
         let delta = (s as i32) - i - 1;
         let d = if delta < 0 {
@@ -723,9 +724,12 @@ fn tonelli_shanks_cubic<E: MultiMillerLoop + G2AffineBaseHelper + GtHelper>(
 pub fn miller_loop_compute_c_wi<E: MultiMillerLoop + G2AffineBaseHelper + GtHelper>(
     f: E::Gt,
 ) -> (E::Gt, E::Gt) {
-    // let hex_str = <E::G1Affine as CurveAffine>::Base::MODULUS;
-    //TODO replace with Fq
-    let hex_str = "0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd47";
+    let hex_str = <<E::G1Affine as CurveAffine>::Base as BaseExt>::MODULUS;
+    //bn256 Fq
+    assert_eq!(
+        hex_str,
+        "0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd47"
+    );
     let hex_str = hex_str
         .strip_prefix("0x")
         .or_else(|| hex_str.strip_prefix("0X"))
@@ -817,6 +821,7 @@ pub fn miller_loop_compute_c_wi<E: MultiMillerLoop + G2AffineBaseHelper + GtHelp
 
 #[test]
 fn test_checkpairing_with_c_wi() {
+    use halo2_proofs::arithmetic::MillerLoopResult;
     use halo2_proofs::pairing::bn256;
     use halo2_proofs::pairing::bn256::Fq;
     use halo2_proofs::pairing::bn256::Fq12;
