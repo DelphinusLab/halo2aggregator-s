@@ -23,6 +23,7 @@ use halo2_proofs::pairing::group::prime::PrimeCurveAffine;
 use halo2_proofs::pairing::group::Group;
 use halo2_proofs::plonk::VerifyingKey;
 use halo2_proofs::poly::commitment::ParamsVerifier;
+use halo2ecc_s::assign::AssignedFq2;
 use halo2ecc_s::assign::AssignedPoint;
 use halo2ecc_s::assign::AssignedValue;
 use halo2ecc_s::circuit::ecc_chip::EccBaseIntegerChipWrapper;
@@ -592,18 +593,46 @@ where
         assert!(success);
 
         if E::support_on_prove_pairing() {
-            //verify pairing with c and wi scheme
-            let (c, wi) = miller_loop_compute_c_wi::<E>(f);
-            let success = bool::from(
-                E::multi_miller_loop_c_wi(
-                    &c,
-                    &wi,
-                    &[(&w_x, &s_g2_prepared), (&w_g, &n_g2_prepared)],
-                )
-                .is_identity(),
-            );
-            assert!(success);
-            Some((c, wi))
+            #[cfg(not(feature = "on_prove_pairing_affine"))]
+            {
+                //verify pairing with c and wi scheme
+                let (c, wi) = miller_loop_compute_c_wi::<E>(f);
+                let success = bool::from(
+                    E::multi_miller_loop_c_wi(
+                        &c,
+                        &wi,
+                        &[(&w_x, &s_g2_prepared), (&w_g, &n_g2_prepared)],
+                    )
+                    .is_identity(),
+                );
+                assert!(success);
+                Some((c, wi, None))
+            }
+            #[cfg(feature = "on_prove_pairing_affine")]
+            {
+                let s_g2_prepared = E::G2OnProvePrepared::from(params.s_g2);
+                let n_g2_prepared = E::G2OnProvePrepared::from(-params.g2);
+                let f = E::multi_miller_loop_on_prove_pairing_prepare(&[
+                    (&w_x, &s_g2_prepared),
+                    (&w_g, &n_g2_prepared),
+                ]);
+                //verify pairing with final exponent
+                let success = bool::from(f.final_exponentiation().is_identity());
+                assert!(success);
+
+                //verify pairing with c and wi scheme (equivalent to final exponent scheme)
+                let (c, wi) = miller_loop_compute_c_wi::<E>(f);
+                let success = bool::from(
+                    E::multi_miller_loop_on_prove_pairing(
+                        &c,
+                        &wi,
+                        &[(&w_x, &s_g2_prepared), (&w_g, &n_g2_prepared)],
+                    )
+                    .is_identity(),
+                );
+                assert!(success);
+                Some((c, wi, Some((s_g2_prepared, n_g2_prepared))))
+            }
         } else {
             None
         }
@@ -635,14 +664,53 @@ where
 
         let assigned_s_g2 = AssignedG2Affine::new(assigned_s_g2_x, assigned_s_g2_y, z);
         let assigned_g2 = AssignedG2Affine::new(assigned_g2_x, assigned_g2_y, z);
-        if let Some((c, wi)) = pairing_c_wi {
+        if let Some(v) = pairing_c_wi {
+            use halo2ecc_s::assign::AssignedG2OnProvePrepared;
+            let (c, wi, on_pairing_coeff) = v;
             let c_assigned = ctx.fq12_assign_value(E::decode_gt(c));
             let wi_assigned = ctx.fq12_assign_value(E::decode_gt(wi));
-            ctx.check_pairing_c_wi(
-                &c_assigned,
-                &wi_assigned,
-                &[(&pl[0], &assigned_s_g2), (&pl[1], &assigned_g2)],
-            );
+
+            // if support on_prove_pairing affine coordinate scheme,
+            // assign constant coeffs(slope,bias) in advance instead of calculating in circuit
+            if let Some((s_g2_prepared, n_g2_prepared)) = on_pairing_coeff {
+                let mut coeffs_s_g2: Vec<
+                    [AssignedFq2<<E::G1Affine as CurveAffine>::Base, E::Scalar>; 2],
+                > = vec![];
+                for v in E::get_g2_on_prove_prepared_coeffs(&s_g2_prepared).iter() {
+                    coeffs_s_g2.push([
+                        ctx.fq2_assign_constant((v.0 .0, v.0 .1)),
+                        ctx.fq2_assign_constant((v.1 .0, v.1 .1)),
+                    ]);
+                }
+                let mut coeffs_n_g2: Vec<
+                    [AssignedFq2<<E::G1Affine as CurveAffine>::Base, E::Scalar>; 2],
+                > = vec![];
+                for v in E::get_g2_on_prove_prepared_coeffs(&n_g2_prepared).iter() {
+                    coeffs_n_g2.push([
+                        ctx.fq2_assign_constant((v.0 .0, v.0 .1)),
+                        ctx.fq2_assign_constant((v.1 .0, v.1 .1)),
+                    ]);
+                }
+                let assigned_s_g2_prepared =
+                    AssignedG2OnProvePrepared::new(coeffs_s_g2, assigned_s_g2);
+                let assigned_n_g2_prepared =
+                    AssignedG2OnProvePrepared::new(coeffs_n_g2, assigned_g2);
+                ctx.check_pairing_on_prove_pairing(
+                    &c_assigned,
+                    &wi_assigned,
+                    &[
+                        (&pl[0], &assigned_s_g2_prepared),
+                        (&pl[1], &assigned_n_g2_prepared),
+                    ],
+                );
+            } else {
+                // only replace final exponent check
+                ctx.check_pairing_c_wi(
+                    &c_assigned,
+                    &wi_assigned,
+                    &[(&pl[0], &assigned_s_g2), (&pl[1], &assigned_g2)],
+                );
+            }
         } else {
             ctx.check_pairing(&[(&pl[0], &assigned_s_g2), (&pl[1], &assigned_g2)]);
         }
