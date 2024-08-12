@@ -721,6 +721,7 @@ fn tonelli_shanks_cubic<E: MultiMillerLoop + G2AffineBaseHelper + GtHelper>(
 }
 
 // refer from Algorithm 5 of "On Proving Pairings"(https://eprint.iacr.org/2024/640.pdf)
+// refer https://github.com/BitVM/BitVM/blob/main/src/fflonk/compute_c_wi.rs
 pub fn miller_loop_compute_c_wi<E: MultiMillerLoop + G2AffineBaseHelper + GtHelper>(
     f: E::Gt,
 ) -> (E::Gt, E::Gt) {
