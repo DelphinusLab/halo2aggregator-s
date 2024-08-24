@@ -3,3 +3,5 @@
 /sol/contracts/AggregatorConfig.sol
 sol/contracts/AggregatorVerifierStep*.sol
 /sol/node_modules
+.idea/
+gnark/.idea/
