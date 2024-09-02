@@ -42,7 +42,7 @@ impl<C: CurveAffine> EncodedChallenge<C> for PoseidonEncodedChallenge<C> {
 }
 
 pub struct PoseidonRead<R: io::Read, C: CurveAffine, E: EncodedChallenge<C>> {
-    state: Poseidon<C::ScalarExt, T, RATE>,
+    poseidon: PoseidonPure<C>,
     reader: R,
     _mark: PhantomData<E>,
 }
@@ -50,10 +50,22 @@ pub struct PoseidonRead<R: io::Read, C: CurveAffine, E: EncodedChallenge<C>> {
 impl<R: io::Read, C: CurveAffine, E: EncodedChallenge<C>> PoseidonRead<R, C, E> {
     pub fn init(reader: R) -> Self {
         Self {
-            state: Poseidon::new(R_F, R_P),
+            poseidon: PoseidonPure::default(),
             reader,
             _mark: PhantomData,
         }
+    }
+    pub fn init_with_poseidon(reader: R, mut poseidon: PoseidonPure<C>) -> Self {
+        poseidon.reset();
+        Self {
+            poseidon,
+            reader,
+            _mark: PhantomData,
+        }
+    }
+
+    pub fn get_poseidon_spec(&self) -> std::rc::Rc<poseidon::Spec<C::ScalarExt, T, RATE>> {
+        self.poseidon.get_spec()
     }
 }
 
@@ -61,40 +73,15 @@ impl<R: io::Read, C: CurveAffine> Transcript<C, PoseidonEncodedChallenge<C>>
     for PoseidonRead<R, C, PoseidonEncodedChallenge<C>>
 {
     fn squeeze_challenge(&mut self) -> PoseidonEncodedChallenge<C> {
-        self.state.update(&[C::ScalarExt::from(PREFIX_CHALLENGE)]);
-        PoseidonEncodedChallenge::new(&self.state.squeeze())
+        self.poseidon.squeeze_challenge()
     }
 
     fn common_point(&mut self, point: C) -> io::Result<()> {
-        self.state.update(&[C::ScalarExt::from(PREFIX_POINT)]);
-        let x_y: Option<_> = point.coordinates().map(|c| (*c.x(), *c.y())).into();
-        let (x, y) = x_y.unwrap_or((C::Base::zero(), C::Base::zero()));
-        let x_bn = field_to_bn(&x);
-        let y_bn = field_to_bn(&y);
-
-        let bits = RANGE_VALUE_DECOMPOSE * MAX_BITS;
-        let chunk_bits = bits * 2;
-
-        let chunk0 = &x_bn & ((BigUint::from(1u64) << chunk_bits) - 1u64);
-        let chunk1 =
-            (x_bn >> chunk_bits) + ((&y_bn & ((BigUint::from(1u64) << bits) - 1u64)) << bits);
-        let chunk2 = y_bn >> bits;
-
-        self.state.update(
-            &[chunk0, chunk1, chunk2]
-                .iter()
-                .map(|x| bn_to_field(&x))
-                .collect::<Vec<_>>(),
-        );
-
-        Ok(())
+        self.poseidon.common_point(point)
     }
 
     fn common_scalar(&mut self, scalar: <C>::Scalar) -> io::Result<()> {
-        self.state.update(&[C::ScalarExt::from(PREFIX_SCALAR)]);
-        self.state.update(&[scalar]);
-
-        Ok(())
+        self.poseidon.common_scalar(scalar)
     }
 }
 
@@ -128,7 +115,7 @@ impl<R: io::Read, C: CurveAffine> TranscriptRead<C, PoseidonEncodedChallenge<C>>
 }
 
 pub struct PoseidonWrite<W: io::Write, C: CurveAffine, E: EncodedChallenge<C>> {
-    state: Poseidon<C::ScalarExt, T, RATE>,
+    poseidon: PoseidonPure<C>,
     writer: W,
     _mark: PhantomData<E>,
 }
@@ -136,7 +123,16 @@ pub struct PoseidonWrite<W: io::Write, C: CurveAffine, E: EncodedChallenge<C>> {
 impl<W: io::Write, C: CurveAffine, E: EncodedChallenge<C>> PoseidonWrite<W, C, E> {
     pub fn init(writer: W) -> Self {
         Self {
-            state: Poseidon::new(R_F, R_P),
+            poseidon: PoseidonPure::default(),
+            writer,
+            _mark: PhantomData,
+        }
+    }
+
+    pub fn init_with_poseidon(writer: W, mut poseidon: PoseidonPure<C>) -> Self {
+        poseidon.reset();
+        Self {
+            poseidon,
             writer,
             _mark: PhantomData,
         }
@@ -151,40 +147,15 @@ impl<W: io::Write, C: CurveAffine> Transcript<C, PoseidonEncodedChallenge<C>>
     for PoseidonWrite<W, C, PoseidonEncodedChallenge<C>>
 {
     fn squeeze_challenge(&mut self) -> PoseidonEncodedChallenge<C> {
-        self.state.update(&[C::ScalarExt::from(PREFIX_CHALLENGE)]);
-        PoseidonEncodedChallenge::new(&self.state.squeeze())
+        self.poseidon.squeeze_challenge()
     }
 
     fn common_point(&mut self, point: C) -> io::Result<()> {
-        self.state.update(&[C::ScalarExt::from(PREFIX_POINT)]);
-        let x_y: Option<_> = point.coordinates().map(|c| (*c.x(), *c.y())).into();
-        let (x, y) = x_y.unwrap_or((C::Base::zero(), C::Base::zero()));
-        let x_bn = field_to_bn(&x);
-        let y_bn = field_to_bn(&y);
-
-        let bits = RANGE_VALUE_DECOMPOSE * MAX_BITS;
-        let chunk_bits = bits * 2;
-
-        let chunk0 = &x_bn & ((BigUint::from(1u64) << chunk_bits) - 1u64);
-        let chunk1 =
-            (x_bn >> chunk_bits) + ((&y_bn & ((BigUint::from(1u64) << bits) - 1u64)) << bits);
-        let chunk2 = y_bn >> bits;
-
-        self.state.update(
-            &[chunk0, chunk1, chunk2]
-                .iter()
-                .map(|x| bn_to_field(&x))
-                .collect::<Vec<_>>(),
-        );
-
-        Ok(())
+        self.poseidon.common_point(point)
     }
 
     fn common_scalar(&mut self, scalar: <C>::Scalar) -> io::Result<()> {
-        self.state.update(&[C::ScalarExt::from(PREFIX_SCALAR)]);
-        self.state.update(&[scalar]);
-
-        Ok(())
+        self.poseidon.common_scalar(scalar)
     }
 }
 
@@ -218,10 +189,12 @@ impl<C: CurveAffine> Default for PoseidonPure<C> {
     }
 }
 
-
 impl<C: CurveAffine> PoseidonPure<C> {
     pub fn reset(&mut self) {
         self.state.reset()
+    }
+    pub fn get_spec(&self) -> std::rc::Rc<poseidon::Spec<C::ScalarExt, T, RATE>> {
+        self.state.get_spec()
     }
 }
 

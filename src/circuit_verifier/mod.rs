@@ -10,6 +10,7 @@ use crate::circuits::utils::instance_to_instance_commitment;
 use crate::circuits::utils::miller_loop_compute_c_wi;
 use crate::circuits::utils::AggregatorConfig;
 use crate::circuits::utils::TranscriptHash;
+use crate::transcript::poseidon::PoseidonPure;
 use crate::transcript::poseidon::PoseidonRead;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::Field;
@@ -40,7 +41,6 @@ use halo2ecc_s::context::NativeScalarEccContext;
 use std::cell::RefCell;
 use std::io;
 use std::rc::Rc;
-
 pub mod circuit;
 pub mod transcript;
 
@@ -427,26 +427,29 @@ where
 
     // The translate() apply typological sorting for entries in targets vector.
     let c = EvalContext::translate(&targets[..]);
+    let poseidon = PoseidonPure::default();
 
     let (pl, mut il, assigned_constant_hash) = match config.hash {
         TranscriptHash::Poseidon => {
             let mut t = vec![];
             // Prepare Transcript Chip for each proof.
             for i in 0..proofs.len() {
-                let it = PoseidonRead::init(&proofs[i][..]);
+                let it = PoseidonRead::init_with_poseidon(&proofs[i][..], poseidon.clone());
                 t.push(PoseidonChipRead::init(it, &mut ctx));
             }
 
             // The last Transcript Chip is for challenge used to batch pairing.
             let empty = vec![];
-            let it = PoseidonRead::init(&empty[..]);
+            let it = PoseidonRead::init_with_poseidon(&empty[..], poseidon.clone());
             t.push(PoseidonChipRead::init(it, &mut ctx));
 
             // To uniform circuit from fixed commitments/scalars,
             // the fixed commitments/scalars will assigned as witness,
             // ans expose a hash at instance[0].
-            let mut constant_hasher =
-                PoseidonChipRead::init(PoseidonRead::init(&empty[..]), &mut ctx);
+            let mut constant_hasher = PoseidonChipRead::init(
+                PoseidonRead::init_with_poseidon(&empty[..], poseidon.clone()),
+                &mut ctx,
+            );
 
             // The context_eval() constructs circuit.
             context_eval::<E, _>(
@@ -504,7 +507,10 @@ where
     // H_i = Hash(H_{i-1}, constant_hash), i > 0.
     let assigned_final_hash = {
         let empty = vec![];
-        let mut hasher = PoseidonChipRead::init(PoseidonRead::init(&empty[..]), &mut ctx);
+        let mut hasher = PoseidonChipRead::init(
+            PoseidonRead::init_with_poseidon(&empty[..], poseidon.clone()),
+            &mut ctx,
+        );
 
         for (proof_index, instance_col, hash) in
             &config.target_aggregator_constant_hash_instance_offset

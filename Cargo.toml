@@ -30,3 +30,7 @@ default = []
 profile = ["ark-std/print-trace", "halo2ecc-s/profile", "halo2ecc-s/profile"]
 cuda = ["halo2_proofs/cuda", "halo2ecc-s/cuda"]
 on_prove_pairing_affine = []
+
+
+[patch."https://github.com/DelphinusLab/poseidon.git"]
+poseidon={git="https://github.com/mooreland/poseidon.git", branch="init_with_spec"}
