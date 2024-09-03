@@ -5,7 +5,6 @@ use crate::transcript::poseidon::PREFIX_POINT;
 use crate::transcript::poseidon::PREFIX_SCALAR;
 use crate::transcript::poseidon::RATE;
 use crate::transcript::poseidon::R_F;
-use crate::transcript::poseidon::R_P;
 use crate::transcript::poseidon::T;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::FieldExt;
@@ -20,6 +19,7 @@ use poseidon::SparseMDSMatrix;
 use poseidon::Spec;
 use std::cell::RefMut;
 use std::io;
+use std::sync::Arc;
 
 pub struct PoseidonChipRead<R: io::Read, C: CurveAffine> {
     read: PoseidonRead<R, C, PoseidonEncodedChallenge<C>>,
@@ -32,7 +32,10 @@ impl<R: io::Read, C: CurveAffine> PoseidonChipRead<R, C> {
         read: PoseidonRead<R, C, PoseidonEncodedChallenge<C>>,
         circuit: &mut NativeScalarEccContext<C>,
     ) -> Self {
-        let state = PoseidonChipContext::new(&mut circuit.base_integer_chip().base_chip());
+        let state = PoseidonChipContext::new(
+            &mut circuit.base_integer_chip().base_chip(),
+            read.get_poseidon_spec(),
+        );
         let base_chip = &mut circuit.base_integer_chip().base_chip();
         Self {
             read,
@@ -107,18 +110,18 @@ impl<R: io::Read, C: CurveAffine> PoseidonChipRead<R, C> {
 struct PoseidonChipState<F: FieldExt>([AssignedValue<F>; T]);
 
 pub struct PoseidonChipContext<F: FieldExt> {
-    spec: Spec<F, T, RATE>,
+    spec: Arc<Spec<F, T, RATE>>,
     state: PoseidonChipState<F>,
     absorbing: Vec<AssignedValue<F>>,
 }
 
 impl<F: FieldExt> PoseidonChipContext<F> {
-    pub fn new(chip: &mut RefMut<'_, dyn BaseChipOps<F>>) -> Self {
+    pub fn new(chip: &mut RefMut<'_, dyn BaseChipOps<F>>, spec: Arc<Spec<F, T, RATE>>) -> Self {
         let zero = chip.assign_constant(F::zero());
         let mut state = [zero; T];
         state[0] = chip.assign_constant(F::from_u128(1u128 << 64));
         Self {
-            spec: Spec::new(R_F, R_P),
+            spec,
             state: PoseidonChipState(state),
             absorbing: vec![],
         }

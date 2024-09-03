@@ -4,6 +4,7 @@ use crate::api::ast_eval::EvalPos;
 use crate::api::halo2::verify_aggregation_proofs;
 use crate::circuits::utils::instance_to_instance_commitment;
 use crate::circuits::utils::TranscriptHash;
+use crate::transcript::poseidon::PoseidonPure;
 use crate::transcript::poseidon::PoseidonRead;
 use crate::transcript::sha256::ShaRead;
 use halo2_proofs::arithmetic::Field;
@@ -210,11 +211,18 @@ pub fn verify_proofs<E: MultiMillerLoop>(
         }
         TranscriptHash::Poseidon => {
             let mut t = vec![];
+            let poseidon = PoseidonPure::<E::G1Affine>::default();
             for i in 0..proofs.len() {
-                t.push(PoseidonRead::init(&proofs[i][..]));
+                t.push(PoseidonRead::init_with_poseidon(
+                    &proofs[i][..],
+                    poseidon.clone(),
+                ));
             }
             let empty = vec![];
-            t.push(PoseidonRead::init(&empty[..]));
+            t.push(PoseidonRead::init_with_poseidon(
+                &empty[..],
+                poseidon.clone(),
+            ));
             let mut ctx = NativeEvalContext::<E, _, _>::new(c, instance_commitments, t);
             ctx.context_eval();
             ctx.finals
