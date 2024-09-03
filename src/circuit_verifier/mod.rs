@@ -445,7 +445,7 @@ where
 
             // To uniform circuit from fixed commitments/scalars,
             // the fixed commitments/scalars will assigned as witness,
-            // ans expose a hash at instance[0].
+            // and expose a hash at instance[0].
             let mut constant_hasher = PoseidonChipRead::init(
                 PoseidonRead::init_with_poseidon(&empty[..], poseidon.clone()),
                 &mut ctx,

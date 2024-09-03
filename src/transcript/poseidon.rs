@@ -64,7 +64,7 @@ impl<R: io::Read, C: CurveAffine, E: EncodedChallenge<C>> PoseidonRead<R, C, E> 
         }
     }
 
-    pub fn get_poseidon_spec(&self) -> std::rc::Rc<poseidon::Spec<C::ScalarExt, T, RATE>> {
+    pub fn get_poseidon_spec(&self) -> std::sync::Arc<poseidon::Spec<C::ScalarExt, T, RATE>> {
         self.poseidon.get_spec()
     }
 }
@@ -193,7 +193,7 @@ impl<C: CurveAffine> PoseidonPure<C> {
     pub fn reset(&mut self) {
         self.state.reset()
     }
-    pub fn get_spec(&self) -> std::rc::Rc<poseidon::Spec<C::ScalarExt, T, RATE>> {
+    pub fn get_spec(&self) -> std::sync::Arc<poseidon::Spec<C::ScalarExt, T, RATE>> {
         self.state.get_spec()
     }
 }
