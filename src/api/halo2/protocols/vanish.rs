@@ -58,7 +58,7 @@ impl<C: CurveAffine> Evaluated<C> {
                 0,
                 params.x.clone(),
                 self.h_commitment.clone(),
-                scalar!(self.expected_h_eval.clone())
+                scalar!(self.expected_h_eval.clone()),
             ),
             EvaluationQuery::new(
                 0,

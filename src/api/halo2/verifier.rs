@@ -1,7 +1,7 @@
 use super::format_advice_commitment_key;
 use super::format_fixed_commitment_key;
 use super::format_instance_commitment_key;
-use super::protocols::lookup;
+use super::protocols::logup as lookup;
 use super::protocols::permutation;
 use super::protocols::shuffle;
 use super::protocols::vanish;
