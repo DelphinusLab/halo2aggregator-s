@@ -16,9 +16,13 @@ use std::rc::Rc;
 pub struct MultiplicityCommitment<C: CurveAffine>(pub(crate) AstPointRc<C>);
 
 #[derive(Debug)]
+pub struct InputExpressionSet<C: CurveAffine>(pub(crate) Vec<Vec<Expression<C::ScalarExt>>>);
+
+
+#[derive(Debug)]
 pub(crate) struct Evaluated<C: CurveAffine> {
     pub(crate) key: String,
-    pub(crate) input_expressions_set: Vec<Vec<Expression<C::ScalarExt>>>,
+    pub(crate) input_expressions_sets: Vec<InputExpressionSet<C>>,
     pub(crate) table_expressions: Vec<Expression<C::ScalarExt>>,
     pub(crate) grand_sum_eval: AstScalarRc<C>,
     pub(crate) grand_sum_next_eval: AstScalarRc<C>,
@@ -41,7 +45,7 @@ impl<C: CurveAffine> Evaluated<C> {
         let grand_sum_next_eval = transcript.read_scalar();
         let multiplicity_eval = transcript.read_scalar();
         Evaluated {
-            input_expressions_set: vk.cs.lookups[index].input_expressions_set.0.clone(),
+            input_expressions_sets: vk.cs.lookups[index].input_expressions_sets.iter().map(|set|InputExpressionSet(set.0.clone())).collect(),
             table_expressions: vk.cs.lookups[index].table_expressions.clone(),
             grand_sum_commitment,
             multiplicity_commitment,
@@ -76,7 +80,7 @@ impl<C: CurveAffine> Evaluated<C> {
         */
 
         let phi = self
-            .input_expressions_set
+            .input_expressions_sets[0].0
             .iter()
             .map(|expressions| {
                 expressions
