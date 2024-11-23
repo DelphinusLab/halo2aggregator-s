@@ -7,8 +7,8 @@ edition = "2021"
 
 [dependencies]
 blake2b_simd = "1"
-halo2_proofs = { git = "https://github.com/DelphinusLab/halo2-gpu-specific.git", default-features = true }
-halo2ecc-s = { git="https://github.com/DelphinusLab/halo2ecc-s.git", tag="on-prove-pairing-0.6.4" }
+halo2_proofs = { git = "https://github.com/DelphinusLab/halo2-gpu-specific.git", branch="moore/logup_extent", default-features = true }
+halo2ecc-s = { git="https://github.com/DelphinusLab/halo2ecc-s.git", branch="moore/logup_extend" }
 ark-std = { version = "0.4.0" }
 ark-ff = {version = "0.4.2"}
 ff = "0.12"

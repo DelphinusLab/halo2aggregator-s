@@ -628,7 +628,7 @@ dependencies = [
 [[package]]
 name = "halo2_proofs"
 version = "0.1.0-beta.1"
-source = "git+https://github.com/DelphinusLab/halo2-gpu-specific.git#12655ca7406a8c21a154bfd36dd2f8e520c569b1"
+source = "git+https://github.com/DelphinusLab/halo2-gpu-specific.git?branch=moore/logup_extent#4446607ad99dbbf9d105ed65529d54fade9ca467"
 dependencies = [
  "ark-std",
  "blake2b_simd",
@@ -655,6 +655,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "halo2_proofs"
+version = "0.1.0-beta.1"
+source = "git+https://github.com/DelphinusLab/halo2-gpu-specific.git#12655ca7406a8c21a154bfd36dd2f8e520c569b1"
+dependencies = [
+ "ark-std",
+ "blake2b_simd",
+ "bumpalo",
+ "cfg-if 0.1.10",
+ "core_affinity",
+ "cuda-driver-sys",
+ "ff",
+ "group",
+ "lazy_static",
+ "log",
+ "memmap",
+ "num",
+ "num-bigint",
+ "num-derive",
+ "num-integer",
+ "num-traits",
+ "pairing_bn256",
+ "rand",
+ "rand_core",
+ "rayon",
+ "subtle",
+]
+
+[[package]]
 name = "halo2aggregator-s"
 version = "1.1.0"
 dependencies = [
@@ -662,7 +690,7 @@ dependencies = [
  "ark-std",
  "blake2b_simd",
  "ff",
- "halo2_proofs",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/DelphinusLab/halo2-gpu-specific.git?branch=moore/logup_extent)",
  "halo2ecc-s",
  "lazy_static",
  "num-bigint",
@@ -680,10 +708,10 @@ dependencies = [
 [[package]]
 name = "halo2ecc-s"
 version = "0.3.2"
-source = "git+https://github.com/DelphinusLab/halo2ecc-s.git?tag=on-prove-pairing-0.6.4#164b8367cc243f28128c785930859fa536b5c7af"
+source = "git+https://github.com/DelphinusLab/halo2ecc-s.git?branch=moore/logup_extend#9c79e4e565cbc0a21c37b337ab5bac3cc7d8fe82"
 dependencies = [
  "ark-std",
- "halo2_proofs",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/DelphinusLab/halo2-gpu-specific.git?branch=moore/logup_extent)",
  "num-bigint",
  "num-integer",
  "num-traits",
@@ -1106,7 +1134,7 @@ name = "poseidon"
 version = "0.2.0"
 source = "git+https://github.com/DelphinusLab/poseidon.git#8977ca390f50cdbd2496970216dfc1060b2caab9"
 dependencies = [
- "halo2_proofs",
+ "halo2_proofs 0.1.0-beta.1 (git+https://github.com/DelphinusLab/halo2-gpu-specific.git)",
  "subtle",
 ]
 
