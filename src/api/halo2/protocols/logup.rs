@@ -18,40 +18,64 @@ pub struct MultiplicityCommitment<C: CurveAffine>(pub(crate) AstPointRc<C>);
 #[derive(Debug)]
 pub struct InputExpressionSet<C: CurveAffine>(pub(crate) Vec<Vec<Expression<C::ScalarExt>>>);
 
+#[derive(Debug)]
+pub(crate) struct GrandSumEvalSet<C: CurveAffine> {
+    pub(crate) commitment: AstPointRc<C>,
+    pub(crate) eval: AstScalarRc<C>,
+    pub(crate) next_eval: AstScalarRc<C>,
+    pub(crate) last_eval: Option<AstScalarRc<C>>,
+}
 
 #[derive(Debug)]
 pub(crate) struct Evaluated<C: CurveAffine> {
     pub(crate) key: String,
+    pub(crate) blinding_factors: usize,
     pub(crate) input_expressions_sets: Vec<InputExpressionSet<C>>,
     pub(crate) table_expressions: Vec<Expression<C::ScalarExt>>,
-    pub(crate) grand_sum_eval: AstScalarRc<C>,
-    pub(crate) grand_sum_next_eval: AstScalarRc<C>,
     pub(crate) multiplicity_eval: AstScalarRc<C>,
-
     pub(crate) multiplicity_commitment: MultiplicityCommitment<C>,
-    pub(crate) grand_sum_commitment: AstPointRc<C>,
+    pub(crate) grand_sum_eval_sets: Vec<GrandSumEvalSet<C>>,
 }
 
 impl<C: CurveAffine> Evaluated<C> {
     pub(crate) fn build_from_transcript(
         index: usize,
         multiplicity_commitment: MultiplicityCommitment<C>,
-        grand_sum_commitment: AstPointRc<C>,
+        grand_sum_commitment: Vec<AstPointRc<C>>,
         key: &str,
         vk: &VerifyingKey<C>,
         transcript: &mut Rc<AstTranscript<C>>,
     ) -> Self {
-        let grand_sum_eval = transcript.read_scalar();
-        let grand_sum_next_eval = transcript.read_scalar();
         let multiplicity_eval = transcript.read_scalar();
+        let mut iter = grand_sum_commitment.into_iter();
+        let mut grand_sum_eval_sets = vec![];
+        while let Some(commitment) = iter.next() {
+            let eval = transcript.read_scalar();
+            let next_eval = transcript.read_scalar();
+            let last_eval = if iter.len() > 0 {
+                Some(transcript.read_scalar())
+            } else {
+                None
+            };
+            grand_sum_eval_sets.push(GrandSumEvalSet {
+                commitment,
+                eval,
+                next_eval,
+                last_eval,
+            })
+        }
+
         Evaluated {
-            input_expressions_sets: vk.cs.lookups[index].input_expressions_sets.iter().map(|set|InputExpressionSet(set.0.clone())).collect(),
+            input_expressions_sets: vk.cs.lookups[index]
+                .input_expressions_sets
+                .iter()
+                .map(|set| InputExpressionSet(set.0.clone()))
+                .collect(),
             table_expressions: vk.cs.lookups[index].table_expressions.clone(),
-            grand_sum_commitment,
             multiplicity_commitment,
-            grand_sum_eval,
-            grand_sum_next_eval,
             multiplicity_eval,
+            grand_sum_eval_sets,
+            blinding_factors: vk.cs.blinding_factors(),
             key: format!("{}_lookup_{}", key.clone(), index),
         }
     }
@@ -59,8 +83,6 @@ impl<C: CurveAffine> Evaluated<C> {
     pub fn expressions(&self, params: &VerifierParams<C>) -> Vec<AstScalarRc<C>> {
         let one = &sconst!(C::ScalarExt::one());
 
-        let z_wx = &self.grand_sum_next_eval;
-        let z_x = &self.grand_sum_eval;
         let m_x = &self.multiplicity_eval;
 
         let beta = &params.beta;
@@ -79,16 +101,21 @@ impl<C: CurveAffine> Evaluated<C> {
              RHS = τ(X) * Π(φ_i(X)) * (∑ 1/(φ_i(X)))
         */
 
-        let phi = self
-            .input_expressions_sets[0].0
+        let phis = self
+            .input_expressions_sets
             .iter()
-            .map(|expressions| {
-                expressions
+            .map(|set| {
+                set.0
                     .iter()
-                    .map(|expression| params.evaluate_expression(expression))
-                    .reduce(|acc, x| acc * theta + x)
-                    .unwrap()
-                    + beta
+                    .map(|expressions| {
+                        expressions
+                            .iter()
+                            .map(|expression| params.evaluate_expression(expression))
+                            .reduce(|acc, x| acc * theta + x)
+                            .unwrap()
+                            + beta
+                    })
+                    .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
 
@@ -100,59 +127,127 @@ impl<C: CurveAffine> Evaluated<C> {
             .unwrap()
             + beta;
 
-        let product_fi = phi.iter().skip(1).fold(phi[0].clone(), |acc, e| acc * e);
+        let product_fis = phis
+            .iter()
+            .map(|phi| phi.iter().skip(1).fold(phi[0].clone(), |acc, e| acc * e))
+            .collect::<Vec<_>>();
 
-        let sum_product_fi = if phi.len() > 1 {
-            (0..phi.len())
-                .map(|i| {
-                    phi.iter()
-                        .enumerate()
-                        .filter(|(j, _)| *j != i)
-                        .map(|(_, fi)| fi.clone())
-                        .reduce(|acc, e| acc * e)
+        let sum_product_fis = phis
+            .iter()
+            .map(|phi| {
+                if phi.len() > 1 {
+                    (0..phi.len())
+                        .map(|i| {
+                            phi.iter()
+                                .enumerate()
+                                .filter(|(j, _)| *j != i)
+                                .map(|(_, fi)| fi.clone())
+                                .reduce(|acc, e| acc * e)
+                                .unwrap()
+                        })
+                        .reduce(|acc, x| acc + x)
                         .unwrap()
-                })
-                .reduce(|acc, x| acc + x)
-                .unwrap()
-        } else {
-            one.clone()
-        };
+                } else {
+                    one.clone()
+                }
+            })
+            .collect::<Vec<_>>();
 
-        let left = (tau.clone() * (z_wx - z_x) + m_x) * product_fi;
-        let right = tau * sum_product_fi;
+        let first_set = self.grand_sum_eval_sets.first().unwrap();
+        let last_set = self.grand_sum_eval_sets.last().unwrap();
+        let z0_wx = &first_set.next_eval;
+        let z0_x = &first_set.eval;
+        let zl_x = &last_set.eval;
 
-        vec![
-            l_0 * z_x,
-            (l_last * z_x),
+        let left = (tau.clone() * (z0_wx - z0_x) + m_x) * &product_fis[0];
+        let right = tau * &sum_product_fis[0];
+
+        let mut res = vec![
+            l_0 * z0_x,
+            (l_last * zl_x),
             ((left - right) * (one - (l_last + l_blind))),
-        ]
+        ];
+
+        // l_0(X) * (z_i(X) - z_{i-1}(\omega^(last) X)) = 0
+        self.grand_sum_eval_sets
+            .iter()
+            .skip(1)
+            .zip(self.grand_sum_eval_sets.iter())
+            .for_each(|(set, pre_set)| {
+                res.push(l_0 * (&set.eval - &pre_set.last_eval.clone().unwrap()))
+            });
+
+        /*
+            φ_i(X) = f_i(X) + α
+            LHS = Π(φ_i(X)) * (ϕ(gX) - ϕ(X))
+            RHS = Π(φ_i(X)) * (∑ 1/(φ_i(X)))
+        */
+        for ((set, product_fi), sum_product_fi) in self
+            .grand_sum_eval_sets
+            .iter()
+            .zip(product_fis.iter())
+            .zip(sum_product_fis.iter())
+            .skip(1)
+        {
+            res.push(
+                ((&set.next_eval - &set.eval) * product_fi - sum_product_fi)
+                    * (one - (l_last + l_blind)),
+            )
+        }
+
+        res
     }
 
     pub fn queries(&self, params: &VerifierParams<C>) -> Vec<EvaluationQuery<C>> {
         let x = &params.x;
         let x_next = &params.x_next;
-        vec![
-            EvaluationQuery::new(
-                0,
-                x.clone(),
-                format!("{}_grand_sum_commitment", self.key),
-                self.grand_sum_commitment.clone(),
-                self.grand_sum_eval.clone(),
-            ),
-            EvaluationQuery::new(
-                1,
-                x_next.clone(),
-                format!("{}_grand_sum_commitment", self.key),
-                self.grand_sum_commitment.clone(),
-                self.grand_sum_next_eval.clone(),
-            ),
-            EvaluationQuery::new(
+        let x_last = &params.x_last;
+
+        std::iter::empty()
+            .chain(Some(EvaluationQuery::new(
                 0,
                 x.clone(),
                 format!("{}_multiplicity_commitment", self.key),
                 self.multiplicity_commitment.0.clone(),
                 self.multiplicity_eval.clone(),
-            ),
-        ]
+            )))
+            .chain(
+                self.grand_sum_eval_sets
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(i, set)| {
+                        std::iter::empty()
+                            .chain(Some(EvaluationQuery::new(
+                                0,
+                                x.clone(),
+                                format!("{}_grand_sum_commitment_{}", self.key, i),
+                                set.commitment.clone(),
+                                set.eval.clone(),
+                            )))
+                            .chain(Some(EvaluationQuery::new(
+                                1,
+                                x_next.clone(),
+                                format!("{}_grand_sum_commitment_{}", self.key, i),
+                                set.commitment.clone(),
+                                set.next_eval.clone(),
+                            )))
+                    }),
+            )
+            .chain(
+                self.grand_sum_eval_sets
+                    .iter()
+                    .enumerate()
+                    .rev()
+                    .map(|(i, set)| {
+                        EvaluationQuery::new(
+                            -((self.blinding_factors + 1) as i32),
+                            x_last.clone(),
+                            format!("{}_grand_sum_commitment_{}", self.key, i),
+                            set.commitment.clone(),
+                            set.last_eval.clone().unwrap(),
+                        )
+                    }),
+            )
+            .collect()
     }
 }

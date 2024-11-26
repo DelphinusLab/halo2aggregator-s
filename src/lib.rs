@@ -1,6 +1,6 @@
 pub mod api;
-pub mod circuits;
 pub mod circuit_verifier;
+pub mod circuits;
 pub mod gnark_verifier;
 pub mod native_verifier;
 pub mod solidity_verifier;

@@ -154,7 +154,13 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
 
         let permutation_product_commitments =
             transcript.read_n_points(n_permutation_product_commitments);
-        let lookup_grand_sum_commitments = transcript.read_n_points(self.vk.cs.lookups.len());
+        let lookup_grand_sum_commitments = self
+            .vk
+            .cs
+            .lookups
+            .iter()
+            .map(|arg| transcript.read_n_points(arg.input_expressions_sets.len()))
+            .collect::<Vec<_>>();
         let shuffle_product_commitments = transcript.read_n_points(shuffle_groups.len());
 
         let random_commitment = transcript.read_point();
