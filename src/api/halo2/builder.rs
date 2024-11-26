@@ -124,11 +124,20 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
             .chain(instance_queries.iter().map(|x| x.1))
             .chain(advice_queries.iter().map(|x| x.1))
             .chain(fixed_queries.iter().map(|x| x.1))
-            .chain(vec![0, 1, -1].into_iter())
+            .chain(vec![0, 1].into_iter())
         {
             rotations.insert(i);
         }
-        if n_permutation_product_commitments > 1 {
+
+        // more than 1 input_sets need extra z poly like as permutation, and need last_z rotation
+        let n_lookup_sets = cs
+            .lookups
+            .iter()
+            .map(|set| set.input_expressions_sets.len())
+            .max()
+            .unwrap_or_default();
+
+        if n_permutation_product_commitments > 1 || n_lookup_sets > 1 {
             rotations.insert(-((cs.blinding_factors() + 1) as i32));
         }
 

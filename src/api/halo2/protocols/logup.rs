@@ -238,6 +238,7 @@ impl<C: CurveAffine> Evaluated<C> {
                     .iter()
                     .enumerate()
                     .rev()
+                    .skip(1)
                     .map(|(i, set)| {
                         EvaluationQuery::new(
                             -((self.blinding_factors + 1) as i32),
