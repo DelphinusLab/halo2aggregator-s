@@ -11,7 +11,8 @@ type Halo2VerifierConfig struct {
 	ChallengeInitScalar    string     `json:"challenge_init_scalar"`
 	Degree                 uint32     `json:"degree"`
 	NbAdvices              uint32     `json:"nb_advices"`
-	NbLookups              uint32     `json:"nb_lookups"`
+	NbLookupsM             uint32     `json:"nb_lookups_m"`
+	NbLookupsZs            uint32     `json:"nb_lookups_zs"`
 	NbPermutationGroups    uint32     `json:"nb_permutation_groups"`
 	NbEvals                uint32     `json:"nb_evals"`
 }

@@ -127,8 +127,19 @@ pub fn solidity_render_with_check_option<E: MultiMillerLoop, D: Digest + Clone>(
 
     tera_ctx.insert("n_advice", &vkey.cs.num_advice_columns);
 
+    // logup's multiplicity commitment
     let lookups = vkey.cs.lookups.len();
-    tera_ctx.insert("lookups", &lookups);
+    tera_ctx.insert("n_lookups_m", &lookups);
+
+    // logup's z_sets for inputs_sets
+    // logup's evals: 1*multipliciy_poly + n*z_poly(x,next_x, last_x(except the last z)) = 3*z_poly
+    let n_lookups_zs = vkey
+        .cs
+        .lookups
+        .iter()
+        .map(|arg| arg.input_expressions_sets.len())
+        .sum::<usize>();
+    tera_ctx.insert("n_lookups_zs", &n_lookups_zs);
 
     let shuffles = vkey.cs.shuffles.group(vkey.cs.degree()).len();
     tera_ctx.insert("shuffles", &shuffles);
@@ -150,7 +161,7 @@ pub fn solidity_render_with_check_option<E: MultiMillerLoop, D: Digest + Clone>(
         + vkey.permutation.commitments.len()
         + 3 * n_permutation_product
         - 1
-        + 5 * lookups
+        + 3 * n_lookups_zs
         + 2 * shuffles;
     tera_ctx.insert("evals", &evals);
 
