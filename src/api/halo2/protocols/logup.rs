@@ -34,21 +34,21 @@ pub(crate) struct Evaluated<C: CurveAffine> {
     pub(crate) table_expressions: Vec<Expression<C::ScalarExt>>,
     pub(crate) multiplicity_eval: AstScalarRc<C>,
     pub(crate) multiplicity_commitment: MultiplicityCommitment<C>,
-    pub(crate) z_eval_sets: Vec<ZEvalSet<C>>,
+    pub(crate) z_eval_set: Vec<ZEvalSet<C>>,
 }
 
 impl<C: CurveAffine> Evaluated<C> {
     pub(crate) fn build_from_transcript(
         index: usize,
         multiplicity_commitment: MultiplicityCommitment<C>,
-        z_commitment: Vec<AstPointRc<C>>,
+        z_commitment_set: Vec<AstPointRc<C>>,
         key: &str,
         vk: &VerifyingKey<C>,
         transcript: &mut Rc<AstTranscript<C>>,
     ) -> Self {
         let multiplicity_eval = transcript.read_scalar();
-        let mut iter = z_commitment.into_iter();
-        let mut z_eval_sets = vec![];
+        let mut iter = z_commitment_set.into_iter();
+        let mut z_eval_set = vec![];
         while let Some(commitment) = iter.next() {
             let eval = transcript.read_scalar();
             let next_eval = transcript.read_scalar();
@@ -57,7 +57,7 @@ impl<C: CurveAffine> Evaluated<C> {
             } else {
                 None
             };
-            z_eval_sets.push(ZEvalSet {
+            z_eval_set.push(ZEvalSet {
                 commitment,
                 eval,
                 next_eval,
@@ -74,7 +74,7 @@ impl<C: CurveAffine> Evaluated<C> {
             table_expressions: vk.cs.lookups[index].table_expressions.clone(),
             multiplicity_commitment,
             multiplicity_eval,
-            z_eval_sets,
+            z_eval_set,
             blinding_factors: vk.cs.blinding_factors(),
             key: format!("{}_lookup_{}", key.clone(), index),
         }
@@ -153,8 +153,8 @@ impl<C: CurveAffine> Evaluated<C> {
             })
             .collect::<Vec<_>>();
 
-        let first_set = self.z_eval_sets.first().unwrap();
-        let last_set = self.z_eval_sets.last().unwrap();
+        let first_set = self.z_eval_set.first().unwrap();
+        let last_set = self.z_eval_set.last().unwrap();
         let z0_wx = &first_set.next_eval;
         let z0_x = &first_set.eval;
         let zl_x = &last_set.eval;
@@ -169,10 +169,10 @@ impl<C: CurveAffine> Evaluated<C> {
         ];
 
         // l_0(X) * (z_i(X) - z_{i-1}(\omega^(last) X)) = 0
-        self.z_eval_sets
+        self.z_eval_set
             .iter()
             .skip(1)
-            .zip(self.z_eval_sets.iter())
+            .zip(self.z_eval_set.iter())
             .for_each(|(set, pre_set)| {
                 res.push(l_0 * (&set.eval - &pre_set.last_eval.clone().unwrap()))
             });
@@ -183,7 +183,7 @@ impl<C: CurveAffine> Evaluated<C> {
             RHS = Π(φ_i(X)) * (∑ 1/(φ_i(X)))
         */
         for ((set, product_fi), sum_product_fi) in self
-            .z_eval_sets
+            .z_eval_set
             .iter()
             .zip(product_fis.iter())
             .zip(sum_product_fis.iter())
@@ -211,7 +211,7 @@ impl<C: CurveAffine> Evaluated<C> {
                 self.multiplicity_commitment.0.clone(),
                 self.multiplicity_eval.clone(),
             )))
-            .chain(self.z_eval_sets.iter().enumerate().flat_map(|(i, set)| {
+            .chain(self.z_eval_set.iter().enumerate().flat_map(|(i, set)| {
                 std::iter::empty()
                     .chain(Some(EvaluationQuery::new(
                         0,
@@ -229,7 +229,7 @@ impl<C: CurveAffine> Evaluated<C> {
                     )))
             }))
             .chain(
-                self.z_eval_sets
+                self.z_eval_set
                     .iter()
                     .enumerate()
                     .rev()

@@ -197,11 +197,11 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
             .zip(lookup_z_commitments.into_iter())
             .enumerate()
             .map(
-                |(index, (lookup_multiplicity_commitment, lookup_z_commitment))| {
+                |(index, (lookup_multiplicity_commitment, lookup_z_commitment_set))| {
                     lookup::Evaluated::build_from_transcript(
                         index,
                         lookup_multiplicity_commitment,
-                        lookup_z_commitment,
+                        lookup_z_commitment_set,
                         &self.key,
                         &self.vk,
                         &mut transcript,

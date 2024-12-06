@@ -131,8 +131,8 @@ pub fn solidity_render_with_check_option<E: MultiMillerLoop, D: Digest + Clone>(
     let lookups = vkey.cs.lookups.len();
     tera_ctx.insert("n_lookups_m", &lookups);
 
-    // logup's z_sets for inputs_sets
-    // logup's evals: 1*multipliciy_poly + n*z_poly(x,next_x, last_x(except the last z)) = 3*z_poly
+    // logup's z_sets constructed by inputs_sets
+    // logup's evals: 1*multipliciy_poly + n*z_poly(x, next_x, last_x(except the last z)) = 3n
     let n_lookups_zs = vkey
         .cs
         .lookups
