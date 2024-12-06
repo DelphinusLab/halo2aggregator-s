@@ -19,7 +19,7 @@ pub struct MultiplicityCommitment<C: CurveAffine>(pub(crate) AstPointRc<C>);
 pub struct InputExpressionSet<C: CurveAffine>(pub(crate) Vec<Vec<Expression<C::ScalarExt>>>);
 
 #[derive(Debug)]
-pub(crate) struct GrandSumEvalSet<C: CurveAffine> {
+pub(crate) struct ZEvalSet<C: CurveAffine> {
     pub(crate) commitment: AstPointRc<C>,
     pub(crate) eval: AstScalarRc<C>,
     pub(crate) next_eval: AstScalarRc<C>,
@@ -34,21 +34,21 @@ pub(crate) struct Evaluated<C: CurveAffine> {
     pub(crate) table_expressions: Vec<Expression<C::ScalarExt>>,
     pub(crate) multiplicity_eval: AstScalarRc<C>,
     pub(crate) multiplicity_commitment: MultiplicityCommitment<C>,
-    pub(crate) grand_sum_eval_sets: Vec<GrandSumEvalSet<C>>,
+    pub(crate) z_eval_sets: Vec<ZEvalSet<C>>,
 }
 
 impl<C: CurveAffine> Evaluated<C> {
     pub(crate) fn build_from_transcript(
         index: usize,
         multiplicity_commitment: MultiplicityCommitment<C>,
-        grand_sum_commitment: Vec<AstPointRc<C>>,
+        z_commitment: Vec<AstPointRc<C>>,
         key: &str,
         vk: &VerifyingKey<C>,
         transcript: &mut Rc<AstTranscript<C>>,
     ) -> Self {
         let multiplicity_eval = transcript.read_scalar();
-        let mut iter = grand_sum_commitment.into_iter();
-        let mut grand_sum_eval_sets = vec![];
+        let mut iter = z_commitment.into_iter();
+        let mut z_eval_sets = vec![];
         while let Some(commitment) = iter.next() {
             let eval = transcript.read_scalar();
             let next_eval = transcript.read_scalar();
@@ -57,7 +57,7 @@ impl<C: CurveAffine> Evaluated<C> {
             } else {
                 None
             };
-            grand_sum_eval_sets.push(GrandSumEvalSet {
+            z_eval_sets.push(ZEvalSet {
                 commitment,
                 eval,
                 next_eval,
@@ -74,7 +74,7 @@ impl<C: CurveAffine> Evaluated<C> {
             table_expressions: vk.cs.lookups[index].table_expressions.clone(),
             multiplicity_commitment,
             multiplicity_eval,
-            grand_sum_eval_sets,
+            z_eval_sets,
             blinding_factors: vk.cs.blinding_factors(),
             key: format!("{}_lookup_{}", key.clone(), index),
         }
@@ -153,8 +153,8 @@ impl<C: CurveAffine> Evaluated<C> {
             })
             .collect::<Vec<_>>();
 
-        let first_set = self.grand_sum_eval_sets.first().unwrap();
-        let last_set = self.grand_sum_eval_sets.last().unwrap();
+        let first_set = self.z_eval_sets.first().unwrap();
+        let last_set = self.z_eval_sets.last().unwrap();
         let z0_wx = &first_set.next_eval;
         let z0_x = &first_set.eval;
         let zl_x = &last_set.eval;
@@ -169,10 +169,10 @@ impl<C: CurveAffine> Evaluated<C> {
         ];
 
         // l_0(X) * (z_i(X) - z_{i-1}(\omega^(last) X)) = 0
-        self.grand_sum_eval_sets
+        self.z_eval_sets
             .iter()
             .skip(1)
-            .zip(self.grand_sum_eval_sets.iter())
+            .zip(self.z_eval_sets.iter())
             .for_each(|(set, pre_set)| {
                 res.push(l_0 * (&set.eval - &pre_set.last_eval.clone().unwrap()))
             });
@@ -183,7 +183,7 @@ impl<C: CurveAffine> Evaluated<C> {
             RHS = Π(φ_i(X)) * (∑ 1/(φ_i(X)))
         */
         for ((set, product_fi), sum_product_fi) in self
-            .grand_sum_eval_sets
+            .z_eval_sets
             .iter()
             .zip(product_fis.iter())
             .zip(sum_product_fis.iter())
@@ -211,30 +211,25 @@ impl<C: CurveAffine> Evaluated<C> {
                 self.multiplicity_commitment.0.clone(),
                 self.multiplicity_eval.clone(),
             )))
+            .chain(self.z_eval_sets.iter().enumerate().flat_map(|(i, set)| {
+                std::iter::empty()
+                    .chain(Some(EvaluationQuery::new(
+                        0,
+                        x.clone(),
+                        format!("{}_z_commitment_{}", self.key, i),
+                        set.commitment.clone(),
+                        set.eval.clone(),
+                    )))
+                    .chain(Some(EvaluationQuery::new(
+                        1,
+                        x_next.clone(),
+                        format!("{}_z_commitment_{}", self.key, i),
+                        set.commitment.clone(),
+                        set.next_eval.clone(),
+                    )))
+            }))
             .chain(
-                self.grand_sum_eval_sets
-                    .iter()
-                    .enumerate()
-                    .flat_map(|(i, set)| {
-                        std::iter::empty()
-                            .chain(Some(EvaluationQuery::new(
-                                0,
-                                x.clone(),
-                                format!("{}_grand_sum_commitment_{}", self.key, i),
-                                set.commitment.clone(),
-                                set.eval.clone(),
-                            )))
-                            .chain(Some(EvaluationQuery::new(
-                                1,
-                                x_next.clone(),
-                                format!("{}_grand_sum_commitment_{}", self.key, i),
-                                set.commitment.clone(),
-                                set.next_eval.clone(),
-                            )))
-                    }),
-            )
-            .chain(
-                self.grand_sum_eval_sets
+                self.z_eval_sets
                     .iter()
                     .enumerate()
                     .rev()
@@ -243,7 +238,7 @@ impl<C: CurveAffine> Evaluated<C> {
                         EvaluationQuery::new(
                             -((self.blinding_factors + 1) as i32),
                             x_last.clone(),
-                            format!("{}_grand_sum_commitment_{}", self.key, i),
+                            format!("{}_z_commitment_{}", self.key, i),
                             set.commitment.clone(),
                             set.last_eval.clone().unwrap(),
                         )

@@ -90,7 +90,7 @@ pub fn gnark_render<E: MultiMillerLoop>(
         .lookups
         .iter()
         .map(|arg| arg.input_expressions_sets.len())
-        .sum::<u32>();
+        .sum::<usize>() as u32;
     let nb_permutation_groups = vkey
         .cs
         .permutation

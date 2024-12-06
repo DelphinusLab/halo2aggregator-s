@@ -153,7 +153,6 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
         let lookup_multiplicities = (0..self.vk.cs.lookups.len())
             .map(|_| {
                 let multiplicity_commitment = transcript.read_point();
-
                 lookup::MultiplicityCommitment(multiplicity_commitment)
             })
             .collect::<Vec<_>>();
@@ -163,7 +162,7 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
 
         let permutation_product_commitments =
             transcript.read_n_points(n_permutation_product_commitments);
-        let lookup_grand_sum_commitments = self
+        let lookup_z_commitments = self
             .vk
             .cs
             .lookups
@@ -195,14 +194,14 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
         );
         let lookup_evaluated = lookup_multiplicities
             .into_iter()
-            .zip(lookup_grand_sum_commitments.into_iter())
+            .zip(lookup_z_commitments.into_iter())
             .enumerate()
             .map(
-                |(index, (lookup_multiplicity_commitment, lookup_grand_sum_commitment))| {
+                |(index, (lookup_multiplicity_commitment, lookup_z_commitment))| {
                     lookup::Evaluated::build_from_transcript(
                         index,
                         lookup_multiplicity_commitment,
-                        lookup_grand_sum_commitment,
+                        lookup_z_commitment,
                         &self.key,
                         &self.vk,
                         &mut transcript,
