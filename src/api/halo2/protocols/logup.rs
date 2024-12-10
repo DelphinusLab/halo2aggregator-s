@@ -76,7 +76,7 @@ impl<C: CurveAffine> Evaluated<C> {
             multiplicity_eval,
             z_eval_set,
             blinding_factors: vk.cs.blinding_factors(),
-            key: format!("{}_lookup_{}", key.clone(), index),
+            key: format!("{}_lookup_{}", key, index),
         }
     }
 

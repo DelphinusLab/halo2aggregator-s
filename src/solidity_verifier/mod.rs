@@ -141,7 +141,7 @@ pub fn solidity_render_with_check_option<E: MultiMillerLoop, D: Digest + Clone>(
         .sum::<usize>();
     tera_ctx.insert("n_lookups_zs", &n_lookups_zs);
 
-    let shuffles = vkey.cs.shuffles.group(vkey.cs.degree()).len();
+    let shuffles = vkey.cs.shuffles.len();
     tera_ctx.insert("shuffles", &shuffles);
 
     let n_permutation_product = vkey

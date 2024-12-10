@@ -90,7 +90,7 @@ impl<C: CurveAffine> Evaluated<C> {
             sets: permutation_evaluated_set,
             evals: permutation_evaluated_eval,
             chunk_len: vk.cs.degree() - 2,
-            key: format!("{}_permutation", key.clone()),
+            key: format!("{}_permutation", key),
         }
     }
 

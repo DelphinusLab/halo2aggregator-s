@@ -72,8 +72,8 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
             .columns
             .chunks(self.vk.cs.degree() - 2)
             .len();
-        let shuffle_groups = cs.shuffles.group(self.vk.cs.degree());
-        let shuffle_groups = shuffle_groups
+        let shuffle_groups = cs
+            .shuffles
             .iter()
             .map(|v| {
                 v.0.iter()
@@ -212,13 +212,14 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
 
         let shuffle_evaluated = shuffle_product_commitments
             .into_iter()
+            .zip(shuffle_groups.into_iter())
             .enumerate()
-            .map(|(index, shuffle_product_commitment)| {
+            .map(|(index, (shuffle_product_commitment, shuffle_group))| {
                 shuffle::Evaluated::build_from_transcript(
                     index,
                     shuffle_product_commitment,
                     &self.key,
-                    shuffle_groups[index].clone(),
+                    shuffle_group,
                     &mut transcript,
                 )
             })
