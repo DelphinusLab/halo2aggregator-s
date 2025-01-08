@@ -1,6 +1,5 @@
 use crate::circuit_verifier::build_aggregate_verify_circuit;
 use crate::circuit_verifier::circuit::AggregatorCircuit;
-use crate::circuit_verifier::circuit::AggregatorCircuitOption;
 use crate::circuit_verifier::G2AffineBaseHelper;
 use crate::circuit_verifier::GtHelper;
 use crate::native_verifier::verify_proofs;
@@ -30,14 +29,13 @@ use halo2_proofs::poly::commitment::ParamsVerifier;
 use halo2_proofs::transcript::Blake2bRead;
 use halo2_proofs::transcript::Blake2bWrite;
 use halo2_proofs::transcript::Transcript;
-use halo2ecc_s::circuit::pairing_chip::PairingChipOnProvePairingOps;
-use halo2ecc_s::context::NativeScalarEccContext;
 use std::io::Read;
 use std::io::Write;
 use std::path::Path;
 use std::str::FromStr;
+use std::sync::Arc;
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum TranscriptHash {
     Blake2b,
     Poseidon,
@@ -256,14 +254,11 @@ pub fn run_circuit_unsafe_full_pass_no_rec<
     max_public_instance: Vec<Vec<usize>>,
     force_create_proof: bool,
 ) -> Option<(
-    AggregatorCircuitOption<E::G1Affine>,
+    AggregatorCircuit<E>,
     Vec<E::Scalar>,
     Vec<E::Scalar>,
     E::Scalar,
-)>
-where
-    NativeScalarEccContext<E::G1Affine>: PairingChipOnProvePairingOps<E::G1Affine, E::Scalar>,
-{
+)> {
     run_circuit_unsafe_full_pass::<E, C>(
         cache_folder,
         prefix,
@@ -272,7 +267,12 @@ where
         instances,
         shadow_instances,
         force_create_proof,
-        &AggregatorConfig::new_for_non_rec(hash, commitment_check, expose, max_public_instance),
+        Arc::new(AggregatorConfig::new_for_non_rec(
+            hash,
+            commitment_check,
+            expose,
+            max_public_instance,
+        )),
     )
 }
 
@@ -305,6 +305,7 @@ pub fn calc_hash<C: CurveAffine>(
     res
 }
 
+#[derive(Debug, Clone)]
 pub struct AggregatorConfig<F: FieldExt> {
     pub hash: TranscriptHash,
     pub commitment_check: Vec<[usize; 4]>,
@@ -388,16 +389,13 @@ pub fn run_circuit_unsafe_full_pass<
     instances: Vec<Vec<Vec<E::Scalar>>>,
     shadow_instances: Vec<Vec<Vec<E::Scalar>>>,
     force_create_proof: bool,
-    config: &AggregatorConfig<E::Scalar>,
+    config: Arc<AggregatorConfig<E::Scalar>>,
 ) -> Option<(
-    AggregatorCircuitOption<E::G1Affine>,
+    AggregatorCircuit<E>,
     Vec<E::Scalar>,
     Vec<E::Scalar>,
     E::Scalar,
-)>
-where
-    NativeScalarEccContext<E::G1Affine>: PairingChipOnProvePairingOps<E::G1Affine, E::Scalar>,
-{
+)> {
     let hash = config.hash;
 
     // 1. setup params
@@ -548,9 +546,9 @@ where
     if hash == TranscriptHash::Poseidon {
         let timer = start_timer!(|| "build_aggregate_verify_circuit");
         let (circuit, instances, shadow_instance, hash) = build_aggregate_verify_circuit::<E>(
-            &params_verifier,
-            &vkeys[..].iter().collect::<Vec<_>>(),
-            instances.iter().collect(),
+            Arc::new(params_verifier),
+            &vkeys.into_iter().map(|x| Arc::new(x)).collect::<Vec<_>>()[..],
+            instances,
             proofs,
             config,
         );
@@ -573,19 +571,16 @@ pub fn run_circuit_with_agg_unsafe_full_pass<
     circuits: Vec<C>,
     mut instances: Vec<Vec<Vec<E::Scalar>>>,
     prev_agg_instance: Vec<E::Scalar>,
-    prev_agg_circuit: AggregatorCircuit<E::G1Affine>,
+    prev_agg_circuit: AggregatorCircuit<E>,
     prev_agg_idx: usize,
     force_create_proof: bool,
-    config: &AggregatorConfig<E::Scalar>,
+    config: Arc<AggregatorConfig<E::Scalar>>,
 ) -> Option<(
-    AggregatorCircuitOption<E::G1Affine>,
+    AggregatorCircuit<E>,
     Vec<E::Scalar>,
     Vec<E::Scalar>,
     E::Scalar,
-)>
-where
-    NativeScalarEccContext<E::G1Affine>: PairingChipOnProvePairingOps<E::G1Affine, E::Scalar>,
-{
+)> {
     // 1. setup params
     let params =
         load_or_build_unsafe_params::<E>(k, Some(&cache_folder.join(format!("K{}.params", k))));
@@ -652,9 +647,9 @@ where
     if config.hash == TranscriptHash::Poseidon {
         let timer = start_timer!(|| "build_aggregate_verify_circuit");
         let (circuit, instances, shadow_instance, hash) = build_aggregate_verify_circuit::<E>(
-            &params_verifier,
-            &vkeys[..].iter().collect::<Vec<_>>(),
-            instances.iter().collect(),
+            Arc::new(params_verifier),
+            &vkeys.into_iter().map(|x| Arc::new(x)).collect::<Vec<_>>(),
+            instances,
             proofs,
             config,
         );
@@ -849,26 +844,26 @@ fn test_checkpairing_with_c_wi() {
         (p_pow3 - lambda, false)
     };
 
-    // prove e(P1, Q1) = e(P2, Q2)
-    // namely e(-P1, Q1) * e(P2, Q2) = 1
-    let P1 = bn256::G1::random(&mut OsRng);
-    let Q2 = bn256::G2::random(&mut OsRng);
+    // prove e(p1, q1) = e(p2, q2)
+    // namely e(-p1, q1) * e(p2, q2) = 1
+    let p1 = bn256::G1::random(&mut OsRng);
+    let q2 = bn256::G2::random(&mut OsRng);
     let factor = bn256::Fr::from_raw([3_u64, 0, 0, 0]);
-    let P2 = P1.mul(&factor).to_affine();
-    let Q1 = Q2.mul(&factor).to_affine();
-    let Q1_prepared = bn256::G2Prepared::from(Q1);
-    let Q2_prepared = bn256::G2Prepared::from(Q2.to_affine());
+    let p2 = p1.mul(&factor).to_affine();
+    let q1 = q2.mul(&factor).to_affine();
+    let q1_prepared = bn256::G2Prepared::from(q1);
+    let q2_prepared = bn256::G2Prepared::from(q2.to_affine());
 
     // f^{lambda - p^3} * wi = c^lambda
     // equivalently (f * c_inv)^{lambda - p^3} * wi = c_inv^{-p^3} = c^{p^3}
     assert_eq!(
         Fq12::one(),
-        bn256::multi_miller_loop(&[(&P1.neg().to_affine(), &Q1_prepared), (&P2, &Q2_prepared)])
+        bn256::multi_miller_loop(&[(&p1.neg().to_affine(), &q1_prepared), (&p2, &q2_prepared)])
             .final_exponentiation()
             .0,
     );
 
-    let f = bn256::multi_miller_loop(&[(&P1.neg().to_affine(), &Q1_prepared), (&P2, &Q2_prepared)]);
+    let f = bn256::multi_miller_loop(&[(&p1.neg().to_affine(), &q1_prepared), (&p2, &q2_prepared)]);
     println!("Bn254::multi_miller_loop done!");
     let (c, wi) = miller_loop_compute_c_wi::<bn256::Bn256>(f);
     let c_inv = c.invert().unwrap();
@@ -886,7 +881,7 @@ fn test_checkpairing_with_c_wi() {
         bn256::multi_miller_loop_c_wi(
             &c,
             &wi,
-            &[(&P1.neg().to_affine(), &Q1_prepared), (&P2, &Q2_prepared)]
+            &[(&p1.neg().to_affine(), &q1_prepared), (&p2, &q2_prepared)]
         )
         .0,
     );

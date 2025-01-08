@@ -28,7 +28,7 @@ pub struct NativeEvalContext<
     pub finals: Vec<E::G1Affine>,
     pub values: Vec<(Option<E::G1Affine>, Option<E::Scalar>)>,
 
-    c: EvalContext<E::G1Affine>,
+    pub(crate) c: EvalContext<E::G1Affine>,
     instance_commitments: Vec<Vec<E::G1Affine>>,
     t: Vec<T>,
     _mark: PhantomData<EC>,
@@ -144,6 +144,7 @@ impl<E: MultiMillerLoop, EC: EncodedChallenge<E::G1Affine>, T: TranscriptRead<E:
             .collect();
     }
 }
+
 pub fn verify_single_proof<E: MultiMillerLoop>(
     params: &ParamsVerifier<E>,
     vkey: &VerifyingKey<E::G1Affine>,

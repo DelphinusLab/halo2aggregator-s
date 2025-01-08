@@ -1,9 +1,9 @@
+use crate::utils::field_to_bn;
 use halo2_proofs::arithmetic::BaseExt;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::MultiMillerLoop;
 use halo2_proofs::plonk::VerifyingKey;
 use halo2_proofs::poly::commitment::ParamsVerifier;
-use halo2ecc_s::utils::field_to_bn;
 use num_bigint::BigUint;
 use serde::Deserialize;
 use serde::Serialize;
@@ -238,7 +238,6 @@ mod tests {
                 true,
             )
             .unwrap();
-        let circuit = circuit.circuit_without_select_chip.unwrap();
 
         let circuit0 = circuit.without_witnesses();
         run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(

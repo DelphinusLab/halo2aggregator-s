@@ -1,15 +1,10 @@
+use crate::circuit_verifier::encode_point;
 use halo2_proofs::arithmetic::CurveAffine;
-use halo2_proofs::arithmetic::Field;
 use halo2_proofs::pairing::group::ff::PrimeField;
 use halo2_proofs::transcript::EncodedChallenge;
 use halo2_proofs::transcript::Transcript;
 use halo2_proofs::transcript::TranscriptRead;
 use halo2_proofs::transcript::TranscriptWrite;
-use halo2ecc_s::circuit::range_chip::MAX_BITS;
-use halo2ecc_s::circuit::range_chip::RANGE_VALUE_DECOMPOSE;
-use halo2ecc_s::utils::bn_to_field;
-use halo2ecc_s::utils::field_to_bn;
-use num_bigint::BigUint;
 use poseidon::Poseidon;
 use std::io;
 use std::marker::PhantomData;
@@ -206,26 +201,10 @@ impl<C: CurveAffine> Transcript<C, PoseidonEncodedChallenge<C>> for PoseidonPure
 
     fn common_point(&mut self, point: C) -> io::Result<()> {
         self.state.update(&[C::ScalarExt::from(PREFIX_POINT)]);
-        let x_y: Option<_> = point.coordinates().map(|c| (*c.x(), *c.y())).into();
-        let (x, y) = x_y.unwrap_or((C::Base::zero(), C::Base::zero()));
-        let x_bn = field_to_bn(&x);
-        let y_bn = field_to_bn(&y);
 
-        let bits = RANGE_VALUE_DECOMPOSE * MAX_BITS;
-        let chunk_bits = bits * 2;
+        let elem = encode_point(&point);
 
-        let chunk0 = &x_bn & ((BigUint::from(1u64) << chunk_bits) - 1u64);
-        let chunk1 =
-            (x_bn >> chunk_bits) + ((&y_bn & ((BigUint::from(1u64) << bits) - 1u64)) << bits);
-        let chunk2 = y_bn >> bits;
-
-        self.state.update(
-            &[chunk0, chunk1, chunk2]
-                .iter()
-                .map(|x| bn_to_field(&x))
-                .collect::<Vec<_>>(),
-        );
-
+        self.state.update(&elem);
         Ok(())
     }
 

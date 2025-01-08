@@ -6,9 +6,7 @@ pub mod native_verifier;
 pub mod solidity_verifier;
 pub mod transcript;
 
-pub use halo2ecc_s::circuit::pairing_chip::PairingChipOnProvePairingOps;
-pub use halo2ecc_s::circuit::pairing_chip::PairingChipOps;
-pub use halo2ecc_s::context::NativeScalarEccContext;
+mod utils;
 
 #[test]
 fn test_batch_no_rec() {
@@ -41,7 +39,6 @@ fn test_batch_no_rec() {
             true,
         )
         .unwrap();
-    let circuit = circuit.circuit_without_select_chip.unwrap();
 
     run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
         path,
@@ -80,6 +77,7 @@ fn test_single_rec() {
     use sha3::Keccak256;
     use std::fs::DirBuilder;
     use std::path::Path;
+    use std::sync::Arc;
 
     let path = "./output";
     DirBuilder::new().recursive(true).create(path).unwrap();
@@ -102,7 +100,7 @@ fn test_single_rec() {
             vec![target_instances.clone()],
             vec![],
             false,
-            &config,
+            Arc::new(config.clone()),
         )
         .unwrap();
     println!(
@@ -113,7 +111,7 @@ fn test_single_rec() {
     let mut hashes = vec![hash];
     let mut final_hashes = vec![agg_l0_instances[0]];
 
-    let mut last_agg = agg_l0;
+    let mut last_agg_circuit = agg_l0;
     let mut last_agg_instances = agg_l0_instances;
     let mut last_agg_shadow_instances = agg_l0_shadow_instances;
 
@@ -130,7 +128,6 @@ fn test_single_rec() {
             config.use_select_chip = false;
         }
 
-        let last_agg_circuit = last_agg.circuit_with_select_chip.unwrap();
         let (agg, instances, shadow_instance, hash) =
             run_circuit_with_agg_unsafe_full_pass::<Bn256, _>(
                 path,
@@ -142,7 +139,7 @@ fn test_single_rec() {
                 last_agg_circuit,
                 i,
                 false,
-                &config,
+                Arc::new(config.clone()),
             )
             .unwrap();
         println!(
@@ -155,12 +152,11 @@ fn test_single_rec() {
             final_hashes.push(instances[0]);
         }
 
-        last_agg = agg;
+        last_agg_circuit = agg;
         last_agg_instances = instances;
         last_agg_shadow_instances = shadow_instance;
     }
 
-    let last_agg_circuit = last_agg.circuit_without_select_chip.unwrap();
     config.hash = TranscriptHash::Keccak;
     let final_agg_file_prex = format!("simple-circuit.agg.final");
     run_circuit_unsafe_full_pass::<Bn256, _>(
@@ -171,7 +167,7 @@ fn test_single_rec() {
         vec![vec![last_agg_instances.clone()]],
         vec![vec![last_agg_shadow_instances]],
         false,
-        &config,
+        Arc::new(config.clone()),
     );
 
     let params =

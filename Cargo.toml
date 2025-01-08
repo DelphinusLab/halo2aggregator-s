@@ -7,8 +7,8 @@ edition = "2021"
 
 [dependencies]
 blake2b_simd = "1"
-halo2_proofs = { git = "https://github.com/DelphinusLab/halo2-gpu-specific.git", branch="moore/logup_extent", default-features = true }
-halo2ecc-s = { git="https://github.com/DelphinusLab/halo2ecc-s.git", branch="moore/logup_extend" }
+halo2_proofs = { git = "https://github.com/DelphinusLab/halo2-gpu-specific.git", branch = "moore/logup_extent", default-features = true }
+halo2ecc-o = { path = "../halo2ecc-o" }
 ark-std = { version = "0.4.0" }
 ark-ff = {version = "0.4.2"}
 ff = "0.12"
@@ -27,6 +27,6 @@ serde_json = "1.0"
 
 [features]
 default = []
-profile = ["ark-std/print-trace", "halo2ecc-s/profile", "halo2ecc-s/profile"]
-cuda = ["halo2_proofs/cuda", "halo2ecc-s/cuda"]
+profile = ["ark-std/print-trace", "halo2ecc-o/profile"]
+cuda = ["halo2_proofs/cuda", "halo2ecc-o/cuda"]
 on_prove_pairing_affine = []
