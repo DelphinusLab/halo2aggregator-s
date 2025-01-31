@@ -97,7 +97,7 @@ pub fn encode_point<C: CurveAffine>(point: &C) -> Vec<C::Scalar> {
 
     vec![
         bn_to_field(&(&x % (&shift * &shift))),
-        bn_to_field(&(x / (&shift * &shift) + &y % &shift)),
+        bn_to_field(&(x / (&shift * &shift) + (&y % &shift) * &shift)),
         bn_to_field(&(y / shift)),
     ]
 }
@@ -127,11 +127,13 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
     }
 
     let absorb_start_idx = targets.len();
+
     for abs in &config.absorb {
         targets.push(advices[abs.1[0]][abs.1[1]].0.clone());
     }
 
     let expose_start_idx = targets.len();
+
     for idx in &config.expose {
         targets.push(advices[idx[0]][idx[1]].0.clone());
     }
@@ -142,7 +144,6 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
     let (pl, mut il, constant_hash) = match config.hash {
         TranscriptHash::Poseidon => {
             let mut t = vec![];
-            let poseidon = poseidon.clone();
             for i in 0..proofs.len() {
                 t.push(PoseidonRead::init_with_poseidon(
                     &proofs[i][..],
@@ -179,6 +180,7 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
 
     let s_g2_prepared = E::G2Prepared::from(params.s_g2);
     let n_g2_prepared = E::G2Prepared::from(-params.g2);
+
     let success = bool::from(
         E::multi_miller_loop(&[(&pl[0], &s_g2_prepared), (&pl[1], &n_g2_prepared)])
             .final_exponentiation()
@@ -323,7 +325,7 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
                 .concat(),
         );
 
-        hash_list.append(&mut shadow_instances);
+        hash_list.append(&mut shadow_instances.clone());
         let instances = {
             let mut keccak = Keccak256::new();
             let mut data = vec![];

@@ -17,18 +17,20 @@ use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::arithmetic::MultiMillerLoop;
 use halo2_proofs::arithmetic::MultiMillerLoopOnProvePairing;
 use halo2_proofs::pairing::group::Curve;
-use halo2_proofs::plonk::create_proof_ext;
 use halo2_proofs::plonk::keygen_pk;
 use halo2_proofs::plonk::keygen_vk;
 use halo2_proofs::plonk::verify_proof_ext;
 use halo2_proofs::plonk::Circuit;
+use halo2_proofs::plonk::ProvingKey;
 use halo2_proofs::plonk::SingleVerifier;
 use halo2_proofs::plonk::VerifyingKey;
 use halo2_proofs::poly::commitment::Params;
 use halo2_proofs::poly::commitment::ParamsVerifier;
 use halo2_proofs::transcript::Blake2bRead;
 use halo2_proofs::transcript::Blake2bWrite;
+use halo2_proofs::transcript::EncodedChallenge;
 use halo2_proofs::transcript::Transcript;
+use halo2_proofs::transcript::TranscriptWrite;
 use std::io::Read;
 use std::io::Write;
 use std::path::Path;
@@ -147,6 +149,56 @@ pub fn load_proof(cache_file: &Path) -> Vec<u8> {
     buf
 }
 
+fn create_proof_ext<
+    C: CurveAffine,
+    E: EncodedChallenge<C>,
+    T: TranscriptWrite<C, E>,
+    ConcreteCircuit: Circuit<C::Scalar>,
+>(
+    params: &Params<C>,
+    pk: &ProvingKey<C>,
+    circuits: &[ConcreteCircuit],
+    instances: &[&[&[C::Scalar]]],
+    transcript: &mut T,
+    use_gwc: bool,
+) {
+    #[cfg(not(feature = "cuda"))]
+    halo2_proofs::plonk::create_proof_ext(
+        params, pk, circuits, instances, OsRng, transcript, use_gwc,
+    )
+    .expect("proof generation should not fail");
+
+    #[cfg(feature = "cuda")]
+    {
+        use halo2_proofs::plonk::generate_advice_from_synthesize;
+        use zkwasm_prover::create_proof_from_advices_with_gwc;
+        use zkwasm_prover::create_proof_from_advices_with_shplonk;
+        use zkwasm_prover::prepare_advice_buffer;
+
+        let mut advices = Arc::new(prepare_advice_buffer(pk, false));
+
+        generate_advice_from_synthesize(
+            &params,
+            pk,
+            &circuits[0],
+            &instances[0],
+            &Arc::get_mut(&mut advices)
+                .unwrap()
+                .iter_mut()
+                .map(|x| (&mut x[..]) as *mut [_])
+                .collect::<Vec<_>>()[..],
+        );
+
+        if use_gwc {
+            create_proof_from_advices_with_gwc(&params, pk, &instances[0], advices, transcript)
+                .expect("proof generation should not fail");
+        } else {
+            create_proof_from_advices_with_shplonk(&params, pk, &instances[0], advices, transcript)
+                .expect("proof generation should not fail");
+        }
+    }
+}
+
 pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
     params: &Params<E::G1Affine>,
     vkey: VerifyingKey<E::G1Affine>,
@@ -176,11 +228,9 @@ pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
                 &pkey,
                 &[circuit],
                 &[instances],
-                OsRng,
                 &mut transcript,
                 !use_shplonk,
-            )
-            .expect("proof generation should not fail");
+            );
             transcript.finalize()
         }
         TranscriptHash::Poseidon => {
@@ -190,11 +240,9 @@ pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
                 &pkey,
                 &[circuit],
                 &[instances],
-                OsRng,
                 &mut transcript,
                 !use_shplonk,
-            )
-            .expect("proof generation should not fail");
+            );
             transcript.finalize()
         }
         TranscriptHash::Sha => {
@@ -204,11 +252,9 @@ pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
                 &pkey,
                 &[circuit],
                 &[instances],
-                OsRng,
                 &mut transcript,
                 !use_shplonk,
-            )
-            .expect("proof generation should not fail");
+            );
             transcript.finalize()
         }
         TranscriptHash::Keccak => {
@@ -218,11 +264,9 @@ pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
                 &pkey,
                 &[circuit],
                 &[instances],
-                OsRng,
                 &mut transcript,
                 !use_shplonk,
-            )
-            .expect("proof generation should not fail");
+            );
             transcript.finalize()
         }
     };
@@ -508,18 +552,16 @@ pub fn run_circuit_unsafe_full_pass<
 
         // native single check
         if true {
-            let timer = start_timer!(|| "native verify single proof");
-            for (i, proof) in proofs.iter().enumerate() {
-                crate::native_verifier::verify_single_proof::<E>(
-                    &params_verifier,
-                    &vkey,
-                    &instances[i],
-                    proof.clone(),
-                    hash,
-                    hash != TranscriptHash::Poseidon || config.target_proof_with_shplonk_as_default,
-                    &config.target_proof_with_shplonk,
-                );
-            }
+            let timer = start_timer!(|| format!("native verify single proof {}", i));
+            crate::native_verifier::verify_single_proof::<E>(
+                &params_verifier,
+                &vkey,
+                &instances[i],
+                proof.clone(),
+                hash,
+                hash != TranscriptHash::Poseidon || config.target_proof_with_shplonk_as_default,
+                &config.target_proof_with_shplonk,
+            );
             end_timer!(timer);
         }
 

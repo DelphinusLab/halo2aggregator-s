@@ -226,7 +226,7 @@ mod tests {
         DirBuilder::new().recursive(true).create(path).unwrap();
 
         let n_proofs = 2;
-        let target_circuit_k = 8;
+        let target_circuit_k = 16;
         let verify_circuit_k = 22;
 
         let path = Path::new(path);

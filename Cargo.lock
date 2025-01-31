@@ -790,6 +790,7 @@ dependencies = [
  "sha2",
  "sha3",
  "tera",
+ "zkwasm-prover",
 ]
 
 [[package]]
@@ -803,7 +804,6 @@ dependencies = [
  "num-integer",
  "num-traits",
  "rayon",
- "zkwasm-prover",
 ]
 
 [[package]]
@@ -1941,7 +1941,7 @@ dependencies = [
 [[package]]
 name = "zkwasm-prover"
 version = "0.1.0"
-source = "git+https://github.com/DelphinusLab/zkWasm-prover?branch=oogl/logup-oogl-dev-msm#2b0118b717c9ffe1ffb42fba90d1b89ffccc5203"
+source = "git+https://github.com/DelphinusLab/zkWasm-prover.git?branch=oogl/logup-oogl-dev-msm#2b0118b717c9ffe1ffb42fba90d1b89ffccc5203"
 dependencies = [
  "ark-std",
  "cc",
