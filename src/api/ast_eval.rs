@@ -187,8 +187,15 @@ impl<C: CurveAffine> EvalContext<C> {
         let ast: &AstScalar<C> = ast.as_ref();
         match ast {
             AstScalar::FromConst(x) => {
-                let pos = self.const_scalars.len();
-                self.const_scalars.push(*x);
+                let mut pos = self.const_scalars.len();
+                for (i, s) in self.const_scalars.iter().enumerate() {
+                    if s == x {
+                        pos = i;
+                    }
+                }
+                if pos == self.const_scalars.len() {
+                    self.const_scalars.push(*x);
+                }
                 EvalPos::Constant(pos.try_into().unwrap())
             }
             AstScalar::FromTranscript(t) | AstScalar::FromChallenge(t) => {
@@ -268,8 +275,15 @@ impl<C: CurveAffine> EvalContext<C> {
         let ast: &AstPoint<C> = ast.as_ref();
         match ast {
             AstPoint::FromConst(c) => {
-                let pos = self.const_points.len();
-                self.const_points.push(*c);
+                let mut pos = self.const_points.len();
+                for (i, p) in self.const_points.iter().enumerate() {
+                    if p == c {
+                        pos = i;
+                    }
+                }
+                if pos == self.const_points.len() {
+                    self.const_points.push(*c);
+                }
                 EvalPos::Constant(pos.try_into().unwrap())
             }
             AstPoint::FromTranscript(t) => self.translate_ast_transcript(t),
