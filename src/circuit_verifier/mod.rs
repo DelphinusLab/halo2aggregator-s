@@ -302,6 +302,12 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
                 // Calculate instance commitment in circuit.
                 let mut instance_commitment = E::G1Affine::identity().to_curve();
                 for row_idx in start_row..end_row {
+                    hash_list.push(
+                        instances[proof_idx][column_idx]
+                            .get(row_idx)
+                            .cloned()
+                            .unwrap_or(E::Scalar::from(0u64)),
+                    );
                     instance_commitment = instance_commitment
                         + params.g_lagrange[row_idx]
                             * instances[proof_idx][column_idx]
@@ -315,6 +321,11 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
             }
         }
 
+        println!(
+            "calc instance stage: hash_list before shadow instance {:?}",
+            hash_list
+        );
+
         let mut shadow_instances: Vec<E::Scalar> = vec![final_hash];
         shadow_instances.append(
             &mut vec![&pl[expose_start_idx..pl.len()]]
@@ -325,17 +336,29 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
                 .concat(),
         );
 
+        println!(
+            "calc instance stage: shadow_instances {:?}",
+            shadow_instances
+        );
+
         hash_list.append(&mut shadow_instances.clone());
         let instances = {
             let mut keccak = Keccak256::new();
             let mut data = vec![];
-            hash_list.iter().for_each(|x| x.write(&mut data).unwrap());
+            hash_list.iter().for_each(|x| {
+                let mut buf = vec![];
+                x.write(&mut buf).unwrap();
+                buf.reverse();
+                data.extend_from_slice(&buf);
+            });
             keccak.update(&data);
             let res: [u8; 32] = keccak.finalize().into();
-            let res_bn = BigUint::from_bytes_le(&res);
+            let res_bn = BigUint::from_bytes_be(&res);
             let res = bn_to_field(&res_bn);
             vec![res]
         };
+
+        println!("calc instance stage: final instances {:?}", instances);
 
         (instances, shadow_instances)
     };

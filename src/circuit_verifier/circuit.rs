@@ -544,6 +544,7 @@ pub fn synthesize_aggregate_verify_circuit<
         // It doesn't expose target circuit's instance commitment but hash them with shadow instance.
         // The shadow instance contains aggregator_hash and exposed commitments (as encoded scalars).
         let mut hash_list = vec![];
+
         for (proof_idx, max_row_of_cols) in config.target_proof_max_instance.iter().enumerate() {
             for (column_idx, max_row) in max_row_of_cols.iter().enumerate() {
                 let mut start_row = 0;
@@ -606,16 +607,29 @@ pub fn synthesize_aggregate_verify_circuit<
         );
 
         println!(
-            "hash_list before shadow instance {:?}",
+            "synthesize stage: hash_list before shadow instance {:?}",
+            hash_list.iter().map(|x| x.value()).collect::<Vec<_>>()
+        );
+
+        println!(
+            "synthesize stage: shadow instances {:?}",
             assigned_shadow_instances
                 .iter()
                 .map(|x| x.value())
                 .collect::<Vec<_>>()
         );
 
-        hash_list.append(&mut assigned_shadow_instances);
+        hash_list.append(&mut assigned_shadow_instances.clone());
 
         let assigned_instances = vec![ctx.get_plonk_region_context().hash(&hash_list[..])?];
+
+        println!(
+            "synthesize stage: final instance {:?}",
+            assigned_instances
+                .iter()
+                .map(|x| x.value())
+                .collect::<Vec<_>>()
+        );
 
         (assigned_instances, assigned_shadow_instances)
     };
