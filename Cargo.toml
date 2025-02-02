@@ -9,7 +9,7 @@ edition = "2021"
 blake2b_simd = "1"
 halo2_proofs = { git = "https://github.com/DelphinusLab/halo2-gpu-specific.git", branch = "moore/logup_extent", default-features = true }
 zkwasm-prover = {  git = "https://github.com/DelphinusLab/zkWasm-prover.git", branch = "oogl/logup-oogl-dev-msm" }
-halo2ecc-o = { path = "../halo2ecc-o" }
+halo2ecc-o = { git = "https://github.com/OogLayout/halo2ecc-o.git" }
 ark-std = { version = "0.4.0" }
 ark-ff = {version = "0.4.2"}
 ff = "0.12"
