@@ -9,8 +9,13 @@ Aggregator for halo2 plonk circuits, including:
 
 ## Try it on the local testnet
 ```
-cargo test test_solidity_render --release -- --nocapture
+cargo test test_solidity_render_keccak --release
 ```
+or debug with RTX4090
+```
+cargo test test_solidity_render_keccak --release --features profile --features cuda -- --nocapture
+```
+
 
 In terminal 1:
 ```
@@ -27,7 +32,7 @@ truffle test
 
 ## Try it on Goerli
 ```
-cargo test test_solidity_render --release -- --nocapture
+cargo test test_solidity_render_keccak --release -- --nocapture
 
 cd sol
 yarn
