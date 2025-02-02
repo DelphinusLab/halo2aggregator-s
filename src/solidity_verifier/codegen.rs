@@ -31,8 +31,8 @@ const MSM_BUF_START: usize = CHALLENGE_BUF_START + CHALLENGE_BUF_MAX;
 const TEMP_BUF_START: usize = MSM_BUF_START + 2 * MAX_MSM_COUNT + 3; // 3 reserved for msm operation;
 const DEEP_LIMIT: usize = 6;
 
-const SOLIDITY_VERIFY_FIRST_STEP_MAX_SIZE: usize = 99; // first step need to be less for shplonk
-const SOLIDITY_VERIFY_STEP_MAX_SIZE: usize = 135;
+const SOLIDITY_VERIFY_FIRST_STEP_MAX_SIZE: usize = 90; // first step need to be less for shplonk
+const SOLIDITY_VERIFY_STEP_MAX_SIZE: usize = 100;
 
 const SOLIDITY_DEBUG: bool = false;
 
