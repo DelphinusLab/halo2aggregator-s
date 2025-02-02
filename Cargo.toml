@@ -7,11 +7,11 @@ edition = "2021"
 
 [dependencies]
 blake2b_simd = "1"
-halo2_proofs = { git = "https://github.com/DelphinusLab/halo2-gpu-specific.git", branch = "moore/logup_extent", default-features = true }
-zkwasm-prover = {  git = "https://github.com/DelphinusLab/zkWasm-prover.git", branch = "oogl/logup-oogl-dev-msm" }
+halo2_proofs = { git = "https://github.com/DelphinusLab/halo2-gpu-specific.git", branch = "moore/logup_extent", default-features = false }
+zkwasm-prover = { git = "https://github.com/DelphinusLab/zkWasm-prover.git", optional = true, branch = "oogl/logup-oogl-dev-msm", default-features = false }
 halo2ecc-o = { git = "https://github.com/OogLayout/halo2ecc-o.git" }
 ark-std = { version = "0.4.0" }
-ark-ff = {version = "0.4.2"}
+ark-ff = { version = "0.4.2" }
 ff = "0.12"
 poseidon = { git = "https://github.com/DelphinusLab/poseidon.git" }
 num-integer = "0.1"
@@ -21,12 +21,15 @@ tera = "1.15.0"
 sha2 = "0.10.6"
 sha3 = "0.10.8"
 lazy_static = "1.4.0"
-rand_core = { version = "0.6", default-features = false, features = ["getrandom"] }
+rand_core = { version = "0.6", default-features = false, features = [
+    "getrandom",
+] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+
 
 [features]
 default = []
 profile = ["ark-std/print-trace", "halo2_proofs/profile", "halo2ecc-o/profile"]
-cuda = ["halo2_proofs/cuda", "halo2ecc-o/cuda"]
+cuda = ["halo2_proofs/cuda", "halo2ecc-o/cuda", "dep:zkwasm-prover"]
 on_prove_pairing_affine = []
