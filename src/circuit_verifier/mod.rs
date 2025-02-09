@@ -321,11 +321,6 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
             }
         }
 
-        println!(
-            "calc instance stage: hash_list before shadow instance {:?}",
-            hash_list
-        );
-
         let mut shadow_instances: Vec<E::Scalar> = vec![final_hash];
         shadow_instances.append(
             &mut vec![&pl[expose_start_idx..pl.len()]]
@@ -334,11 +329,6 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
                 .map(|p| encode_point(p))
                 .collect::<Vec<_>>()
                 .concat(),
-        );
-
-        println!(
-            "calc instance stage: shadow_instances {:?}",
-            shadow_instances
         );
 
         hash_list.append(&mut shadow_instances.clone());
@@ -357,8 +347,6 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
             let res = bn_to_field(&res_bn);
             vec![res]
         };
-
-        println!("calc instance stage: final instances {:?}", instances);
 
         (instances, shadow_instances)
     };

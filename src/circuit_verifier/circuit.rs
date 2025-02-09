@@ -123,11 +123,16 @@ impl<E: MultiMillerLoop + MultiMillerLoopOnProvePairing + GtHelper + G2AffineBas
                 .unwrap();
                 end_timer!(timer);
 
+                let timer = start_timer!(|| "finalize int mul");
                 context.integer_context().finalize_int_mul()?;
+                end_timer!(timer);
+
                 context.get_range_region_context().init()?;
+                let timer = start_timer!(|| "finalize compact cells");
                 context
                     .get_range_region_context()
                     .finalize_compact_cells()?;
+                end_timer!(timer);
 
                 Ok(instances)
             },
@@ -474,6 +479,8 @@ pub fn synthesize_aggregate_verify_circuit<
 
         let assigned_s_g2 = AssignedG2Affine::new(assigned_s_g2_x, assigned_s_g2_y, z);
         let assigned_g2 = AssignedG2Affine::new(assigned_g2_x, assigned_g2_y, z);
+
+        let timer = start_timer!(|| "check_pairing");
         if let Some(v) = pairing_c_wi {
             let (c, wi, on_pairing_coeff) = v;
             let c_assigned = ctx.fq12_assign(Some(E::decode_gt(c)))?;
@@ -523,6 +530,7 @@ pub fn synthesize_aggregate_verify_circuit<
         } else {
             ctx.check_pairing(&[(&pl[0], &assigned_s_g2), (&pl[1], &assigned_g2)])?;
         }
+        end_timer!(timer);
     }
 
     let (assigned_instances, assigned_shadow_instances) = if !config.is_final_aggregator {
@@ -606,30 +614,9 @@ pub fn synthesize_aggregate_verify_circuit<
                 .concat(),
         );
 
-        println!(
-            "synthesize stage: hash_list before shadow instance {:?}",
-            hash_list.iter().map(|x| x.value()).collect::<Vec<_>>()
-        );
-
-        println!(
-            "synthesize stage: shadow instances {:?}",
-            assigned_shadow_instances
-                .iter()
-                .map(|x| x.value())
-                .collect::<Vec<_>>()
-        );
-
         hash_list.append(&mut assigned_shadow_instances.clone());
 
         let assigned_instances = vec![ctx.get_plonk_region_context().hash(&hash_list[..])?];
-
-        println!(
-            "synthesize stage: final instance {:?}",
-            assigned_instances
-                .iter()
-                .map(|x| x.value())
-                .collect::<Vec<_>>()
-        );
 
         (assigned_instances, assigned_shadow_instances)
     };

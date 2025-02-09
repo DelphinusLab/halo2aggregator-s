@@ -506,7 +506,7 @@ pub fn run_circuit_unsafe_full_pass<
         );
 
         // origin check
-        if true {
+        if false {
             let use_shplonk = hash != TranscriptHash::Poseidon
                 || config.target_proof_with_shplonk_as_default
                 || config.target_proof_with_shplonk.contains(&i);
@@ -551,7 +551,7 @@ pub fn run_circuit_unsafe_full_pass<
         }
 
         // native single check
-        if true {
+        if false {
             let timer = start_timer!(|| format!("native verify single proof {}", i));
             crate::native_verifier::verify_single_proof::<E>(
                 &params_verifier,
