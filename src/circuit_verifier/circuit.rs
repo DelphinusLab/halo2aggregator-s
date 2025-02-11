@@ -11,17 +11,14 @@ use crate::circuits::utils::AggregatorConfig;
 use crate::circuits::utils::TranscriptHash;
 use crate::transcript::poseidon::PoseidonPure;
 use crate::transcript::poseidon::*;
-use crate::utils::bn_to_field;
 use ark_std::end_timer;
 use ark_std::start_timer;
 use halo2_proofs::arithmetic::CurveAffine;
-use halo2_proofs::arithmetic::MillerLoopResult;
 use halo2_proofs::arithmetic::MultiMillerLoop;
 use halo2_proofs::arithmetic::MultiMillerLoopOnProvePairing;
 use halo2_proofs::circuit::floor_planner::FlatFloorPlanner;
 use halo2_proofs::circuit::Layouter;
 use halo2_proofs::pairing::group::prime::PrimeCurveAffine;
-use halo2_proofs::pairing::group::Group;
 use halo2_proofs::plonk::Circuit;
 use halo2_proofs::plonk::Column;
 use halo2_proofs::plonk::ConstraintSystem;
@@ -46,6 +43,17 @@ use std::borrow::Borrow;
 use std::io;
 use std::sync::Arc;
 
+macro_rules! assert_eq_on_some {
+    ($l:expr, $r:expr) => {
+        match $r {
+            Some(v) => {
+                assert_eq!($l, v)
+            }
+            None => {}
+        }
+    };
+}
+
 #[derive(Clone)]
 pub struct AggregatorChipConfig {
     ecc_chip_config: NativeScalarEccConfig,
@@ -59,6 +67,7 @@ pub struct AggregatorCircuit<E: MultiMillerLoop> {
     pub(crate) config: Arc<AggregatorConfig<E::Scalar>>,
     pub(crate) instances: Vec<Vec<Vec<E::Scalar>>>,
     pub(crate) proofs: Vec<Vec<u8>>,
+    pub(crate) w_xg: [E::G1Affine; 2],
 }
 
 impl<E: MultiMillerLoop> AggregatorCircuit<E> {
@@ -68,6 +77,7 @@ impl<E: MultiMillerLoop> AggregatorCircuit<E> {
         config: Arc<AggregatorConfig<E::Scalar>>,
         instances: Vec<Vec<Vec<E::Scalar>>>,
         proofs: Vec<Vec<u8>>,
+        w_xg: [E::G1Affine; 2],
     ) -> Self {
         Self {
             params,
@@ -75,6 +85,7 @@ impl<E: MultiMillerLoop> AggregatorCircuit<E> {
             config,
             instances,
             proofs,
+            w_xg,
         }
     }
 }
@@ -118,6 +129,7 @@ impl<E: MultiMillerLoop + MultiMillerLoopOnProvePairing + GtHelper + G2AffineBas
                     &self.vkey.iter().map(|x| x.borrow()).collect::<Vec<_>>()[..],
                     self.instances.clone(),
                     &self.proofs,
+                    self.w_xg,
                     &self.config,
                 )
                 .unwrap();
@@ -148,6 +160,142 @@ impl<E: MultiMillerLoop + MultiMillerLoopOnProvePairing + GtHelper + G2AffineBas
     }
 }
 
+fn assign_g2_from_params<
+    E: MultiMillerLoop + MultiMillerLoopOnProvePairing + GtHelper + G2AffineBaseHelper,
+>(
+    params: &ParamsVerifier<E>,
+    ctx: &mut NativeScalarEccContext<'_, E::G1Affine>,
+) -> Result<[AssignedG2Affine<E::G1Affine, E::Scalar>; 2], EccUnsafeError> {
+    let s_g2 = params.s_g2.coordinates().unwrap();
+    let s_g2_x = *s_g2.x();
+    let s_g2_y = *s_g2.y();
+    let assigned_s_g2_x = ctx.fq2_assign_constant(E::decode(s_g2_x))?;
+    let assigned_s_g2_y = ctx.fq2_assign_constant(E::decode(s_g2_y))?;
+
+    let g2 = (-params.g2).coordinates().unwrap();
+    let g2_x = *g2.x();
+    let g2_y = *g2.y();
+    let assigned_g2_x = ctx.fq2_assign_constant(E::decode(g2_x))?;
+    let assigned_g2_y = ctx.fq2_assign_constant(E::decode(g2_y))?;
+
+    let z = ctx
+        .get_integer_context()
+        .plonk_region_context()
+        .assign_constant(E::Scalar::from(0u64))?
+        .into();
+
+    let assigned_s_g2 = AssignedG2Affine::new(assigned_s_g2_x, assigned_s_g2_y, z);
+    let assigned_g2 = AssignedG2Affine::new(assigned_g2_x, assigned_g2_y, z);
+
+    Ok([assigned_s_g2, assigned_g2])
+}
+
+fn check_pairing_raw<
+    E: MultiMillerLoop + MultiMillerLoopOnProvePairing + GtHelper + G2AffineBaseHelper,
+>(
+    params: &ParamsVerifier<E>,
+    ctx: &mut NativeScalarEccContext<'_, E::G1Affine>,
+    assigned_w_x: &AssignedPoint<E::G1Affine, E::Scalar>,
+    assigned_w_g: &AssignedPoint<E::G1Affine, E::Scalar>,
+) -> Result<(), EccUnsafeError> {
+    let [assigned_s_g2, assigned_g2] = assign_g2_from_params(params, ctx)?;
+    ctx.check_pairing(&[(assigned_w_x, &assigned_s_g2), (assigned_w_g, &assigned_g2)])?;
+    Ok(())
+}
+
+fn check_pairing_on_prove_pairing<
+    E: MultiMillerLoop + MultiMillerLoopOnProvePairing + GtHelper + G2AffineBaseHelper,
+>(
+    params: &ParamsVerifier<E>,
+    ctx: &mut NativeScalarEccContext<'_, E::G1Affine>,
+    w_x: E::G1Affine,
+    w_g: E::G1Affine,
+    assigned_w_x: &AssignedPoint<E::G1Affine, E::Scalar>,
+    assigned_w_g: &AssignedPoint<E::G1Affine, E::Scalar>,
+) -> Result<(), EccUnsafeError> {
+    let [assigned_s_g2, assigned_g2] = assign_g2_from_params(params, ctx)?;
+
+    #[cfg(not(feature = "on_prove_pairing_affine"))]
+    {
+        // Verify pairing with c and wi scheme
+        let s_g2_prepared = E::G2Prepared::from(params.s_g2);
+        let n_g2_prepared = E::G2Prepared::from(-params.g2);
+        let f = E::multi_miller_loop(&[(&w_x, &s_g2_prepared), (&w_g, &n_g2_prepared)]);
+        let (c, wi) = miller_loop_compute_c_wi::<E>(f);
+
+        let c_assigned = ctx.fq12_assign(Some(E::decode_gt(c)))?;
+        let wi_assigned = ctx.fq12_assign(Some(E::decode_gt(wi)))?;
+        ctx.check_pairing_c_wi(
+            &c_assigned,
+            &wi_assigned,
+            &[(assigned_w_x, &assigned_s_g2), (assigned_w_g, &assigned_g2)],
+        )?;
+    };
+
+    #[cfg(feature = "on_prove_pairing_affine")]
+    {
+        let s_g2_prepared = E::G2OnProvePrepared::from(params.s_g2);
+        let n_g2_prepared = E::G2OnProvePrepared::from(-params.g2);
+        let f = E::multi_miller_loop_on_prove_pairing_prepare(&[
+            (&w_x, &s_g2_prepared),
+            (&w_g, &n_g2_prepared),
+        ]);
+        let (c, wi) = miller_loop_compute_c_wi::<E>(f);
+        let assigned_c = ctx.fq12_assign(Some(E::decode_gt(c)))?;
+        let assigned_wi = ctx.fq12_assign(Some(E::decode_gt(wi)))?;
+        let mut coeffs_s_g2: Vec<[AssignedFq2<<E::G1Affine as CurveAffine>::Base, E::Scalar>; 2]> =
+            vec![];
+        for v in E::get_g2_on_prove_prepared_coeffs(&s_g2_prepared).iter() {
+            coeffs_s_g2.push([
+                ctx.fq2_assign_constant((v.0 .0, v.0 .1))?,
+                ctx.fq2_assign_constant((v.1 .0, v.1 .1))?,
+            ]);
+        }
+        let mut coeffs_n_g2: Vec<[AssignedFq2<<E::G1Affine as CurveAffine>::Base, E::Scalar>; 2]> =
+            vec![];
+        for v in E::get_g2_on_prove_prepared_coeffs(&n_g2_prepared).iter() {
+            coeffs_n_g2.push([
+                ctx.fq2_assign_constant((v.0 .0, v.0 .1))?,
+                ctx.fq2_assign_constant((v.1 .0, v.1 .1))?,
+            ]);
+        }
+        let assigned_s_g2_prepared = AssignedG2OnProvePrepared::new(coeffs_s_g2, assigned_s_g2);
+        let assigned_n_g2_prepared = AssignedG2OnProvePrepared::new(coeffs_n_g2, assigned_g2);
+        ctx.check_pairing_on_prove_pairing(
+            &assigned_c,
+            &assigned_wi,
+            &[
+                (assigned_w_x, &assigned_s_g2_prepared),
+                (assigned_w_g, &assigned_n_g2_prepared),
+            ],
+        )?;
+    };
+
+    Ok(())
+}
+
+fn check_pairing<
+    E: MultiMillerLoop + MultiMillerLoopOnProvePairing + GtHelper + G2AffineBaseHelper,
+>(
+    params: &ParamsVerifier<E>,
+    ctx: &mut NativeScalarEccContext<'_, E::G1Affine>,
+    w_x: E::G1Affine,
+    w_g: E::G1Affine,
+) -> Result<[AssignedPoint<E::G1Affine, E::Scalar>; 2], EccUnsafeError> {
+    let timer = start_timer!(|| "check pairing");
+    let assigned_w_x = ctx.assign_point(Some(w_x))?;
+    let assigned_w_g = ctx.assign_point(Some(w_g))?;
+
+    if E::support_on_prove_pairing() {
+        check_pairing_on_prove_pairing(params, ctx, w_x, w_g, &assigned_w_x, &assigned_w_g)?;
+    } else {
+        check_pairing_raw(params, ctx, &assigned_w_x, &assigned_w_g)?;
+    }
+    end_timer!(timer);
+
+    Ok([assigned_w_x, assigned_w_g])
+}
+
 /* expose: expose target circuits' commitments to current aggregator circuits' instance
  * absorb: absorb target circuits' commitments to target aggregator circuits' instance
  * target_aggregator_constant_hash_instance: instance_offset of target_aggregator for constant_hash
@@ -162,6 +310,7 @@ pub fn synthesize_aggregate_verify_circuit<
     vkey: &[&VerifyingKey<E::G1Affine>],
     instances: Vec<Vec<Vec<E::Scalar>>>,
     proofs: &Vec<Vec<u8>>,
+    w_xg: [E::G1Affine; 2],
     config: &AggregatorConfig<E::Scalar>,
 ) -> Result<
     (
@@ -174,6 +323,7 @@ pub fn synthesize_aggregate_verify_circuit<
     let instance_commitments =
         instance_to_instance_commitment(&params, vkey, instances.iter().collect());
 
+    let timer = start_timer!(|| "build AST tree");
     // Build AST tree.
     let (w_x, w_g, advices) = verify_aggregation_proofs(
         params,
@@ -182,6 +332,7 @@ pub fn synthesize_aggregate_verify_circuit<
         config.target_proof_with_shplonk_as_default,
         &config.target_proof_with_shplonk,
     );
+    end_timer!(timer);
 
     // Push commitment ast entry to targets vector.
     // Then context_eval can return their coresponding cells in circuit.
@@ -204,6 +355,7 @@ pub fn synthesize_aggregate_verify_circuit<
         targets.push(advices[idx[0]][idx[1]].0.clone());
     }
 
+    let timer = start_timer!(|| "eval context");
     // The translate() apply typological sorting for entries in targets vector.
     let c = EvalContext::translate(&targets[..]);
     let poseidon = PoseidonPure::default();
@@ -244,12 +396,18 @@ pub fn synthesize_aggregate_verify_circuit<
         }
         _ => unreachable!(),
     };
+    end_timer!(timer);
+
+    let assigned_w_xg = check_pairing(params, ctx, w_xg[0], w_xg[1])?;
+    ctx.ecc_assert_equal(&assigned_w_xg[0], &pl[0])?;
+    ctx.ecc_assert_equal(&assigned_w_xg[1], &pl[1])?;
 
     // Advice column commitment check
     for check in pl[0..absorb_start_idx].chunks(2).skip(1) {
         ctx.ecc_assert_equal(&check[0], &check[1])?;
     }
 
+    let timer = start_timer!(|| "absorb");
     // Absorb: remove an encoded commitment (of target circuit)
     //         from instance commitment (of last round aggregator).
     // new_instance_commitment =
@@ -275,7 +433,9 @@ pub fn synthesize_aggregate_verify_circuit<
         let update_commit = ctx.ecc_add(&instance_commit, &diff_commit)?;
         il[*proof_idx_of_prev_agg][0] = update_commit;
     }
+    end_timer!(timer);
 
+    let timer = start_timer!(|| "final hash");
     // Generate the aggregator hash H,
     // it can determine the aggregator round number and target circuits.
     // H_0 = Hash(constant_hash)
@@ -316,18 +476,9 @@ pub fn synthesize_aggregate_verify_circuit<
 
         hasher.squeeze(ctx)
     };
+    end_timer!(timer);
 
-    macro_rules! assert_eq_on_some {
-        ($l:expr, $r:expr) => {
-            match $r {
-                Some(v) => {
-                    assert_eq!($l, v)
-                }
-                None => {}
-            }
-        };
-    }
-
+    let timer = start_timer!(|| "expose");
     // Expose advice commitments as encoded scalars into aggregator's instance
     for (i, c) in pl[absorb_start_idx..expose_start_idx].iter().enumerate() {
         let encoded_c = ctx.ecc_encode(c)?;
@@ -357,182 +508,9 @@ pub fn synthesize_aggregate_verify_circuit<
         let update_commit = ctx.ecc_add(&instance_commit, &diff_commit)?;
         il[proof_index][instance_offset] = update_commit;
     }
+    end_timer!(timer);
 
-    // Check pairing result for debug purpose.
-    let pairing_c_wi = {
-        // Assert because circuit does it in multi_miller_loop()
-        assert_eq_on_some!(E::Scalar::from(0u64), pl[0].z.value());
-        assert_eq_on_some!(E::Scalar::from(0u64), pl[1].z.value());
-
-        let (w_x, w_g) = if pl[0].z.value().is_none() {
-            // For setup stage
-            (E::G1Affine::identity(), E::G1Affine::identity())
-        } else {
-            let w_x = E::G1Affine::from_xy(
-                bn_to_field(
-                    ctx.get_integer_context()
-                        .get_w_bn(&pl[0].x)
-                        .as_ref()
-                        .unwrap(),
-                ),
-                bn_to_field(
-                    ctx.get_integer_context()
-                        .get_w_bn(&pl[0].y)
-                        .as_ref()
-                        .unwrap(),
-                ),
-            )
-            .unwrap();
-
-            let w_g = E::G1Affine::from_xy(
-                bn_to_field(
-                    ctx.get_integer_context()
-                        .get_w_bn(&pl[1].x)
-                        .as_ref()
-                        .unwrap(),
-                ),
-                bn_to_field(
-                    ctx.get_integer_context()
-                        .get_w_bn(&pl[1].y)
-                        .as_ref()
-                        .unwrap(),
-                ),
-            )
-            .unwrap();
-
-            (w_x, w_g)
-        };
-
-        let s_g2_prepared = E::G2Prepared::from(params.s_g2);
-        let n_g2_prepared = E::G2Prepared::from(-params.g2);
-        let f = E::multi_miller_loop(&[(&w_x, &s_g2_prepared), (&w_g, &n_g2_prepared)]);
-        //verify pairing with final exponent
-        let success = bool::from(f.final_exponentiation().is_identity());
-        assert!(success);
-
-        if E::support_on_prove_pairing() {
-            #[cfg(not(feature = "on_prove_pairing_affine"))]
-            {
-                //verify pairing with c and wi scheme
-                let (c, wi) = miller_loop_compute_c_wi::<E>(f);
-                let success = bool::from(
-                    E::multi_miller_loop_c_wi(
-                        &c,
-                        &wi,
-                        &[(&w_x, &s_g2_prepared), (&w_g, &n_g2_prepared)],
-                    )
-                    .is_identity(),
-                );
-                assert!(success);
-                Some((c, wi, None))
-            }
-
-            #[cfg(feature = "on_prove_pairing_affine")]
-            {
-                let s_g2_prepared = E::G2OnProvePrepared::from(params.s_g2);
-                let n_g2_prepared = E::G2OnProvePrepared::from(-params.g2);
-                let f = E::multi_miller_loop_on_prove_pairing_prepare(&[
-                    (&w_x, &s_g2_prepared),
-                    (&w_g, &n_g2_prepared),
-                ]);
-                //verify pairing with final exponent
-                let success = bool::from(f.final_exponentiation().is_identity());
-                assert!(success);
-
-                //verify pairing with c and wi scheme (equivalent to final exponent scheme)
-                let (c, wi) = miller_loop_compute_c_wi::<E>(f);
-                let success = bool::from(
-                    E::multi_miller_loop_on_prove_pairing(
-                        &c,
-                        &wi,
-                        &[(&w_x, &s_g2_prepared), (&w_g, &n_g2_prepared)],
-                    )
-                    .is_identity(),
-                );
-                assert!(success);
-                Some((c, wi, Some((s_g2_prepared, n_g2_prepared))))
-            }
-        } else {
-            None
-        }
-    };
-
-    // Do pairing in circuit.
-    {
-        let s_g2 = params.s_g2.coordinates().unwrap();
-        let s_g2_x = *s_g2.x();
-        let s_g2_y = *s_g2.y();
-        let assigned_s_g2_x = ctx.fq2_assign_constant(E::decode(s_g2_x))?;
-        let assigned_s_g2_y = ctx.fq2_assign_constant(E::decode(s_g2_y))?;
-
-        let g2 = (-params.g2).coordinates().unwrap();
-        let g2_x = *g2.x();
-        let g2_y = *g2.y();
-        let assigned_g2_x = ctx.fq2_assign_constant(E::decode(g2_x))?;
-        let assigned_g2_y = ctx.fq2_assign_constant(E::decode(g2_y))?;
-
-        let z = ctx
-            .get_integer_context()
-            .plonk_region_context()
-            .assign_constant(E::Scalar::from(0u64))?
-            .into();
-
-        let assigned_s_g2 = AssignedG2Affine::new(assigned_s_g2_x, assigned_s_g2_y, z);
-        let assigned_g2 = AssignedG2Affine::new(assigned_g2_x, assigned_g2_y, z);
-
-        let timer = start_timer!(|| "check_pairing");
-        if let Some(v) = pairing_c_wi {
-            let (c, wi, on_pairing_coeff) = v;
-            let c_assigned = ctx.fq12_assign(Some(E::decode_gt(c)))?;
-            let wi_assigned = ctx.fq12_assign(Some(E::decode_gt(wi)))?;
-
-            // if support on_prove_pairing affine coordinate scheme,
-            // assign constant coeffs(slope,bias) in advance instead of calculating in circuit
-            if let Some((s_g2_prepared, n_g2_prepared)) = on_pairing_coeff {
-                let mut coeffs_s_g2: Vec<
-                    [AssignedFq2<<E::G1Affine as CurveAffine>::Base, E::Scalar>; 2],
-                > = vec![];
-                for v in E::get_g2_on_prove_prepared_coeffs(&s_g2_prepared).iter() {
-                    coeffs_s_g2.push([
-                        ctx.fq2_assign_constant((v.0 .0, v.0 .1))?,
-                        ctx.fq2_assign_constant((v.1 .0, v.1 .1))?,
-                    ]);
-                }
-                let mut coeffs_n_g2: Vec<
-                    [AssignedFq2<<E::G1Affine as CurveAffine>::Base, E::Scalar>; 2],
-                > = vec![];
-                for v in E::get_g2_on_prove_prepared_coeffs(&n_g2_prepared).iter() {
-                    coeffs_n_g2.push([
-                        ctx.fq2_assign_constant((v.0 .0, v.0 .1))?,
-                        ctx.fq2_assign_constant((v.1 .0, v.1 .1))?,
-                    ]);
-                }
-                let assigned_s_g2_prepared =
-                    AssignedG2OnProvePrepared::new(coeffs_s_g2, assigned_s_g2);
-                let assigned_n_g2_prepared =
-                    AssignedG2OnProvePrepared::new(coeffs_n_g2, assigned_g2);
-                ctx.check_pairing_on_prove_pairing(
-                    &c_assigned,
-                    &wi_assigned,
-                    &[
-                        (&pl[0], &assigned_s_g2_prepared),
-                        (&pl[1], &assigned_n_g2_prepared),
-                    ],
-                )?;
-            } else {
-                // only replace final exponent check
-                ctx.check_pairing_c_wi(
-                    &c_assigned,
-                    &wi_assigned,
-                    &[(&pl[0], &assigned_s_g2), (&pl[1], &assigned_g2)],
-                )?;
-            }
-        } else {
-            ctx.check_pairing(&[(&pl[0], &assigned_s_g2), (&pl[1], &assigned_g2)])?;
-        }
-        end_timer!(timer);
-    }
-
+    let timer = start_timer!(|| "assign instances");
     let (assigned_instances, assigned_shadow_instances) = if !config.is_final_aggregator {
         // Aggregator's instance is [aggregator_hash, target circuits' instance commitments, exposed advice commitments].
         let mut assigned_instances = vec![assigned_final_hash];
@@ -620,6 +598,7 @@ pub fn synthesize_aggregate_verify_circuit<
 
         (assigned_instances, assigned_shadow_instances)
     };
+    end_timer!(timer);
 
     println!("offset {:?}", ctx.offset());
 

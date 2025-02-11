@@ -44,7 +44,7 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop + MultiMillerLoopOnProv
     Vec<E::Scalar>,
     E::Scalar,
 ) {
-    let (agg_circuit_instances, agg_circuit_shadow_instances, agg_circuit_constant_hash) =
+    let (agg_circuit_instances, agg_circuit_shadow_instances, agg_circuit_constant_hash, w_xg) =
         calc_instances(
             &params,
             &vkey.iter().map(|x| x.borrow()).collect::<Vec<_>>(),
@@ -59,6 +59,7 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop + MultiMillerLoopOnProv
         config,
         instances,
         proofs,
+        w_xg,
     };
 
     (
@@ -108,7 +109,7 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
     instances: Vec<Vec<Vec<E::Scalar>>>,
     proofs: &Vec<Vec<u8>>,
     config: &AggregatorConfig<E::Scalar>,
-) -> (Vec<E::Scalar>, Vec<E::Scalar>, E::Scalar) {
+) -> (Vec<E::Scalar>, Vec<E::Scalar>, E::Scalar, [E::G1Affine; 2]) {
     let (w_x, w_g, advices) = verify_aggregation_proofs(
         params,
         vkey,
@@ -351,5 +352,5 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
         (instances, shadow_instances)
     };
 
-    (instances, shadow_instances, constant_hash)
+    (instances, shadow_instances, constant_hash, [pl[0], pl[1]])
 }

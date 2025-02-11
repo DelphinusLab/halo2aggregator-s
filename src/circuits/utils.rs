@@ -174,20 +174,31 @@ fn create_proof_ext<
         use zkwasm_prover::create_proof_from_advices_with_gwc;
         use zkwasm_prover::create_proof_from_advices_with_shplonk;
         use zkwasm_prover::prepare_advice_buffer;
+        use zkwasm_prover::warm_up_buffers;
 
+        let timer = start_timer!(|| "prepare advice buffer");
         let mut advices = Arc::new(prepare_advice_buffer(pk, false));
+        end_timer!(timer);
 
-        generate_advice_from_synthesize(
-            &params,
-            pk,
-            &circuits[0],
-            &instances[0],
-            &Arc::get_mut(&mut advices)
-                .unwrap()
-                .iter_mut()
-                .map(|x| (&mut x[..]) as *mut [_])
-                .collect::<Vec<_>>()[..],
-        );
+        std::thread::scope(|s| {
+            let handler = s.spawn(|| {
+                warm_up_buffers(pk);
+            });
+            handler.join().unwrap();
+
+            generate_advice_from_synthesize(
+                &params,
+                pk,
+                &circuits[0],
+                &instances[0],
+                &Arc::get_mut(&mut advices)
+                    .unwrap()
+                    .iter_mut()
+                    .map(|x| (&mut x[..]) as *mut [_])
+                    .collect::<Vec<_>>()[..],
+            );
+
+        });
 
         if use_gwc {
             create_proof_from_advices_with_gwc(&params, pk, &instances[0], advices, transcript)
