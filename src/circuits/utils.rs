@@ -384,6 +384,8 @@ pub struct AggregatorConfig<F: FieldExt> {
 
     // about halo2ecc-s circuit
     pub use_select_chip: bool,
+
+    pub circuit_rows_for_pairing: usize,
 }
 
 impl<F: FieldExt> AggregatorConfig<F> {
@@ -406,6 +408,7 @@ impl<F: FieldExt> AggregatorConfig<F> {
             prev_aggregator_skip_instance: vec![],
             absorb_instance: vec![],
             use_select_chip: false,
+            circuit_rows_for_pairing: 500000,
         }
     }
 
@@ -427,6 +430,7 @@ impl<F: FieldExt> AggregatorConfig<F> {
             prev_aggregator_skip_instance: vec![],
             absorb_instance: vec![],
             use_select_chip: !is_final_aggregator,
+            circuit_rows_for_pairing: 500000,
         }
     }
 }
