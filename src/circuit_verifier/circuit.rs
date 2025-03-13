@@ -323,6 +323,8 @@ pub fn synthesize_aggregate_verify_circuit<
 > {
     std::thread::scope(|s| {
         let mut new_ctx = ctx.clone_with_offset(&Offset {
+            // reserve min offset {plonk:446659,range:293864} for pairing,
+            // if not a major concern to total row length, just both 500000 are ok
             plonk_region_offset: config.circuit_rows_for_pairing,
             range_region_offset: config.circuit_rows_for_pairing,
         });
@@ -332,6 +334,7 @@ pub fn synthesize_aggregate_verify_circuit<
         let pairing_handler = s.spawn(move || {
             let mut ctx = new_ctx;
             let assigned_w_xg = check_pairing(params, &mut ctx, w_xg[0], w_xg[1]).unwrap();
+            // real data: {plonk_region_offset: 446659,range_region_offset:293864}
             println!("offset after check_pairing {:?}", ctx.offset());
 
             (assigned_w_xg, ctx)
@@ -612,18 +615,23 @@ pub fn synthesize_aggregate_verify_circuit<
 
             let assigned_instances = vec![ctx.get_plonk_region_context().hash(&hash_list[..])?];
 
+            (assigned_instances, assigned_shadow_instances)
+        };
+        end_timer!(timer);
+
+        // merge pairing part
+        let timer = start_timer!(|| "wait pairing");
+        {
             let (assigned_w_xg, mut sub_ctx) = pairing_handler.join().unwrap();
             sub_ctx.merge_mut(ctx);
             *ctx = sub_ctx;
 
             ctx.ecc_assert_equal(&assigned_w_xg[0], &pl[0])?;
             ctx.ecc_assert_equal(&assigned_w_xg[1], &pl[1])?;
-
-            (assigned_instances, assigned_shadow_instances)
-        };
+        }
         end_timer!(timer);
 
-        println!("offset {:?}", ctx.offset());
+        println!("total offset {:?}", ctx.offset());
 
         Ok((
             assigned_instances,
