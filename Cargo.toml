@@ -8,8 +8,8 @@ edition = "2021"
 [dependencies]
 blake2b_simd = "1"
 halo2_proofs = { git = "https://github.com/DelphinusLab/halo2-gpu-specific.git", tag = "stable-logup-shuffle-v1.0.0", default-features = false }
-zkwasm-prover = { git = "https://github.com/DelphinusLab/zkWasm-prover.git", branch="moore/logup-shuffle-oogl-rebase", optional = true }
-halo2ecc-o = { git = "https://github.com/mooreland/halo2ecc-o.git", branch="update_halo2_tag_logup_shuffle"}
+zkwasm-prover = { git = "https://github.com/DelphinusLab/zkWasm-prover.git", tag="stable-logup-shuffle-v1.0", optional = true }
+halo2ecc-o = { git = "https://github.com/ooglayout/halo2ecc-o.git"}
 ark-std = { version = "0.4.0" }
 ark-ff = { version = "0.4.2" }
 ff = "0.12"

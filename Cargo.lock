@@ -520,7 +520,7 @@ source = "git+https://github.com/lanbones/ec-gpu#36b9abf8611347e2fe44f21a2f3607e
 [[package]]
 name = "ec-gpu-gen"
 version = "0.4.0"
-source = "git+https://github.com/lanbones/ec-gpu?branch=halo2-opt-v2#aedc591657644f047f25a2e089f0b489eba0bf38"
+source = "git+https://github.com/lanbones/ec-gpu?branch=halo2-opt-v2#ace72958a51aae199abd90762db6e9a1f7b507d5"
 dependencies = [
  "ark-std",
  "bitvec",
@@ -796,7 +796,7 @@ dependencies = [
 [[package]]
 name = "halo2ecc-o"
 version = "0.1.0"
-source = "git+https://github.com/mooreland/halo2ecc-o.git?branch=update_halo2_tag_logup_shuffle#f6136122c408c3f12e318e9c154d442cab69dd2e"
+source = "git+https://github.com/ooglayout/halo2ecc-o.git#abe27af616b7790fda6dad6c5fb78e73331330b0"
 dependencies = [
  "ark-std",
  "halo2_proofs 0.1.0-beta.1 (git+https://github.com/DelphinusLab/halo2-gpu-specific.git?tag=stable-logup-shuffle-v1.0.0)",
@@ -1942,7 +1942,7 @@ dependencies = [
 [[package]]
 name = "zkwasm-prover"
 version = "0.1.0"
-source = "git+https://github.com/DelphinusLab/zkWasm-prover.git?branch=moore/logup-shuffle-oogl-rebase#b8418417aa2239cb04c4ca055b29aa72445309a2"
+source = "git+https://github.com/DelphinusLab/zkWasm-prover.git?tag=stable-logup-shuffle-v1.0#198d74b3aef0101f6fee7c07873a0ea2e859de2c"
 dependencies = [
  "ark-std",
  "cc",
