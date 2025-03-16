@@ -41,7 +41,7 @@ pub enum AstPoint<C: CurveAffine> {
     FromTranscript(Rc<AstTranscript<C>>),
     FromInstance(usize, usize),
     MultiExp(Vec<(Rc<Self>, Rc<AstScalar<C>>)>, usize), // msm group: usize
-    CheckPoint(String, Rc<Self>), // for debug
+    CheckPoint(String, Rc<Self>),                       // for debug
 }
 
 #[repr(transparent)]

@@ -4,6 +4,7 @@ use crate::api::ast_eval::EvalPos;
 use crate::api::halo2::verify_aggregation_proofs;
 use crate::circuits::utils::instance_to_instance_commitment;
 use crate::transcript::sha256::ShaRead;
+use crate::utils::field_to_bn;
 use halo2_proofs::arithmetic::BaseExt;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::Field;
@@ -17,7 +18,6 @@ use halo2_proofs::transcript::Challenge255;
 use halo2_proofs::transcript::EncodedChallenge;
 use halo2_proofs::transcript::Transcript;
 use halo2_proofs::transcript::TranscriptRead;
-use halo2ecc_s::utils::field_to_bn;
 use sha2::Digest;
 use std::collections::BTreeSet;
 use std::io::Read;
@@ -31,8 +31,8 @@ const MSM_BUF_START: usize = CHALLENGE_BUF_START + CHALLENGE_BUF_MAX;
 const TEMP_BUF_START: usize = MSM_BUF_START + 2 * MAX_MSM_COUNT + 3; // 3 reserved for msm operation;
 const DEEP_LIMIT: usize = 6;
 
-const SOLIDITY_VERIFY_FIRST_STEP_MAX_SIZE: usize = 99; // first step need to be less for shplonk
-const SOLIDITY_VERIFY_STEP_MAX_SIZE: usize = 135;
+const SOLIDITY_VERIFY_FIRST_STEP_MAX_SIZE: usize = 90; // first step need to be less for shplonk
+const SOLIDITY_VERIFY_STEP_MAX_SIZE: usize = 100;
 
 const SOLIDITY_DEBUG: bool = false;
 

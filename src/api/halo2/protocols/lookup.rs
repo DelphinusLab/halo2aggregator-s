@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 use super::super::query::EvaluationQuery;
 use crate::api::arith::AstPointRc;
 use crate::api::arith::AstScalar;

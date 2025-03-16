@@ -9,15 +9,13 @@ use crate::transcript::poseidon::T;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::transcript::TranscriptRead;
-use halo2ecc_s::assign::AssignedPoint;
-use halo2ecc_s::assign::AssignedValue;
-use halo2ecc_s::circuit::base_chip::BaseChipOps;
-use halo2ecc_s::circuit::ecc_chip::EccBaseIntegerChipWrapper;
-use halo2ecc_s::circuit::ecc_chip::EccChipBaseOps;
-use halo2ecc_s::context::NativeScalarEccContext;
+use halo2ecc_o::assign::*;
+use halo2ecc_o::chips::ecc_chip::EccChipBaseOps;
+use halo2ecc_o::chips::native_chip::NativeChipOps;
+use halo2ecc_o::context::NativeScalarEccContext;
+use halo2ecc_o::context::PlonkRegionContext;
 use poseidon::SparseMDSMatrix;
 use poseidon::Spec;
-use std::cell::RefMut;
 use std::io;
 use std::sync::Arc;
 
@@ -33,17 +31,23 @@ impl<R: io::Read, C: CurveAffine> PoseidonChipRead<R, C> {
         circuit: &mut NativeScalarEccContext<C>,
     ) -> Self {
         let state = PoseidonChipContext::new(
-            &mut circuit.base_integer_chip().base_chip(),
+            &mut circuit.integer_context().plonk_region_context(),
             read.get_poseidon_spec(),
         );
-        let base_chip = &mut circuit.base_integer_chip().base_chip();
+        let plonk_region_context = &mut circuit.integer_context().plonk_region_context();
         Self {
             read,
             state,
             prefix: vec![
-                base_chip.assign_constant(C::ScalarExt::from(PREFIX_CHALLENGE)),
-                base_chip.assign_constant(C::ScalarExt::from(PREFIX_POINT)),
-                base_chip.assign_constant(C::ScalarExt::from(PREFIX_SCALAR)),
+                plonk_region_context
+                    .assign_constant(C::ScalarExt::from(PREFIX_CHALLENGE))
+                    .unwrap(),
+                plonk_region_context
+                    .assign_constant(C::ScalarExt::from(PREFIX_POINT))
+                    .unwrap(),
+                plonk_region_context
+                    .assign_constant(C::ScalarExt::from(PREFIX_SCALAR))
+                    .unwrap(),
             ],
         }
     }
@@ -53,7 +57,11 @@ impl<R: io::Read, C: CurveAffine> PoseidonChipRead<R, C> {
         circuit: &mut NativeScalarEccContext<C>,
     ) -> AssignedValue<C::ScalarExt> {
         let s = self.read.read_scalar().unwrap();
-        let s = circuit.base_integer_chip().base_chip().assign(s);
+        let s = circuit
+            .integer_context()
+            .plonk_region_context()
+            .assign(s)
+            .unwrap();
         self.common_scalar(circuit, &s);
         s
     }
@@ -63,8 +71,8 @@ impl<R: io::Read, C: CurveAffine> PoseidonChipRead<R, C> {
         circuit: &mut NativeScalarEccContext<C>,
     ) -> AssignedPoint<C, C::ScalarExt> {
         let p = self.read.read_point().unwrap();
-        let p = circuit.assign_point(&p.to_curve());
-        let p = circuit.ecc_reduce(&p);
+        let p = circuit.assign_point(Some(p)).unwrap();
+        let p = circuit.ecc_reduce(&p).unwrap();
         self.common_point(circuit, &p);
         p
     }
@@ -75,7 +83,7 @@ impl<R: io::Read, C: CurveAffine> PoseidonChipRead<R, C> {
         s: &AssignedValue<C::ScalarExt>,
     ) {
         self.state.update(
-            &mut circuit.base_integer_chip().base_chip(),
+            &mut circuit.integer_context().plonk_region_context(),
             vec![self.prefix[2], s.clone()],
         );
     }
@@ -86,12 +94,12 @@ impl<R: io::Read, C: CurveAffine> PoseidonChipRead<R, C> {
         p: &AssignedPoint<C, C::ScalarExt>,
     ) {
         self.state.update(
-            &mut circuit.base_integer_chip().base_chip(),
+            &mut circuit.integer_context().plonk_region_context(),
             vec![self.prefix[1]],
         );
-        let sl = circuit.ecc_encode(p);
+        let sl = circuit.ecc_encode(p).unwrap();
         self.state
-            .update(&mut circuit.base_integer_chip().base_chip(), sl);
+            .update(&mut circuit.integer_context().plonk_region_context(), sl);
     }
 
     pub fn squeeze(
@@ -99,11 +107,11 @@ impl<R: io::Read, C: CurveAffine> PoseidonChipRead<R, C> {
         circuit: &mut NativeScalarEccContext<C>,
     ) -> AssignedValue<C::ScalarExt> {
         self.state.update(
-            &mut circuit.base_integer_chip().base_chip(),
+            &mut circuit.integer_context().plonk_region_context(),
             vec![self.prefix[0]],
         );
         self.state
-            .squeeze(&mut circuit.base_integer_chip().base_chip())
+            .squeeze(&mut circuit.integer_context().plonk_region_context())
     }
 }
 
@@ -116,10 +124,10 @@ pub struct PoseidonChipContext<F: FieldExt> {
 }
 
 impl<F: FieldExt> PoseidonChipContext<F> {
-    pub fn new(chip: &mut RefMut<'_, dyn BaseChipOps<F>>, spec: Arc<Spec<F, T, RATE>>) -> Self {
-        let zero = chip.assign_constant(F::zero());
+    pub fn new(chip: &mut PlonkRegionContext<'_, F>, spec: Arc<Spec<F, T, RATE>>) -> Self {
+        let zero = chip.assign_constant(F::zero()).unwrap();
         let mut state = [zero; T];
-        state[0] = chip.assign_constant(F::from_u128(1u128 << 64));
+        state[0] = chip.assign_constant(F::from_u128(1u128 << 64)).unwrap();
         Self {
             spec,
             state: PoseidonChipState(state),
@@ -129,7 +137,7 @@ impl<F: FieldExt> PoseidonChipContext<F> {
 
     pub fn update(
         &mut self,
-        chip: &mut RefMut<'_, dyn BaseChipOps<F>>,
+        chip: &mut PlonkRegionContext<'_, F>,
         mut inputs: Vec<AssignedValue<F>>,
     ) {
         self.absorbing.append(&mut inputs);
@@ -150,7 +158,7 @@ impl<F: FieldExt> PoseidonChipContext<F> {
         }
     }
 
-    pub fn squeeze(&mut self, chip: &mut RefMut<'_, dyn BaseChipOps<F>>) -> AssignedValue<F> {
+    pub fn squeeze(&mut self, chip: &mut PlonkRegionContext<'_, F>) -> AssignedValue<F> {
         assert!(self.absorbing.len() < RATE);
 
         let mut values = vec![];
@@ -163,7 +171,7 @@ impl<F: FieldExt> PoseidonChipContext<F> {
 
     fn permute(
         &mut self,
-        chip: &mut RefMut<'_, dyn BaseChipOps<F>>,
+        chip: &mut PlonkRegionContext<'_, F>,
         inputs: &[AssignedValue<F>],
         on_squeeze: bool,
     ) {
@@ -202,28 +210,28 @@ impl<F: FieldExt> PoseidonChipContext<F> {
 
 impl<F: FieldExt> PoseidonChipState<F> {
     fn x_power5_with_constant(
-        chip: &mut RefMut<'_, dyn BaseChipOps<F>>,
+        chip: &mut PlonkRegionContext<'_, F>,
         x: &AssignedValue<F>,
         constant: F,
     ) -> AssignedValue<F> {
-        let x2 = chip.mul(x, x);
-        let x4 = chip.mul(&x2, &x2);
-        chip.mul_add_constant(&x, &x4, constant)
+        let x2 = chip.mul(x, x).unwrap();
+        let x4 = chip.mul(&x2, &x2).unwrap();
+        chip.mul_add_constant(&x, &x4, Some(constant)).unwrap()
     }
 
-    fn sbox_full(&mut self, chip: &mut RefMut<'_, dyn BaseChipOps<F>>, constants: &[F; T]) {
+    fn sbox_full(&mut self, chip: &mut PlonkRegionContext<'_, F>, constants: &[F; T]) {
         for (x, constant) in self.0.iter_mut().zip(constants.iter()) {
             *x = Self::x_power5_with_constant(chip, x, *constant);
         }
     }
 
-    fn sbox_part(&mut self, chip: &mut RefMut<'_, dyn BaseChipOps<F>>, constant: &F) {
+    fn sbox_part(&mut self, chip: &mut PlonkRegionContext<'_, F>, constant: &F) {
         self.0[0] = Self::x_power5_with_constant(chip, &self.0[0], constant.clone());
     }
 
     fn absorb_with_pre_constants(
         &mut self,
-        chip: &mut RefMut<'_, dyn BaseChipOps<F>>,
+        chip: &mut PlonkRegionContext<'_, F>,
         inputs: &[AssignedValue<F>],
         pre_constants: &[F; T],
         on_squeeze: bool,
@@ -234,7 +242,7 @@ impl<F: FieldExt> PoseidonChipState<F> {
 
         let offset = inputs.len() + 1;
 
-        self.0[0] = chip.add_constant(&self.0[0], pre_constants[0]);
+        self.0[0] = chip.add_constant(&self.0[0], pre_constants[0]).unwrap();
 
         for ((x, constant), input) in self
             .0
@@ -243,7 +251,9 @@ impl<F: FieldExt> PoseidonChipState<F> {
             .zip(pre_constants.iter().skip(1))
             .zip(inputs.iter())
         {
-            *x = chip.sum_with_constant(vec![(&x, one), (input, one)], Some(*constant));
+            *x = chip
+                .sum_with_constant(&[(&x, one), (input, one)], Some(*constant))
+                .unwrap();
         }
 
         for (i, (x, constant)) in self
@@ -253,11 +263,13 @@ impl<F: FieldExt> PoseidonChipState<F> {
             .zip(pre_constants.iter().skip(offset))
             .enumerate()
         {
-            *x = chip.add_constant(x, *constant + if i == 0 && on_squeeze { one } else { zero });
+            *x = chip
+                .add_constant(x, *constant + if i == 0 && on_squeeze { one } else { zero })
+                .unwrap();
         }
     }
 
-    fn apply_mds(&mut self, chip: &mut RefMut<'_, dyn BaseChipOps<F>>, mds: &[[F; T]; T]) {
+    fn apply_mds(&mut self, chip: &mut PlonkRegionContext<'_, F>, mds: &[[F; T]; T]) {
         let res = mds
             .iter()
             .map(|row| {
@@ -268,7 +280,7 @@ impl<F: FieldExt> PoseidonChipState<F> {
                     .map(|(e, word)| (e, *word))
                     .collect::<Vec<_>>();
 
-                chip.sum_with_constant(a, None)
+                chip.sum_with_constant(&a, None).unwrap()
             })
             .collect::<Vec<_>>();
 
@@ -277,7 +289,7 @@ impl<F: FieldExt> PoseidonChipState<F> {
 
     fn apply_sparse_mds(
         &mut self,
-        chip: &mut RefMut<'_, dyn BaseChipOps<F>>,
+        chip: &mut PlonkRegionContext<'_, F>,
         mds: &SparseMDSMatrix<F, T, RATE>,
     ) {
         let a = self
@@ -287,10 +299,13 @@ impl<F: FieldExt> PoseidonChipState<F> {
             .map(|(e, word)| (e, *word))
             .collect::<Vec<_>>();
 
-        let mut res = vec![chip.sum_with_constant(a, None)];
+        let mut res = vec![chip.sum_with_constant(&a, None).unwrap()];
 
         for (e, x) in mds.col_hat().iter().zip(self.0.iter().skip(1)) {
-            res.push(chip.sum_with_constant(vec![(&self.0[0], *e), (&x, F::one())], None));
+            res.push(
+                chip.sum_with_constant(&[(&self.0[0], *e), (&x, F::one())], None)
+                    .unwrap(),
+            );
         }
 
         for (x, new_x) in self.0.iter_mut().zip(res.into_iter()) {

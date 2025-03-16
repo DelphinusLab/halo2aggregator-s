@@ -1,11 +1,11 @@
 use self::codegen::solidity_codegen_with_proof;
 use crate::circuits::utils::TranscriptHash;
+use crate::utils::field_to_bn;
 use halo2_proofs::arithmetic::BaseExt;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::MultiMillerLoop;
 use halo2_proofs::plonk::VerifyingKey;
 use halo2_proofs::poly::commitment::ParamsVerifier;
-use halo2ecc_s::utils::field_to_bn;
 use num_bigint::BigUint;
 use sha2::Digest;
 use std::path::Path;
@@ -127,10 +127,21 @@ pub fn solidity_render_with_check_option<E: MultiMillerLoop, D: Digest + Clone>(
 
     tera_ctx.insert("n_advice", &vkey.cs.num_advice_columns);
 
+    // logup's multiplicity commitment
     let lookups = vkey.cs.lookups.len();
-    tera_ctx.insert("lookups", &lookups);
+    tera_ctx.insert("n_lookups_m", &lookups);
 
-    let shuffles = vkey.cs.shuffles.group(vkey.cs.degree()).len();
+    // logup's z_sets constructed by inputs_sets
+    // logup's evals: 1*multipliciy_poly + n*z_poly(x, next_x, last_x(except the last z)) = 3n
+    let n_lookups_zs = vkey
+        .cs
+        .lookups
+        .iter()
+        .map(|arg| arg.input_expressions_sets.len())
+        .sum::<usize>();
+    tera_ctx.insert("n_lookups_zs", &n_lookups_zs);
+
+    let shuffles = vkey.cs.shuffles.len();
     tera_ctx.insert("shuffles", &shuffles);
 
     let n_permutation_product = vkey
@@ -150,7 +161,7 @@ pub fn solidity_render_with_check_option<E: MultiMillerLoop, D: Digest + Clone>(
         + vkey.permutation.commitments.len()
         + 3 * n_permutation_product
         - 1
-        + 5 * lookups
+        + 3 * n_lookups_zs
         + 2 * shuffles;
     tera_ctx.insert("evals", &evals);
 
@@ -215,7 +226,7 @@ mod tests {
         DirBuilder::new().recursive(true).create(path).unwrap();
 
         let n_proofs = 2;
-        let target_circuit_k = 8;
+        let target_circuit_k = 16;
         let verify_circuit_k = 22;
 
         let path = Path::new(path);
@@ -235,7 +246,6 @@ mod tests {
                 true,
             )
             .unwrap();
-        let circuit = circuit.circuit_without_select_chip.unwrap();
 
         let circuit0 = circuit.without_witnesses();
         run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(

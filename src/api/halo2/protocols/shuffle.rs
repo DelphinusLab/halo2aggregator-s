@@ -38,7 +38,7 @@ impl<C: CurveAffine> Evaluated<C> {
             product_commitment,
             product_eval,
             product_next_eval,
-            key: format!("{}_shuffle_{}", key.clone(), index),
+            key: format!("{}_shuffle_{}", key, index),
         }
     }
 

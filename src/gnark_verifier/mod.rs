@@ -1,9 +1,9 @@
+use crate::utils::field_to_bn;
 use halo2_proofs::arithmetic::BaseExt;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::MultiMillerLoop;
 use halo2_proofs::plonk::VerifyingKey;
 use halo2_proofs::poly::commitment::ParamsVerifier;
-use halo2ecc_s::utils::field_to_bn;
 use num_bigint::BigUint;
 use serde::Deserialize;
 use serde::Serialize;
@@ -17,7 +17,8 @@ struct AggregatorConfig {
     verify_circuit_g2: Vec<[String; 4]>,
     challenge_init_scalar: String,
     nb_advices: u32,
-    nb_lookups: u32,
+    nb_lookups_m: u32,
+    nb_lookups_zs: u32,
     nb_permutation_groups: u32,
     nb_evals: u32,
     degree: u32,
@@ -83,7 +84,13 @@ pub fn gnark_render<E: MultiMillerLoop>(
     };
 
     let nb_advices = vkey.cs.num_advice_columns as u32;
-    let nb_lookups = vkey.cs.lookups.len() as u32;
+    let nb_lookups_m = vkey.cs.lookups.len() as u32;
+    let nb_lookups_zs = vkey
+        .cs
+        .lookups
+        .iter()
+        .map(|arg| arg.input_expressions_sets.len())
+        .sum::<usize>() as u32;
     let nb_permutation_groups = vkey
         .cs
         .permutation
@@ -100,7 +107,7 @@ pub fn gnark_render<E: MultiMillerLoop>(
         + vkey.permutation.commitments.len() as u32
         + 3 * nb_permutation_groups
         - 1
-        + 5 * nb_lookups;
+        + 3 * nb_lookups_zs;
 
     let g2field_to_bn = |f: &<E::G2Affine as CurveAffine>::Base| {
         let mut bytes: Vec<u8> = Vec::new();
@@ -133,7 +140,8 @@ pub fn gnark_render<E: MultiMillerLoop>(
         verify_circuit_g2,
         challenge_init_scalar,
         nb_advices,
-        nb_lookups,
+        nb_lookups_m,
+        nb_lookups_zs,
         nb_permutation_groups,
         nb_evals,
         degree,
@@ -210,7 +218,7 @@ mod tests {
         DirBuilder::new().recursive(true).create(path).unwrap();
 
         let n_proofs = 2;
-        let target_circuit_k = 8;
+        let target_circuit_k = 16;
         let verify_circuit_k = 22;
 
         let path = Path::new(path);
@@ -230,7 +238,6 @@ mod tests {
                 true,
             )
             .unwrap();
-        let circuit = circuit.circuit_without_select_chip.unwrap();
 
         let circuit0 = circuit.without_witnesses();
         run_circuit_unsafe_full_pass_no_rec::<Bn256, _>(
