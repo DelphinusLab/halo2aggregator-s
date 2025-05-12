@@ -44,6 +44,11 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop + MultiMillerLoopOnProv
     Vec<E::Scalar>,
     E::Scalar,
 ) {
+    // println!("Params {:?}", params);
+    println!("Vkey {:?}", vkey);
+    println!("Instances {:?}", instances);
+    println!("proofs {:?}", proofs);
+    println!("config {:?}", config);
     let (agg_circuit_instances, agg_circuit_shadow_instances, agg_circuit_constant_hash, w_xg) =
         calc_instances(
             &params,
