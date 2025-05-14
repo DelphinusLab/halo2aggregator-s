@@ -187,6 +187,9 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
     let s_g2_prepared = E::G2Prepared::from(params.s_g2);
     let n_g2_prepared = E::G2Prepared::from(-params.g2);
 
+    println!("final_exponentiation is_identity !!!!");
+    println!("pl[0] {:?}", pl[0]);
+
     let success = bool::from(
         E::multi_miller_loop(&[(&pl[0], &s_g2_prepared), (&pl[1], &n_g2_prepared)])
             .final_exponentiation()
