@@ -1,6 +1,7 @@
-use super::format_advice_commitment_key;
-use super::format_fixed_commitment_key;
-use super::format_instance_commitment_key;
+use crate::api::format_advice_commitment_key;
+use crate::api::format_fixed_commitment_key;
+use crate::api::format_instance_commitment_key;
+
 use super::protocols::logup as lookup;
 use super::protocols::permutation;
 use super::protocols::shuffle;
@@ -217,15 +218,18 @@ impl<C: CurveAffine> VerifierParams<C> {
             }
         }
 
+        //w is proof (quotients)
         let w = self.multiopen_commitments.clone();
         let v = self.multiopen_challenges[0].clone();
 
         assert_eq!(w.len(), queries_groups.len());
 
+        //different rotate group, each rotate has self quotient poly(proof pi),each proof has self (commit,eval)
         queries_groups
             .into_values()
             .enumerate()
             .map(|(i, (point, queries))| EvaluationProof {
+                //merge to all (commit,eval) by v^pow
                 s: queries.into_iter().enumerate().fold(
                     scalar!(sconst!(C::ScalarExt::zero())),
                     |acc, (j, q)| {
@@ -251,6 +255,7 @@ impl<C: CurveAffine> VerifierParams<C> {
 
         let u = self.multiopen_challenges[1].clone();
 
+        //merge multi proofs to (w_x,w_g)
         for (i, p) in proofs.into_iter().enumerate() {
             let s = &p.s;
             let w = Rc::new(CommitQuery {
@@ -259,10 +264,13 @@ impl<C: CurveAffine> VerifierParams<C> {
                 eval: None,
             });
 
+            //right part, [-W-r'W',[x]_2]
             w_x = w_x.map_or(Some(commit!(w.clone())), |w_x| {
                 Some(scalar!(u.clone()) * w_x + commit!(w.clone()))
             });
 
+            //left part:[F+zW+z'r'W',[1]_2], F is s1,s2..
+            // s is commitment+eval
             w_g = w_g.map_or(
                 Some(scalar!(p.point.clone()) * commit!(w.clone()) + s.clone()),
                 |w_g| {

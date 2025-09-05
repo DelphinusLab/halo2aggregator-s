@@ -266,3 +266,164 @@ pub fn verify_proofs<E: MultiMillerLoop>(
         assert_eq!(c[0], c[1]);
     }
 }
+
+use plonkish_backend::pcs::PolynomialCommitmentScheme;
+use plonkish_backend::backend::hyperplonk::HyperPlonkVerifierParam;
+use crate::api::hyper_plonk::verify_hyper_aggregation_proofs;
+pub fn verify_hyper_proofs<E: MultiMillerLoop,PCS:PolynomialCommitmentScheme<E::Scalar,CommitmentChunk=E::G1Affine>>(
+    params: &ParamsVerifier<E>,
+    vkey: &[&HyperPlonkVerifierParam<E::Scalar,PCS>],
+    instances: Vec<&Vec<Vec<E::Scalar>>>,
+    proofs: Vec<Vec<u8>>,
+    hash: TranscriptHash,
+    commitment_check: &Vec<[usize; 4]>,
+
+) {
+    let (w_x, w_g, advices) = verify_hyper_aggregation_proofs(
+        params,
+        vkey,
+        commitment_check
+    );
+    //TODO adapt
+    // let instance_commitments = instance_to_instance_commitment(params, vkey, instances);
+    let instance_commitments = vec![];
+
+    let mut targets = vec![w_x.0, w_g.0];
+    for idx in commitment_check {
+        targets.push(advices[idx[0]][idx[1]].0.clone());
+        targets.push(advices[idx[2]][idx[3]].0.clone());
+    }
+    let c = EvalContext::translate(&targets[..]);
+    let pl = match hash {
+        TranscriptHash::Blake2b => {
+            let mut t = vec![];
+            for i in 0..proofs.len() {
+                t.push(Blake2bRead::<_, E::G1Affine, Challenge255<_>>::init(
+                    &proofs[i][..],
+                ));
+            }
+            let empty = vec![];
+            t.push(Blake2bRead::<_, E::G1Affine, Challenge255<_>>::init(
+                &empty[..],
+            ));
+            let mut ctx = NativeEvalContext::<E, _, _>::new(c, instance_commitments, t);
+            ctx.context_eval();
+            ctx.finals
+        }
+        TranscriptHash::Poseidon => {
+            let mut t = vec![];
+            let poseidon = PoseidonPure::<E::G1Affine>::default();
+            for i in 0..proofs.len() {
+                t.push(PoseidonRead::init_with_poseidon(
+                    &proofs[i][..],
+                    poseidon.clone(),
+                ));
+            }
+            let empty = vec![];
+            t.push(PoseidonRead::init_with_poseidon(
+                &empty[..],
+                poseidon.clone(),
+            ));
+            let mut ctx = NativeEvalContext::<E, _, _>::new(c, instance_commitments, t);
+            ctx.context_eval();
+            ctx.finals
+        }
+        TranscriptHash::Sha => {
+            let mut t = vec![];
+            for i in 0..proofs.len() {
+                t.push(ShaRead::<_, _, _, sha2::Sha256>::init(&proofs[i][..]));
+            }
+            let empty = vec![];
+            t.push(ShaRead::init(&empty[..]));
+            let mut ctx = NativeEvalContext::<E, _, _>::new(c, instance_commitments, t);
+            ctx.context_eval();
+            ctx.finals
+        }
+        TranscriptHash::Keccak => {
+            let mut t = vec![];
+            println!("proofs.len={}",proofs.len());
+            for i in 0..proofs.len() {
+                t.push(ShaRead::<_, _, _, sha3::Keccak256>::init(&proofs[i][..]));
+            }
+            let empty = vec![];
+            t.push(ShaRead::init(&empty[..]));
+            let mut ctx = NativeEvalContext::<E, _, _>::new(c, instance_commitments, t);
+            ctx.context_eval();
+            ctx.finals
+        }
+    };
+
+    let s_g2_prepared = E::G2Prepared::from(params.s_g2);
+    let n_g2_prepared = E::G2Prepared::from(-params.g2);
+    println!("pl={:?}",pl[1]);
+    let success = bool::from(
+        E::multi_miller_loop(&[(&pl[0], &s_g2_prepared), (&pl[1], &n_g2_prepared)])
+            .final_exponentiation()
+            .is_identity(),
+    );
+
+    assert!(success);
+
+    for c in pl.chunks(2).skip(1) {
+        assert_eq!(c[0], c[1]);
+    }
+}
+
+#[test]
+fn test_verify_hyper_proof() {
+    use std::{fs::File, io::BufReader, marker::PhantomData, path::PathBuf};
+    use halo2_proofs::pairing::bn256::Bn256;
+    use halo2_proofs::arithmetic::MultiMillerLoop;
+    use halo2_proofs::arithmetic::Engine;
+    // use halo2_proofs::pairing::arithmetic::MultiMillerLoop;
+    use plonkish_backend::pcs::multilinear::ZeromorphKzgVerifierParam;
+    use plonkish_backend::pcs::multilinear;
+    use plonkish_backend::pcs::univariate;
+    use plonkish_backend::pcs::univariate::UnivariateKzgCommitment;
+
+    let file = File::open("./test/hyperplonk_vk.json").expect("File does not exist");
+    type kzg = multilinear::Zeromorph<univariate::UnivariateKzg<Bn256>>;
+    let vp: HyperPlonkVerifierParam<<Bn256 as Engine>::Scalar,kzg> = match serde_json::from_reader(BufReader::new(file)) {
+        Err(e) => {
+            println!("load json error {:?}", e);
+            unreachable!();
+        }
+        Ok(o) => o,
+    };
+    let file = File::open("./test/hyperplonk_proof.json").expect("File does not exist");
+    let proof: Vec<u8> = match serde_json::from_reader(BufReader::new(file)) {
+        Err(e) => {
+            println!("load json error {:?}", e);
+            unreachable!();
+        }
+        Ok(o) => o,
+    };
+    let zero_veri_param = &vp.pcs as &ZeromorphKzgVerifierParam<Bn256>;
+    let verify_param = ParamsVerifier::<Bn256>{
+        k:14,
+        n:14,
+        g1:zero_veri_param.g1(),
+        g2:zero_veri_param.g2(),
+        s_g2:zero_veri_param.s_g2(),
+        g_lagrange:vec![],
+    };
+    // let fixed_commitments = vp.preprocess_comms.iter().map(|p|{
+    //     // type G1Affine = <Bn256 as Engine>::G1Affine;
+    //     // (p as &UnivariateKzgCommitment<G1Affine>).0
+    //     p.0
+    // }).collect::<Vec<_>>();
+    // let permutation_commits = vp.permutation_comms.iter().map(|(_,p)|{
+    //     // type G1Affine = <Bn256 as Engine>::G1Affine;
+    //     // (*p as UnivariateKzgCommitment<<Bn256 as Engine>::G1Affine>).0
+    //     p.0
+    // }).collect::<Vec<_>>();
+    // let commits = VerifierParamCommits{
+    //     fixed_commitments,
+    //     permutation_commits
+    // };
+    // println!("commits={:?}",commits);
+    verify_hyper_proofs(&verify_param,&[&vp],vec![],
+                        vec![proof],TranscriptHash::Poseidon,&vec![]);
+
+
+}

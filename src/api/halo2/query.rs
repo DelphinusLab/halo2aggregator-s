@@ -241,6 +241,7 @@ impl<C: CurveAffine> EvaluationQuerySchemaRc<C> {
                 vec![]
             } else {
                 use halo2_proofs::pairing::group::Curve;
+                //if it is wg, the g1=-G, thus, eval*-G=-[eval]_1, it is -F(z) in F(x)-F(z)
                 vec![(
                     pconst!((g1 * v).to_affine()).0,
                     sconst!(C::ScalarExt::one()).0,
@@ -255,9 +256,11 @@ impl<C: CurveAffine> EvaluationQuerySchemaRc<C> {
 
         AstPointRc(Rc::new(AstPoint::MultiExp(
             vec![
+                //g1_msm is for all eval*G1
                 g1_msm,
                 pl.into_values()
                     .into_iter()
+                    //(p,s) = (commit,coeff) of coeff*commit
                     .map(|(p, s)| (p.0, s.0))
                     .collect::<Vec<_>>(),
             ]
@@ -340,6 +343,7 @@ impl<C: CurveAffine> EvaluationQuerySchemaRc<C> {
         AstScalarRc<C>,
     ) {
         match self.0.as_ref() {
+            //return (pl,s),pl=(commit, coeff) that is coeff*commit, s=eval
             EvaluationQuerySchema::Commitment(cq) => (
                 BTreeMap::from_iter(
                     vec![(cq.key.clone(), (cq.commitment.clone().unwrap(), coeff))].into_iter(),

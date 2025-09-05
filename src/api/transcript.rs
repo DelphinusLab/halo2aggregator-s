@@ -24,6 +24,7 @@ pub(crate) trait AstTranscriptReader<C: CurveAffine> {
     fn read_point(&mut self) -> AstPointRc<C>;
     fn read_n_points(&mut self, n: usize) -> Vec<AstPointRc<C>>;
     fn squeeze_challenge(&mut self) -> AstScalarRc<C>;
+    fn squeeze_n_challenges(&mut self, n: usize) -> Vec<AstScalarRc<C>>;
 }
 
 impl<C: CurveAffine> AstTranscriptReader<C> for Rc<AstTranscript<C>> {
@@ -78,5 +79,9 @@ impl<C: CurveAffine> AstTranscriptReader<C> for Rc<AstTranscript<C>> {
             self.clone(),
         ));
         AstScalarRc(Rc::new(AstScalar::FromChallenge(self.clone())))
+    }
+
+    fn squeeze_n_challenges(&mut self, n:usize) -> Vec<AstScalarRc<C>> {
+        (0..n).map(|_|self.squeeze_challenge()).collect()
     }
 }
