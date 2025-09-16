@@ -2,7 +2,7 @@ use super::GtHelper;
 use crate::api::ast_eval::EvalContext;
 use crate::api::ast_eval::EvalOps;
 use crate::api::ast_eval::EvalPos;
-use crate::api::halo2::verify_aggregation_proofs;
+use crate::api::verify_aggregation_proofs;
 use crate::circuit_verifier::transcript::PoseidonChipRead;
 use crate::circuit_verifier::G2AffineBaseHelper;
 use crate::circuits::utils::instance_to_instance_commitment;
@@ -24,7 +24,7 @@ use halo2_proofs::plonk::Column;
 use halo2_proofs::plonk::ConstraintSystem;
 use halo2_proofs::plonk::Error;
 use halo2_proofs::plonk::Instance;
-use halo2_proofs::plonk::VerifyingKey;
+use crate::api::VerifierKey;
 use halo2_proofs::poly::commitment::ParamsVerifier;
 use halo2ecc_o::assign::*;
 use halo2ecc_o::chips::ecc_chip::EccChipBaseOps;
@@ -64,7 +64,7 @@ pub struct AggregatorChipConfig {
 #[derive(Clone)]
 pub struct AggregatorCircuit<E: MultiMillerLoop> {
     pub(crate) params: Arc<ParamsVerifier<E>>,
-    pub(crate) vkey: Vec<Arc<VerifyingKey<E::G1Affine>>>,
+    pub(crate) vkey: Vec<Arc<VerifierKey<E::G1Affine>>>,
     pub(crate) config: Arc<AggregatorConfig<E::Scalar>>,
     pub(crate) instances: Vec<Vec<Vec<E::Scalar>>>,
     pub(crate) proofs: Vec<Vec<u8>>,
@@ -74,7 +74,7 @@ pub struct AggregatorCircuit<E: MultiMillerLoop> {
 impl<E: MultiMillerLoop> AggregatorCircuit<E> {
     pub fn new(
         params: Arc<ParamsVerifier<E>>,
-        vkey: Vec<Arc<VerifyingKey<E::G1Affine>>>,
+        vkey: Vec<Arc<VerifierKey<E::G1Affine>>>,
         config: Arc<AggregatorConfig<E::Scalar>>,
         instances: Vec<Vec<Vec<E::Scalar>>>,
         proofs: Vec<Vec<u8>>,
@@ -308,7 +308,7 @@ pub fn synthesize_aggregate_verify_circuit<
 >(
     ctx: &mut NativeScalarEccContext<'_, E::G1Affine>,
     params: &ParamsVerifier<E>,
-    vkey: &[&VerifyingKey<E::G1Affine>],
+    vkey: &[&VerifierKey<E::G1Affine>],
     instances: Vec<Vec<Vec<E::Scalar>>>,
     proofs: &Vec<Vec<u8>>,
     w_xg: [E::G1Affine; 2],
@@ -341,7 +341,7 @@ pub fn synthesize_aggregate_verify_circuit<
         });
 
         let instance_commitments =
-            instance_to_instance_commitment(&params, vkey, instances.iter().collect());
+            instance_to_instance_commitment(&params, vkey, &instances);
 
         let timer = start_timer!(|| "build AST tree");
         // Build AST tree.
@@ -351,6 +351,7 @@ pub fn synthesize_aggregate_verify_circuit<
             &config.commitment_check,
             config.target_proof_with_shplonk_as_default,
             &config.target_proof_with_shplonk,
+            &instances
         );
         end_timer!(timer);
 

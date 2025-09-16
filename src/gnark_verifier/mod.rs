@@ -8,6 +8,7 @@ use num_bigint::BigUint;
 use serde::Deserialize;
 use serde::Serialize;
 use sha2::Sha256;
+use crate::api::VerifierKey;
 
 mod codegen;
 
@@ -175,7 +176,7 @@ func (halo2Api *Halo2VerifierAPI) verify(
 
     let code = codegen::gnark_codegen_with_proof::<_, Sha256>(
         verify_circuit_params,
-        vkey,
+        &VerifierKey::Halo2(vkey.clone()),
         instances,
         proofs.clone(),
         true,
@@ -229,6 +230,7 @@ mod tests {
                 "simple-circuit",
                 target_circuit_k,
                 vec![circuit.clone(), circuit],
+                vec![false,false],
                 vec![instances.clone(), instances],
                 vec![],
                 TranscriptHash::Poseidon,
@@ -245,6 +247,7 @@ mod tests {
             "verify-circuit",
             verify_circuit_k,
             vec![circuit],
+            vec![false],
             vec![vec![instances.clone()]],
             vec![vec![shadow_instances]],
             aggregator_circuit_hasher,
@@ -265,9 +268,14 @@ mod tests {
             &params,
             &circuit0,
             Some(&path.join(format!("{}.{}.vkey.data", "verify-circuit", 0))),
+            false,
         );
 
         let proof = load_proof(&path.join(format!("{}.{}.transcript.data", "verify-circuit", 0)));
-        gnark_render("gnark", &verifier_params_verifier, &vkey, &instances, proof);
+        if let Some(vk) = vkey.as_halo2(){
+            gnark_render("gnark", &verifier_params_verifier, vk, &instances, proof);
+        }
+
+
     }
 }

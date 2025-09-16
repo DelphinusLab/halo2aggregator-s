@@ -30,6 +30,7 @@ fn test_batch_no_rec() {
             "simple-circuit",
             8,
             vec![circuit1, circuit2],
+            vec![true,true],
             vec![instance1, instance2],
             vec![],
             TranscriptHash::Poseidon,
@@ -97,6 +98,7 @@ fn test_single_rec() {
             "simple-circuit",
             k,
             vec![circuit.clone()],
+            vec![false],
             vec![target_instances.clone()],
             vec![],
             false,
@@ -134,6 +136,7 @@ fn test_single_rec() {
                 "simple-circuit",
                 k,
                 vec![circuit.clone()],
+                vec![false],
                 vec![target_instances.clone()],
                 last_agg_instances.clone(),
                 last_agg_circuit,
@@ -164,6 +167,7 @@ fn test_single_rec() {
         &final_agg_file_prex,
         k,
         vec![last_agg_circuit.clone()],
+        vec![false],
         vec![vec![last_agg_instances.clone()]],
         vec![vec![last_agg_shadow_instances]],
         false,
@@ -178,9 +182,11 @@ fn test_single_rec() {
         &params,
         &last_agg_circuit,
         Some(&path.join(format!("{}.0.vkey.data", final_agg_file_prex))),
+        false,
     );
 
     let proof = load_proof(&path.join(format!("{}.0.transcript.data", final_agg_file_prex)));
+    let vk = vkey.as_halo2().unwrap();
     solidity_render::<_, Keccak256>(
         "sol/templates/*",
         "sol/contracts",
@@ -193,7 +199,7 @@ fn test_single_rec() {
         |i| format!("AggregatorVerifierStep{}.sol", i + 1),
         config.hash,
         &params_verifier,
-        &vkey,
+        vk,
         &last_agg_instances,
         proof.clone(),
     );

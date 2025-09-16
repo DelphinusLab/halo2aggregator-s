@@ -1,5 +1,5 @@
 use crate::api::ast_eval::EvalContext;
-use crate::api::halo2::verify_aggregation_proofs;
+use crate::api::verify_aggregation_proofs;
 use crate::circuits::utils::instance_to_instance_commitment;
 use crate::circuits::utils::AggregatorConfig;
 use crate::circuits::utils::TranscriptHash;
@@ -19,6 +19,7 @@ use halo2_proofs::pairing::group::prime::PrimeCurveAffine;
 use halo2_proofs::pairing::group::Curve;
 use halo2_proofs::pairing::group::Group;
 use halo2_proofs::plonk::VerifyingKey;
+use crate::api::VerifierKey;
 use halo2_proofs::poly::commitment::ParamsVerifier;
 use halo2_proofs::transcript::Transcript;
 pub use helper::*;
@@ -34,7 +35,7 @@ pub mod transcript;
 
 pub fn build_aggregate_verify_circuit<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
     params: Arc<ParamsVerifier<E>>,
-    vkey: &[Arc<VerifyingKey<E::G1Affine>>],
+    vkey: &[Arc<VerifierKey<E::G1Affine>>],
     instances: Vec<Vec<Vec<E::Scalar>>>,
     proofs: Vec<Vec<u8>>,
     config: Arc<AggregatorConfig<E::Scalar>>,
@@ -74,7 +75,7 @@ pub fn build_single_proof_verify_circuit<
     E: MultiMillerLoop + G2AffineBaseHelper + GtHelper + MultiMillerLoopOnProvePairing,
 >(
     params: Arc<ParamsVerifier<E>>,
-    vkey: Arc<VerifyingKey<E::G1Affine>>,
+    vkey: Arc<VerifierKey<E::G1Affine>>,
     instances: Vec<Vec<E::Scalar>>,
     proof: Vec<u8>,
     config: Arc<AggregatorConfig<E::Scalar>>,
@@ -105,7 +106,7 @@ pub fn encode_point<C: CurveAffine>(point: &C) -> Vec<C::Scalar> {
 
 fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
     params: &ParamsVerifier<E>,
-    vkey: &[&VerifyingKey<E::G1Affine>],
+    vkey: &[&VerifierKey<E::G1Affine>],
     instances: Vec<Vec<Vec<E::Scalar>>>,
     proofs: &Vec<Vec<u8>>,
     config: &AggregatorConfig<E::Scalar>,
@@ -116,10 +117,11 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
         &config.commitment_check,
         config.target_proof_with_shplonk_as_default,
         &config.target_proof_with_shplonk,
+        &instances
     );
 
     let instance_commitments =
-        instance_to_instance_commitment(params, vkey, instances.iter().collect());
+        instance_to_instance_commitment(params, vkey, &instances);
 
     let mut targets = vec![w_x.0, w_g.0];
     for idx in &config.commitment_check {

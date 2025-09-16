@@ -10,6 +10,7 @@ use num_bigint::BigUint;
 use sha2::Digest;
 use std::path::Path;
 use tera::Tera;
+use crate::api::VerifierKey;
 
 pub mod codegen;
 
@@ -167,7 +168,7 @@ pub fn solidity_render_with_check_option<E: MultiMillerLoop, D: Digest + Clone>(
 
     let steps = solidity_codegen_with_proof::<_, D>(
         &verify_circuit_params,
-        &vkey,
+        &VerifierKey::Halo2(vkey.clone()),
         instances,
         proofs,
         &mut tera_ctx,
@@ -214,6 +215,7 @@ mod tests {
     use sha2::Digest;
     use std::fs::DirBuilder;
     use std::path::Path;
+    use crate::api::VerifierKey;
 
     fn test_solidity_render<D: Digest + Clone>(aggregator_circuit_hasher: TranscriptHash) {
         assert!(
@@ -237,6 +239,7 @@ mod tests {
                 "simple-circuit",
                 target_circuit_k,
                 vec![circuit.clone(), circuit],
+                vec![false,false],
                 vec![instances.clone(), instances],
                 vec![],
                 TranscriptHash::Poseidon,
@@ -253,6 +256,7 @@ mod tests {
             "verify-circuit",
             verify_circuit_k,
             vec![circuit],
+            vec![false],
             vec![vec![instances.clone()]],
             vec![vec![shadow_instances]],
             aggregator_circuit_hasher,
@@ -273,9 +277,11 @@ mod tests {
             &params,
             &circuit0,
             Some(&path.join(format!("{}.{}.vkey.data", "verify-circuit", 0))),
+            false,
         );
 
         let proof = load_proof(&path.join(format!("{}.{}.transcript.data", "verify-circuit", 0)));
+        let vk = vkey.as_halo2().unwrap();
         solidity_render::<_, D>(
             "sol/templates/*",
             "sol/contracts",
@@ -288,7 +294,7 @@ mod tests {
             |i| format!("AggregatorVerifierStep{}.sol", i + 1),
             aggregator_circuit_hasher,
             &verifier_params_verifier,
-            &vkey,
+            vk,
             &instances,
             proof.clone(),
         );

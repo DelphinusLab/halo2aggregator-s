@@ -1,7 +1,7 @@
 use crate::api::ast_eval::EvalContext;
 use crate::api::ast_eval::EvalOps;
 use crate::api::ast_eval::EvalPos;
-use crate::api::halo2::verify_aggregation_proofs;
+use crate::api::verify_aggregation_proofs;
 use crate::circuits::utils::instance_to_instance_commitment;
 use crate::transcript::sha256::ShaRead;
 use crate::utils::field_to_bn;
@@ -13,6 +13,7 @@ use halo2_proofs::arithmetic::MultiMillerLoop;
 use halo2_proofs::pairing::group::Curve;
 use halo2_proofs::pairing::group::Group;
 use halo2_proofs::plonk::VerifyingKey;
+use crate::api::VerifierKey;
 use halo2_proofs::poly::commitment::ParamsVerifier;
 use halo2_proofs::transcript::Challenge255;
 use halo2_proofs::transcript::EncodedChallenge;
@@ -620,16 +621,16 @@ impl<R: Read, E: MultiMillerLoop, D: Digest + Clone> SolidityEvalContext<R, E, D
 
 pub fn solidity_codegen_with_proof<E: MultiMillerLoop, D: Digest + Clone>(
     params: &ParamsVerifier<E>,
-    vkey: &VerifyingKey<E::G1Affine>,
+    vkey: &VerifierKey<E::G1Affine>,
     instances: &Vec<E::Scalar>,
     proofs: Vec<u8>,
     tera_context: &mut tera::Context,
     check: bool,
 ) -> Vec<String> {
-    let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey], &vec![], true, &vec![]);
+    let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey], &vec![], true, &vec![],&vec![]);
 
     let instance_commitments =
-        instance_to_instance_commitment(params, &[vkey], vec![&vec![instances.clone()]])[0].clone();
+        instance_to_instance_commitment(params, &[vkey], &vec![vec![instances.clone()]])[0].clone();
 
     let targets = vec![w_x.0, w_g.0];
 
@@ -704,7 +705,7 @@ pub fn solidity_codegen_with_proof<E: MultiMillerLoop, D: Digest + Clone>(
 
 pub fn solidity_aux_gen<E: MultiMillerLoop, D: Digest + Clone>(
     params: &ParamsVerifier<E>,
-    vkey: &VerifyingKey<E::G1Affine>,
+    vkey: &VerifierKey<E::G1Affine>,
     instances: &Vec<E::Scalar>,
     proofs: Vec<u8>,
     aux_file: &Path,
@@ -716,15 +717,15 @@ pub fn solidity_aux_gen<E: MultiMillerLoop, D: Digest + Clone>(
 
 pub fn solidity_aux_gen_data<E: MultiMillerLoop, D: Digest + Clone>(
     params: &ParamsVerifier<E>,
-    vkey: &VerifyingKey<E::G1Affine>,
+    vkey: &VerifierKey<E::G1Affine>,
     instances: &Vec<E::Scalar>,
     proofs: Vec<u8>,
     check: bool,
 ) -> Vec<E::Scalar> {
-    let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey], &vec![], true, &vec![]);
+    let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey], &vec![], true, &vec![],&vec![]);
 
     let instance_commitments =
-        instance_to_instance_commitment(params, &[vkey], vec![&vec![instances.clone()]])[0].clone();
+        instance_to_instance_commitment(params, &[vkey], &vec![vec![instances.clone()]])[0].clone();
 
     let targets = vec![w_x.0, w_g.0];
 
