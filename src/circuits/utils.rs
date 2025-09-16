@@ -1,3 +1,4 @@
+use crate::api::VerifierKey;
 use crate::circuit_verifier::build_aggregate_verify_circuit;
 use crate::circuit_verifier::circuit::AggregatorCircuit;
 use crate::circuit_verifier::G2AffineBaseHelper;
@@ -12,12 +13,14 @@ use ark_std::end_timer;
 use ark_std::rand::rngs::OsRng;
 use ark_std::start_timer;
 use halo2_proofs::arithmetic::BaseExt;
-use halo2_proofs::pairing::arithmetic::Engine;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::arithmetic::MultiMillerLoop;
 use halo2_proofs::arithmetic::MultiMillerLoopOnProvePairing;
-use halo2_proofs::pairing::group::{Curve,prime::PrimeCurveAffine};
+use halo2_proofs::helpers::Serializable;
+use halo2_proofs::pairing::arithmetic::Engine;
+use halo2_proofs::pairing::group::prime::PrimeCurveAffine;
+use halo2_proofs::pairing::group::Curve;
 use halo2_proofs::plonk::keygen_pk;
 use halo2_proofs::plonk::keygen_vk;
 use halo2_proofs::plonk::verify_proof_ext;
@@ -25,7 +28,6 @@ use halo2_proofs::plonk::Circuit;
 use halo2_proofs::plonk::ProvingKey;
 use halo2_proofs::plonk::SingleVerifier;
 use halo2_proofs::plonk::VerifyingKey;
-use crate::api::VerifierKey;
 use halo2_proofs::poly::commitment::Params;
 use halo2_proofs::poly::commitment::ParamsVerifier;
 use halo2_proofs::transcript::Blake2bRead;
@@ -33,21 +35,18 @@ use halo2_proofs::transcript::Blake2bWrite;
 use halo2_proofs::transcript::EncodedChallenge;
 use halo2_proofs::transcript::Transcript;
 use halo2_proofs::transcript::TranscriptWrite;
-use halo2_proofs::helpers::CurveRead;
-use plonkish_backend::backend::hyperplonk::HyperPlonkVerifierParam;
 use plonkish_backend::backend::hyperplonk::keygen_vk as hyper_keygen_vk;
+use plonkish_backend::backend::hyperplonk::HyperPlonkVerifierParam;
+use plonkish_backend::backend::PlonkishBackend;
 use plonkish_backend::pcs::multilinear::Zeromorph;
 use plonkish_backend::pcs::univariate::UnivariateKzg;
-use plonkish_backend::backend::PlonkishBackend;
-use plonkish_backend::util::expression::rotate::{Lexical,Rotatable};
 use plonkish_backend::util::transcript as hyper_transcript;
-use halo2_proofs::helpers::Serializable;
+use std::hash::Hash;
 use std::io::Read;
 use std::io::Write;
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::hash::Hash;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum TranscriptHash {
@@ -87,9 +86,9 @@ pub fn load_vkey<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
 ) -> VerifierKey<E::G1Affine> {
     println!("read vkey from {:?}", cache_file);
     let mut fd = std::fs::File::open(&cache_file).unwrap();
-    if is_hyper_plonk{
+    if is_hyper_plonk {
         VerifierKey::HyperPlonk(HyperPlonkVerifierParam::<E::G1Affine>::fetch(&mut fd).unwrap())
-    }else {
+    } else {
         VerifierKey::Halo2(VerifyingKey::read::<_, C>(&mut fd, params).unwrap())
     }
 }
@@ -102,11 +101,11 @@ pub fn load_or_build_vkey<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
 ) -> VerifierKey<E::G1Affine> {
     if let Some(cache_file) = &cache_file_opt {
         if Path::exists(&cache_file) {
-            return load_vkey::<E, C>(params, &cache_file,is_hyper_plonk);
+            return load_vkey::<E, C>(params, &cache_file, is_hyper_plonk);
         }
     }
 
-    let verify_circuit_vk = build_vk::<E,C>(params, circuit,is_hyper_plonk);
+    let verify_circuit_vk = build_vk::<E, C>(params, circuit, is_hyper_plonk);
 
     if let Some(cache_file) = &cache_file_opt {
         let mut fd = std::fs::File::create(&cache_file).unwrap();
@@ -120,11 +119,11 @@ pub fn build_vk<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
     params: &Params<E::G1Affine>,
     circuit: &C,
     is_hyper_plonk: bool,
-)->VerifierKey<E::G1Affine>{
-    if is_hyper_plonk{
-        let vk = hyper_keygen_vk::<E,C>(params,circuit).expect("hyper keygen_vk should not fail");;
+) -> VerifierKey<E::G1Affine> {
+    if is_hyper_plonk {
+        let vk = hyper_keygen_vk::<E, C>(params, circuit).expect("hyper keygen_vk should not fail");
         VerifierKey::HyperPlonk(vk)
-    }else {
+    } else {
         let verify_circuit_vk = keygen_vk(params, circuit).expect("keygen_vk should not fail");
         VerifierKey::Halo2(verify_circuit_vk)
     }
@@ -166,11 +165,14 @@ pub fn instance_to_instance_commitment<E: MultiMillerLoop>(
                 .iter()
                 .map(|instance| {
                     match vk {
-                        VerifierKey::Halo2(vk) =>{
-                            assert!(instance.len() <= params.n as usize - (vk.cs.blinding_factors() + 1));
+                        VerifierKey::Halo2(vk) => {
+                            assert!(
+                                instance.len()
+                                    <= params.n as usize - (vk.cs.blinding_factors() + 1)
+                            );
                         }
-                        VerifierKey::HyperPlonk(_vk)=>{
-                            assert!(instance.len() <= params.n as usize );
+                        VerifierKey::HyperPlonk(_vk) => {
+                            assert!(instance.len() <= params.n as usize);
                         }
                     }
                     params.commit_lagrange(instance.to_vec()).to_affine()
@@ -326,10 +328,10 @@ pub fn load_or_create_proof<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
     transcript
 }
 
-type  pcs<E> = Zeromorph<UnivariateKzg<E>>;
-type hyper<PCS> = plonkish_backend::backend::hyperplonk::HyperPlonk<PCS>;
+type Pcs<E> = Zeromorph<UnivariateKzg<E>>;
+type Hyper<PCS> = plonkish_backend::backend::hyperplonk::HyperPlonk<PCS>;
 
-pub fn load_or_create_hyper_proof<E: MultiMillerLoop+std::fmt::Debug, C: Circuit<E::Scalar>>(
+pub fn load_or_create_hyper_proof<E: MultiMillerLoop + std::fmt::Debug, C: Circuit<E::Scalar>>(
     params: &Params<E::G1Affine>,
     circuit: C,
     instances: Vec<Vec<E::Scalar>>,
@@ -337,10 +339,10 @@ pub fn load_or_create_hyper_proof<E: MultiMillerLoop+std::fmt::Debug, C: Circuit
     hash: TranscriptHash,
     try_load_proof: bool,
 ) -> Vec<u8>
-    where
-    <E as Engine>::G1Affine:Serialize+DeserializeOwned,
-    <E as Engine>::G2Affine:Serialize+DeserializeOwned,
-    <E as Engine>::Scalar:Serialize+DeserializeOwned+Hash,
+where
+    <E as Engine>::G1Affine: Serialize + DeserializeOwned,
+    <E as Engine>::G2Affine: Serialize + DeserializeOwned,
+    <E as Engine>::Scalar: Serialize + DeserializeOwned + Hash,
 {
     if let Some(cache_file) = &cache_file_opt {
         if try_load_proof && Path::exists(&cache_file) {
@@ -349,14 +351,25 @@ pub fn load_or_create_hyper_proof<E: MultiMillerLoop+std::fmt::Debug, C: Circuit
     }
 
     let timer = start_timer!(|| "generate pkey");
-    let hyper_circuit = plonkish_backend::transform::circuit::get_zkwasm_circuit::<E,C>(params.get_k(),&circuit,instances);
-    let circuit_info = plonkish_backend::frontend::halo2::get_circuit_info::<E,C>(params.get_k(),&circuit).unwrap();
+    let hyper_circuit = plonkish_backend::transform::circuit::get_zkwasm_circuit::<E, C>(
+        params.get_k(),
+        &circuit,
+        instances,
+    );
+    let circuit_info =
+        plonkish_backend::frontend::halo2::get_circuit_info::<E, C>(params.get_k(), &circuit)
+            .unwrap();
 
+    let kzg_params = plonkish_backend::pcs::univariate::UnivariateKzgParam::<E>::new(
+        params.get_k() as usize,
+        params.get_g(),
+        params.get_g_lagrange(),
+        params.get_sg2::<E>(),
+    );
 
-    let kzg_params = plonkish_backend::pcs::univariate::UnivariateKzgParam::<E>::new(params.get_k() as usize,params.get_g(),params.get_g_lagrange(),params.get_sg2::<E>());
-
-    let (pp,vp,ps,vs) =
-        <hyper<pcs<E>> as PlonkishBackend<E::G1Affine>>::preprocess(&kzg_params,&circuit_info).expect("perprocess should not fail");
+    let (pp, _vp, ps, _vs) =
+        <Hyper<Pcs<E>> as PlonkishBackend<E::G1Affine>>::preprocess(&kzg_params, &circuit_info)
+            .expect("perprocess should not fail");
 
     end_timer!(timer);
 
@@ -367,7 +380,7 @@ pub fn load_or_create_hyper_proof<E: MultiMillerLoop+std::fmt::Debug, C: Circuit
         }
         TranscriptHash::Poseidon => {
             let mut transcript = hyper_transcript::poseidon::PoseidonWrite::init(vec![]);
-            hyper::prove_with_shift(&ps,&pp,&hyper_circuit,&mut transcript).expect("prove should not fail");
+            Hyper::prove(&ps, &pp, &hyper_circuit, &mut transcript).expect("prove should not fail");
 
             transcript.finalize()
         }
@@ -389,51 +402,64 @@ pub fn load_or_create_hyper_proof<E: MultiMillerLoop+std::fmt::Debug, C: Circuit
     transcript
 }
 
-pub fn verify_hyper_proof<E: MultiMillerLoop+std::fmt::Debug, C: Circuit<E::Scalar>>(
+pub fn verify_hyper_proof<E: MultiMillerLoop + std::fmt::Debug, C: Circuit<E::Scalar>>(
     params: &Params<E::G1Affine>,
-    proof:&[u8],
-    vp:&plonkish_backend::backend::hyperplonk::HyperPlonkVerifierParam<E::G1Affine>,
-    // instances: &[&[E::Scalar]],
+    proof: &[u8],
+    vp: &plonkish_backend::backend::hyperplonk::HyperPlonkVerifierParam<E::G1Affine>,
     instances: Vec<Vec<E::Scalar>>,
     hash: TranscriptHash,
-)      where
-    <E as Engine>::G1Affine:Serialize+DeserializeOwned,
-    <E as Engine>::G2Affine:Serialize+DeserializeOwned,
-    <E as Engine>::Scalar:Serialize+DeserializeOwned+Hash,
+) where
+    <E as Engine>::G1Affine: Serialize + DeserializeOwned,
+    <E as Engine>::G2Affine: Serialize + DeserializeOwned,
+    <E as Engine>::Scalar: Serialize + DeserializeOwned + Hash,
 {
     let g2 = E::G2Affine::generator();
-    let kzg_params = plonkish_backend::pcs::univariate::UnivariateKzgVerifierParam::<E>::new(params.get_g()[0],g2,params.get_sg2::<E>());
-    let zero_vp = plonkish_backend::pcs::multilinear::ZeromorphKzgVerifierParam::new(kzg_params,params.get_sg2::<E>());
-    let hyper_vs = plonkish_backend::backend::hyperplonk::HyperPlonkVerifierSetupParam::<E::Scalar,pcs<E>>{pcs:zero_vp};
+    let kzg_params = plonkish_backend::pcs::univariate::UnivariateKzgVerifierParam::<E>::new(
+        params.get_g()[0],
+        g2,
+        params.get_sg2::<E>(),
+    );
+    let zero_vp = plonkish_backend::pcs::multilinear::ZeromorphKzgVerifierParam::new(
+        kzg_params,
+        params.get_sg2::<E>(),
+    );
+    let hyper_vs =
+        plonkish_backend::backend::hyperplonk::HyperPlonkVerifierSetupParam::<E::Scalar, Pcs<E>> {
+            pcs: zero_vp,
+        };
 
     match hash {
         TranscriptHash::Blake2b => {
             unimplemented!()
-        },
+        }
         TranscriptHash::Poseidon => {
-            let mut transcript = plonkish_backend::util::transcript::poseidon::PoseidonRead::init(&proof[..]);
-            hyper::verify_with_shift(&hyper_vs,vp,&instances,&mut transcript).unwrap();
+            let mut transcript =
+                plonkish_backend::util::transcript::poseidon::PoseidonRead::init(&proof[..]);
+            Hyper::verify(&hyper_vs, vp, &instances, &mut transcript).unwrap();
         }
         TranscriptHash::Sha => {
             unimplemented!()
-        },
+        }
         TranscriptHash::Keccak => {
             unimplemented!()
-        },
+        }
     }
-
 }
 
 /* CARE: unsafe means that to review before used in real production */
 pub fn run_circuit_unsafe_full_pass_no_rec<
-    E: MultiMillerLoop + G2AffineBaseHelper + GtHelper + MultiMillerLoopOnProvePairing+std::fmt::Debug,
+    E: MultiMillerLoop
+        + G2AffineBaseHelper
+        + GtHelper
+        + MultiMillerLoopOnProvePairing
+        + std::fmt::Debug,
     C: Circuit<E::Scalar>,
 >(
     cache_folder: &Path,
     prefix: &str,
     k: u32,
     circuits: Vec<C>,
-    is_hyper_plonk:Vec<bool>,
+    is_hyper_plonk: Vec<bool>,
     instances: Vec<Vec<Vec<E::Scalar>>>,
     shadow_instances: Vec<Vec<Vec<E::Scalar>>>,
     hash: TranscriptHash,
@@ -446,10 +472,12 @@ pub fn run_circuit_unsafe_full_pass_no_rec<
     Vec<E::Scalar>,
     Vec<E::Scalar>,
     E::Scalar,
-)> where
-    <E as Engine>::G1Affine:Serialize+DeserializeOwned,
-    <E as Engine>::G2Affine:Serialize+DeserializeOwned,
-    <E as Engine>::Scalar:Serialize+DeserializeOwned+Hash,{
+)>
+where
+    <E as Engine>::G1Affine: Serialize + DeserializeOwned,
+    <E as Engine>::G2Affine: Serialize + DeserializeOwned,
+    <E as Engine>::Scalar: Serialize + DeserializeOwned + Hash,
+{
     run_circuit_unsafe_full_pass::<E, C>(
         cache_folder,
         prefix,
@@ -575,14 +603,18 @@ impl<F: FieldExt> AggregatorConfig<F> {
 /* CARE: unsafe means that to review before used in production */
 pub fn run_circuit_unsafe_full_pass<
     'a,
-    E: MultiMillerLoop + G2AffineBaseHelper + GtHelper + MultiMillerLoopOnProvePairing +std::fmt::Debug,
+    E: MultiMillerLoop
+        + G2AffineBaseHelper
+        + GtHelper
+        + MultiMillerLoopOnProvePairing
+        + std::fmt::Debug,
     C: Circuit<E::Scalar>,
 >(
     cache_folder: &'a Path,
     prefix: &'a str,
     k: u32,
     circuits: Vec<C>,
-    is_hyper_plonks:Vec<bool>,
+    is_hyper_plonks: Vec<bool>,
     instances: Vec<Vec<Vec<E::Scalar>>>,
     shadow_instances: Vec<Vec<Vec<E::Scalar>>>,
     force_create_proof: bool,
@@ -592,10 +624,12 @@ pub fn run_circuit_unsafe_full_pass<
     Vec<E::Scalar>,
     Vec<E::Scalar>,
     E::Scalar,
-)> where
-    <E as Engine>::G1Affine:Serialize+DeserializeOwned,
-    <E as Engine>::G2Affine:Serialize+DeserializeOwned,
-    <E as Engine>::Scalar:Serialize+DeserializeOwned+Hash,{
+)>
+where
+    <E as Engine>::G1Affine: Serialize + DeserializeOwned,
+    <E as Engine>::G2Affine: Serialize + DeserializeOwned,
+    <E as Engine>::Scalar: Serialize + DeserializeOwned + Hash,
+{
     let hash = config.hash;
 
     // 1. setup params
@@ -603,7 +637,11 @@ pub fn run_circuit_unsafe_full_pass<
         load_or_build_unsafe_params::<E>(k, Some(&cache_folder.join(format!("K{}.params", k))));
 
     let mut proofs = vec![];
-    for (i, (circuit,is_hyper_plonk)) in circuits.into_iter().zip(is_hyper_plonks.clone().into_iter()).enumerate() {
+    for (i, (circuit, is_hyper_plonk)) in circuits
+        .into_iter()
+        .zip(is_hyper_plonks.clone().into_iter())
+        .enumerate()
+    {
         // 2. setup vkey
         let vkey = load_or_build_vkey::<E, C>(
             &params,
@@ -615,22 +653,20 @@ pub fn run_circuit_unsafe_full_pass<
         // 3. create proof
 
         let proof = match vkey {
-            VerifierKey::Halo2(vk)=>{
-                load_or_create_proof::<E, C>(
-                    &params,
-                    vk,
-                    circuit,
-                    &instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>(),
-                    Some(&cache_folder.join(format!("{}.{}.transcript.data", prefix, i))),
-                    config.hash,
-                    !force_create_proof,
-                    hash != TranscriptHash::Poseidon
-                        || config.target_proof_with_shplonk_as_default
-                        || config.target_proof_with_shplonk.contains(&i),
-                )
-            }
-            VerifierKey::HyperPlonk(vk)=>{
-                load_or_create_hyper_proof::<E,C>(
+            VerifierKey::Halo2(vk) => load_or_create_proof::<E, C>(
+                &params,
+                vk,
+                circuit,
+                &instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>(),
+                Some(&cache_folder.join(format!("{}.{}.transcript.data", prefix, i))),
+                config.hash,
+                !force_create_proof,
+                hash != TranscriptHash::Poseidon
+                    || config.target_proof_with_shplonk_as_default
+                    || config.target_proof_with_shplonk.contains(&i),
+            ),
+            VerifierKey::HyperPlonk(_) => {
+                load_or_create_hyper_proof::<E, C>(
                     &params,
                     circuit,
                     instances[i].clone(),
@@ -672,21 +708,20 @@ pub fn run_circuit_unsafe_full_pass<
 
     let mut vkeys = vec![];
 
-    for (i, (proof,is_hyper_plonk)) in proofs.iter().zip(is_hyper_plonks.into_iter()).enumerate() {
+    for (i, (proof, is_hyper_plonk)) in proofs.iter().zip(is_hyper_plonks.into_iter()).enumerate() {
         let vkey = load_vkey::<E, C>(
             &params,
             &cache_folder.join(format!("{}.{}.vkey.data", prefix, i)),
-            is_hyper_plonk
+            is_hyper_plonk,
         );
 
-
         // origin check
-        if false {
+        if true {
             match &vkey {
-                VerifierKey::HyperPlonk(vk)=>{
-                    verify_hyper_proof::<E,C>(&params,proof,vk,instances[i].clone(),hash);
+                VerifierKey::HyperPlonk(vk) => {
+                    verify_hyper_proof::<E, C>(&params, proof, vk, instances[i].clone(), hash);
                 }
-                VerifierKey::Halo2(vkey)=>{
+                VerifierKey::Halo2(vkey) => {
                     let use_shplonk = hash != TranscriptHash::Poseidon
                         || config.target_proof_with_shplonk_as_default
                         || config.target_proof_with_shplonk.contains(&i);
@@ -726,12 +761,10 @@ pub fn run_circuit_unsafe_full_pass<
                             !use_shplonk,
                         ),
                     }
-                        .unwrap();
+                    .unwrap();
                     end_timer!(timer);
                 }
             }
-
-
         }
 
         // native single check
@@ -769,7 +802,7 @@ pub fn run_circuit_unsafe_full_pass<
     }
 
     // circuit multi check
-    if hash == TranscriptHash::Poseidon{
+    if hash == TranscriptHash::Poseidon {
         let timer = start_timer!(|| "build_aggregate_verify_circuit");
         let (circuit, instances, shadow_instance, hash) = build_aggregate_verify_circuit::<E>(
             Arc::new(params_verifier),
@@ -788,14 +821,18 @@ pub fn run_circuit_unsafe_full_pass<
 
 /* CARE: unsafe means that to review before used in real production */
 pub fn run_circuit_with_agg_unsafe_full_pass<
-    E: MultiMillerLoop + G2AffineBaseHelper + GtHelper + MultiMillerLoopOnProvePairing+std::fmt::Debug,
+    E: MultiMillerLoop
+        + G2AffineBaseHelper
+        + GtHelper
+        + MultiMillerLoopOnProvePairing
+        + std::fmt::Debug,
     C: Circuit<E::Scalar>,
 >(
     cache_folder: &Path,
     prefix: &str,
     k: u32,
     circuits: Vec<C>,
-    is_hyper_plonks:Vec<bool>,
+    is_hyper_plonks: Vec<bool>,
     mut instances: Vec<Vec<Vec<E::Scalar>>>,
     prev_agg_instance: Vec<E::Scalar>,
     prev_agg_circuit: AggregatorCircuit<E>,
@@ -807,10 +844,12 @@ pub fn run_circuit_with_agg_unsafe_full_pass<
     Vec<E::Scalar>,
     Vec<E::Scalar>,
     E::Scalar,
-)> where
-    <E as Engine>::G1Affine:Serialize+DeserializeOwned,
-    <E as Engine>::G2Affine:Serialize+DeserializeOwned,
-    <E as Engine>::Scalar:Serialize+DeserializeOwned+Hash,{
+)>
+where
+    <E as Engine>::G1Affine: Serialize + DeserializeOwned,
+    <E as Engine>::G2Affine: Serialize + DeserializeOwned,
+    <E as Engine>::Scalar: Serialize + DeserializeOwned + Hash,
+{
     // 1. setup params
     let params =
         load_or_build_unsafe_params::<E>(k, Some(&cache_folder.join(format!("K{}.params", k))));
@@ -818,41 +857,41 @@ pub fn run_circuit_with_agg_unsafe_full_pass<
     let mut vkeys = vec![];
     let mut proofs = vec![];
 
-    for (i, (circuit,is_hyper_plonk)) in circuits.into_iter().zip(is_hyper_plonks.into_iter()).enumerate() {
+    for (i, (circuit, is_hyper_plonk)) in circuits
+        .into_iter()
+        .zip(is_hyper_plonks.into_iter())
+        .enumerate()
+    {
         // 2. setup vkey
         let vkey = load_or_build_vkey::<E, C>(
             &params,
             &circuit,
             Some(&cache_folder.join(format!("{}.{}.vkey.data", prefix, i))),
-            is_hyper_plonk
+            is_hyper_plonk,
         );
         vkeys.push(vkey.clone());
 
         // 3. create proof
         let proof = match vkey {
-            VerifierKey::Halo2(vkey)=>{
-                load_or_create_proof::<E, C>(
-                    &params,
-                    vkey,
-                    circuit,
-                    &instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>(),
-                    Some(&cache_folder.join(format!("{}.{}.transcript.data", prefix, i))),
-                    config.hash,
-                    !force_create_proof,
-                    config.target_proof_with_shplonk_as_default
-                        || config.target_proof_with_shplonk.contains(&i),
-                )
-            }
-            VerifierKey::HyperPlonk(_vk)=>{
-                load_or_create_hyper_proof::<E,C>(
-                    &params,
-                    circuit,
-                    instances[i].clone(),
-                    Some(&cache_folder.join(format!("{}.{}.transcript.data", prefix, i))),
-                    config.hash,
-                    !force_create_proof,
-                )
-            }
+            VerifierKey::Halo2(vkey) => load_or_create_proof::<E, C>(
+                &params,
+                vkey,
+                circuit,
+                &instances[i].iter().map(|x| &x[..]).collect::<Vec<_>>(),
+                Some(&cache_folder.join(format!("{}.{}.transcript.data", prefix, i))),
+                config.hash,
+                !force_create_proof,
+                config.target_proof_with_shplonk_as_default
+                    || config.target_proof_with_shplonk.contains(&i),
+            ),
+            VerifierKey::HyperPlonk(_vk) => load_or_create_hyper_proof::<E, C>(
+                &params,
+                circuit,
+                instances[i].clone(),
+                Some(&cache_folder.join(format!("{}.{}.transcript.data", prefix, i))),
+                config.hash,
+                !force_create_proof,
+            ),
         };
         proofs.push(proof);
 
@@ -866,11 +905,11 @@ pub fn run_circuit_with_agg_unsafe_full_pass<
         &params,
         &prev_agg_circuit,
         Some(&cache_folder.join(format!("{}.agg.{}.vkey.data", prefix, prev_agg_idx))),
-        false
+        false,
     );
     vkeys.push(prev_agg_vkey.clone());
 
-    if let VerifierKey::Halo2(vkey) = prev_agg_vkey{
+    if let VerifierKey::Halo2(vkey) = prev_agg_vkey {
         let prev_agg_proof = load_or_create_proof::<E, _>(
             &params,
             vkey,
@@ -882,10 +921,9 @@ pub fn run_circuit_with_agg_unsafe_full_pass<
             config.target_proof_with_shplonk_as_default,
         );
         proofs.push(prev_agg_proof);
-    }else {
+    } else {
         panic!("expect halo2 verify key")
     }
-
 
     instances.push(vec![prev_agg_instance]);
     // 4. many verify
@@ -917,8 +955,8 @@ use halo2_proofs::arithmetic::Field;
 use num_bigint::BigUint;
 use num_traits::Num;
 use num_traits::ToPrimitive;
-use serde::{Serialize,de::DeserializeOwned};
-use crate::api::VerifierKey::HyperPlonk;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 
 // refer https://github.com/BitVM/BitVM/blob/main/src/fflonk/compute_c_wi.rs
 // refer table 3 of https://eprint.iacr.org/2009/457.pdf

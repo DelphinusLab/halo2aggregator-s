@@ -1,3 +1,4 @@
+use crate::api::VerifierKey;
 use crate::utils::field_to_bn;
 use halo2_proofs::arithmetic::BaseExt;
 use halo2_proofs::arithmetic::CurveAffine;
@@ -8,7 +9,6 @@ use num_bigint::BigUint;
 use serde::Deserialize;
 use serde::Serialize;
 use sha2::Sha256;
-use crate::api::VerifierKey;
 
 mod codegen;
 
@@ -230,7 +230,7 @@ mod tests {
                 "simple-circuit",
                 target_circuit_k,
                 vec![circuit.clone(), circuit],
-                vec![false,false],
+                vec![false, false],
                 vec![instances.clone(), instances],
                 vec![],
                 TranscriptHash::Poseidon,
@@ -272,10 +272,8 @@ mod tests {
         );
 
         let proof = load_proof(&path.join(format!("{}.{}.transcript.data", "verify-circuit", 0)));
-        if let Some(vk) = vkey.as_halo2(){
+        if let Some(vk) = vkey.as_halo2() {
             gnark_render("gnark", &verifier_params_verifier, vk, &instances, proof);
         }
-
-
     }
 }

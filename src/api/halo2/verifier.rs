@@ -1,7 +1,3 @@
-use crate::api::format_advice_commitment_key;
-use crate::api::format_fixed_commitment_key;
-use crate::api::format_instance_commitment_key;
-
 use super::protocols::logup as lookup;
 use super::protocols::permutation;
 use super::protocols::shuffle;
@@ -12,6 +8,9 @@ use super::query::EvaluationQuerySchemaRc;
 use crate::api::arith::AstPointRc;
 use crate::api::arith::AstScalar;
 use crate::api::arith::AstScalarRc;
+use crate::api::format_advice_commitment_key;
+use crate::api::format_fixed_commitment_key;
+use crate::api::format_instance_commitment_key;
 use crate::commit;
 use crate::echeckpoint;
 use crate::scalar;

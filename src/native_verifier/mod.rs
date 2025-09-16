@@ -2,6 +2,7 @@ use crate::api::ast_eval::EvalContext;
 use crate::api::ast_eval::EvalOps;
 use crate::api::ast_eval::EvalPos;
 use crate::api::verify_aggregation_proofs;
+use crate::api::VerifierKey;
 use crate::circuits::utils::instance_to_instance_commitment;
 use crate::circuits::utils::TranscriptHash;
 use crate::transcript::poseidon::PoseidonPure;
@@ -12,7 +13,6 @@ use halo2_proofs::arithmetic::MillerLoopResult;
 use halo2_proofs::arithmetic::MultiMillerLoop;
 use halo2_proofs::pairing::group::Curve;
 use halo2_proofs::pairing::group::Group;
-use crate::api::VerifierKey;
 use halo2_proofs::poly::commitment::ParamsVerifier;
 use halo2_proofs::transcript::Blake2bRead;
 use halo2_proofs::transcript::Challenge255;
@@ -268,30 +268,28 @@ pub fn verify_proofs<E: MultiMillerLoop>(
     }
 }
 
-
 #[test]
 fn test_verify_hyper_proof() {
-    use std::{fs::File, io::BufReader, marker::PhantomData, path::PathBuf};
-    use halo2_proofs::pairing::bn256::Bn256;
-    use halo2_proofs::arithmetic::MultiMillerLoop;
     use halo2_proofs::arithmetic::Engine;
-    // use halo2_proofs::pairing::arithmetic::MultiMillerLoop;
-    use plonkish_backend::pcs::multilinear::ZeromorphKzgVerifierParam;
-    use plonkish_backend::pcs::multilinear;
-    use plonkish_backend::pcs::univariate;
-    use plonkish_backend::pcs::univariate::UnivariateKzgCommitment;
+    use halo2_proofs::pairing::bn256::Bn256;
     use plonkish_backend::backend::hyperplonk::HyperPlonkVerifierParam;
     use plonkish_backend::backend::hyperplonk::HyperPlonkVerifierSetupParam;
+    use plonkish_backend::pcs::multilinear;
+    use plonkish_backend::pcs::multilinear::ZeromorphKzgVerifierParam;
+    use plonkish_backend::pcs::univariate;
+    use std::fs::File;
+    use std::io::BufReader;
 
     let file = File::open("./test/hyperplonk_vk.json").expect("File does not exist");
-    type kzg = multilinear::Zeromorph<univariate::UnivariateKzg<Bn256>>;
-    let vp: HyperPlonkVerifierParam<<Bn256 as Engine>::G1Affine> = match serde_json::from_reader(BufReader::new(file)) {
-        Err(e) => {
-            println!("load json error {:?}", e);
-            unreachable!();
-        }
-        Ok(o) => o,
-    };
+    type Kzg = multilinear::Zeromorph<univariate::UnivariateKzg<Bn256>>;
+    let vp: HyperPlonkVerifierParam<<Bn256 as Engine>::G1Affine> =
+        match serde_json::from_reader(BufReader::new(file)) {
+            Err(e) => {
+                println!("load json error {:?}", e);
+                unreachable!();
+            }
+            Ok(o) => o,
+        };
     let vp = VerifierKey::HyperPlonk(vp);
 
     let file = File::open("./test/hyperplonk_proof.json").expect("File does not exist");
@@ -304,25 +302,32 @@ fn test_verify_hyper_proof() {
     };
 
     let file = File::open("./test/vs.json").expect("File does not exist");
-    let vs: HyperPlonkVerifierSetupParam<<Bn256 as Engine>::Scalar, kzg> = match serde_json::from_reader(BufReader::new(file)) {
-        Err(e) => {
-            println!("load json error {:?}", e);
-            unreachable!();
-        }
-        Ok(o) => o,
-    };
+    let vs: HyperPlonkVerifierSetupParam<<Bn256 as Engine>::Scalar, Kzg> =
+        match serde_json::from_reader(BufReader::new(file)) {
+            Err(e) => {
+                println!("load json error {:?}", e);
+                unreachable!();
+            }
+            Ok(o) => o,
+        };
     let zero_veri_param = &vs.pcs as &ZeromorphKzgVerifierParam<Bn256>;
-    let verify_param = ParamsVerifier::<Bn256>{
-        k:14,
-        n:14,
-        g1:zero_veri_param.g1(),
-        g2:zero_veri_param.g2(),
-        s_g2:zero_veri_param.s_g2(),
-        g_lagrange:vec![],
+    let verify_param = ParamsVerifier::<Bn256> {
+        k: 14,
+        n: 14,
+        g1: zero_veri_param.g1(),
+        g2: zero_veri_param.g2(),
+        s_g2: zero_veri_param.s_g2(),
+        g_lagrange: vec![],
     };
 
-    verify_proofs(&verify_param,&[&vp],&vec![],
-                        vec![proof],TranscriptHash::Poseidon,&vec![],false,&vec![]);
-
-
+    verify_proofs(
+        &verify_param,
+        &[&vp],
+        &vec![],
+        vec![proof],
+        TranscriptHash::Poseidon,
+        &vec![],
+        false,
+        &vec![],
+    );
 }

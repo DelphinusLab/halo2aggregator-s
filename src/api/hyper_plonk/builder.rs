@@ -1,6 +1,5 @@
 use crate::api::arith::*;
 use crate::api::halo2::query::CommitQuery;
-use crate::api::halo2::query::EvaluationQuery;
 use crate::api::halo2::query::EvaluationQuerySchemaRc;
 use crate::api::halo2::verifier::MultiOpenProof;
 use crate::api::transcript::AstTranscript;
@@ -9,25 +8,18 @@ use crate::commit;
 use crate::eval;
 use crate::pcheckpoint;
 use crate::pconst;
-use crate::pinstance;
 use crate::scalar;
 use crate::sconst;
-use crate::spow;
 use crate::ssquare;
-use halo2_proofs::arithmetic::{BaseExt, Engine};
+use ark_std::iterable::Iterable;
 use halo2_proofs::arithmetic::CurveAffine;
+use halo2_proofs::arithmetic::Engine;
 use halo2_proofs::arithmetic::Field;
-use halo2_proofs::arithmetic::FieldExt;
 use halo2_proofs::arithmetic::MultiMillerLoop;
-use halo2_proofs::plonk::VerifyingKey;
-use halo2_proofs::poly::commitment::ParamsVerifier;
 use itertools::chain;
 use itertools::izip;
 use plonkish_backend::backend::hyperplonk::verifier::pcs_query;
 use plonkish_backend::backend::hyperplonk::HyperPlonkVerifierParam;
-use plonkish_backend::pcs::PolynomialCommitmentScheme;
-use plonkish_backend::poly::multilinear;
-use plonkish_backend::poly::multilinear::MultilinearPolynomial;
 use plonkish_backend::util::expression::rotate::Lexical;
 use plonkish_backend::util::expression::CommonPolynomial;
 use plonkish_backend::util::expression::Expression;
@@ -36,10 +28,8 @@ use plonkish_backend::util::expression::Rotatable;
 use plonkish_backend::util::expression::Rotation;
 use plonkish_backend::util::BitIndex;
 use std::collections::BTreeMap;
-use std::collections::HashSet;
 use std::iter;
 use std::rc::Rc;
-use ark_std::iterable::Iterable;
 
 pub fn eq_xy<C: CurveAffine>(y: &[AstScalarRc<C>]) -> Vec<AstScalarRc<C>> {
     if y.is_empty() {
@@ -114,7 +104,7 @@ fn eval_and_quotient_scalars<C: CurveAffine>(
     //prove $V_k=\sum_{j=0}^{2^{n-k}-1}\left(x^{2^k}\right)^j=\Phi_{n-k}\left(x^{2^k}\right)$（refer to definition of  $\Phi$ in paper）。
     let vs = {
         let v_numer = squares_of_x[num_vars].clone() - sconst!(C::ScalarExt::one());
-        let mut v_denoms = squares_of_x
+        let v_denoms = squares_of_x
             .iter()
             .map(|square_of_x| {
                 sconst!(C::ScalarExt::one()) / (square_of_x.clone() - sconst!(C::ScalarExt::one()))
@@ -140,7 +130,7 @@ fn eval_and_quotient_scalars<C: CurveAffine>(
 }
 
 pub fn barycentric_weights<C: CurveAffine>(points: &[AstScalarRc<C>]) -> Vec<AstScalarRc<C>> {
-    let mut weights = points
+    let weights = points
         .iter()
         .enumerate()
         .map(|(j, point_j)| {
@@ -329,28 +319,18 @@ fn instance_evals<C: CurveAffine>(
         .collect()
 }
 
-
-//TODO: unify with halo2's
-pub struct VerifierParamsBuilder<
-    'a,
-    E: MultiMillerLoop,
-> {
+pub struct VerifierParamsBuilder<'a, E: MultiMillerLoop> {
     pub(crate) key: String,
     pub(crate) proof_index: usize,
-    pub(crate) params: &'a ParamsVerifier<E>,
     pub(crate) vk: &'a HyperPlonkVerifierParam<E::G1Affine>,
-    // pub(crate) instances: Vec<Vec<E::Scalar>>,
 }
 
-impl<
-        'a,
-        C: CurveAffine,
-        E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>,
-    > VerifierParamsBuilder<'a, E>
+impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>>
+    VerifierParamsBuilder<'a, E>
 {
     pub fn build(
         &self,
-        instances: &Vec<Vec<E::Scalar>>
+        instances: &Vec<Vec<E::Scalar>>,
     ) -> (
         MultiOpenProof<E::G1Affine>,
         Vec<AstPointRc<E::G1Affine>>,
@@ -359,9 +339,11 @@ impl<
         // Prepare ast for transcript.
         let mut transcript = Rc::new(AstTranscript::Init(self.proof_index));
         // for hyper plonk, just need instance evaluation and the commitment is not needed
-        let instances: Vec<Vec<_>> = instances.iter()
+        let instances: Vec<Vec<_>> = instances
+            .iter()
             .map(|instance| {
-                instance.iter()
+                instance
+                    .iter()
                     .map(|e| sconst!(e.clone()))
                     .inspect(|v| transcript.common_scalar(v.clone()))
                     .collect()
@@ -370,7 +352,9 @@ impl<
         //dummy commitment for instance
         //in Hyper, query indices are unified globally, need dummy commitments placed in instances part.
         let dummy_point = pconst!(<E as Engine>::G1Affine::default());
-        let instance_dummy = (0..instances.len()).map(|_|dummy_point.clone()).collect::<Vec<_>>();
+        let instance_dummy = (0..instances.len())
+            .map(|_| dummy_point.clone())
+            .collect::<Vec<_>>();
 
         let n_advice = self.vk.num_witness_polys;
         let advice_commitments = transcript
@@ -380,13 +364,14 @@ impl<
             .map(|(i, x)| pcheckpoint!(format!("advice commitment {} {}", self.proof_index, i), x))
             .collect::<Vec<_>>();
 
-
         let beta = transcript.squeeze_challenge();
         let lookup_m_commitments = transcript
             .read_n_points(self.vk.num_lookups)
             .into_iter()
             .enumerate()
-            .map(|(i, x)| pcheckpoint!(format!("lookup m commitment {} {}", self.proof_index, i), x))
+            .map(|(i, x)| {
+                pcheckpoint!(format!("lookup m commitment {} {}", self.proof_index, i), x)
+            })
             .collect::<Vec<AstPointRc<C>>>();
 
         let gamma = transcript.squeeze_challenge();
@@ -416,11 +401,15 @@ impl<
         //verify received sumcheck msgs and get final eval at all challenges that f(r0,r1,r2..)
         let sumcheck_eval = verify_zero_sumcheck(&sumcheck_msgs, &sumcheck_challenges, degree);
 
-        let fixed_commits = self.vk.preprocess_comms
+        let fixed_commits = self
+            .vk
+            .preprocess_comms
             .iter()
             .map(|p| pconst!(*p))
             .collect::<Vec<_>>();
-        let permut_commits = self.vk.permutation_comms
+        let permut_commits = self
+            .vk
+            .permutation_comms
             .iter()
             .map(|p| pconst!(*p))
             .collect::<Vec<_>>();
@@ -438,9 +427,14 @@ impl<
         let querys = pcs_query(&self.vk.expression, self.vk.num_instances);
 
         // calc instances evals
-        let instance_query =instance_evals(num_vars,&self.vk.expression,&instances,&sumcheck_challenges);
-        for (q,e) in instance_query.iter(){
-            query_evals.insert(*q,e.clone());
+        let instance_query = instance_evals(
+            num_vars,
+            &self.vk.expression,
+            &instances,
+            &sumcheck_challenges,
+        );
+        for (q, e) in instance_query.iter() {
+            query_evals.insert(*q, e.clone());
         }
 
         let mut query_commit_cur = vec![];

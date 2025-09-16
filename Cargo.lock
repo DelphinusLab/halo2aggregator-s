@@ -741,7 +741,7 @@ dependencies = [
  "memmap",
  "num",
  "num-bigint",
- "num-derive",
+ "num-derive 0.3.3",
  "num-integer",
  "num-traits",
  "pairing_bn256",
@@ -1028,6 +1028,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "num-derive"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed3955f1a9c7c0c15e092f9c887db08b1fc683305fdf6eb6684f22555355e202"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.68",
+]
+
+[[package]]
 name = "num-integer"
 version = "0.1.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1229,7 +1240,7 @@ dependencies = [
  "itertools",
  "num",
  "num-bigint",
- "num-derive",
+ "num-derive 0.4.2",
  "num-integer",
  "num-traits",
  "poseidon",

@@ -1,28 +1,29 @@
-use halo2_proofs::arithmetic::MultiMillerLoop;
-use halo2_proofs::arithmetic::CurveAffine;
-use halo2_proofs::plonk::VerifyingKey;
-use halo2_proofs::poly::commitment::ParamsVerifier;
-use arith::AstPointRc;
-use arith::AstPoint;
-use halo2::verifier::MultiOpenProof;
-use transcript::AstTranscript;
-use transcript::AstTranscriptReader;
-use halo2::query::{replace_commitment,EvaluationQuerySchemaRc};
-use halo2::verify_single_proof_no_eval as verify_halo2_single_proof_no_eval;
-use hyper_plonk::verify_single_proof_no_eval as verify_hyper_plonk_single_proof_no_eval;
 use crate::pcheckpoint;
 use crate::scalar;
+use arith::AstPoint;
+use arith::AstPointRc;
+use halo2::query::replace_commitment;
+use halo2::query::EvaluationQuerySchemaRc;
+use halo2::verifier::MultiOpenProof;
+use halo2::verify_single_proof_no_eval as verify_halo2_single_proof_no_eval;
+use halo2_proofs::arithmetic::CurveAffine;
+use halo2_proofs::arithmetic::MultiMillerLoop;
+use halo2_proofs::helpers::Serializable;
+use halo2_proofs::plonk::VerifyingKey;
+use halo2_proofs::poly::commitment::ParamsVerifier;
+use hyper_plonk::verify_single_proof_no_eval as verify_hyper_plonk_single_proof_no_eval;
 use plonkish_backend::backend::hyperplonk::HyperPlonkVerifierParam;
 use std::collections::HashMap;
-use std::rc::Rc;
 use std::io;
-use halo2_proofs::helpers::Serializable;
+use std::rc::Rc;
+use transcript::AstTranscript;
+use transcript::AstTranscriptReader;
 
 pub mod arith;
 pub mod ast_eval;
 pub mod halo2;
-pub mod transcript;
 pub mod hyper_plonk;
+pub mod transcript;
 
 pub fn format_circuit_key(proof_index: usize) -> String {
     format!("circuit_{}", proof_index)
@@ -41,14 +42,12 @@ pub fn format_fixed_commitment_key(circuit_key: &str, column: usize) -> String {
 }
 
 #[derive(Debug, Clone)]
-pub enum VerifierKey<C: CurveAffine>
-{
+pub enum VerifierKey<C: CurveAffine> {
     Halo2(VerifyingKey<C>),
     HyperPlonk(HyperPlonkVerifierParam<C>),
 }
 
-
-impl<C: CurveAffine> VerifierKey<C>{
+impl<C: CurveAffine> VerifierKey<C> {
     pub fn as_halo2(&self) -> Option<&VerifyingKey<C>> {
         if let VerifierKey::Halo2(ref vk) = self {
             Some(vk)
@@ -67,16 +66,11 @@ impl<C: CurveAffine> VerifierKey<C>{
 
     pub fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
         match self {
-            VerifierKey::Halo2(vk)=>{
-                vk.write(writer)
-            }
-            VerifierKey::HyperPlonk(vk)=>{
-                vk.store(writer)
-            }
+            VerifierKey::Halo2(vk) => vk.write(writer),
+            VerifierKey::HyperPlonk(vk) => vk.store(writer),
         }
     }
 }
-
 
 pub fn verify_aggregation_proofs<E: MultiMillerLoop>(
     params: &ParamsVerifier<E>,
@@ -107,12 +101,12 @@ pub fn verify_aggregation_proofs<E: MultiMillerLoop>(
 
     for (i, vk) in vks.into_iter().enumerate() {
         let (p, a, mut t) = match vk {
-            VerifierKey::Halo2(vk)=>{
+            VerifierKey::Halo2(vk) => {
                 let use_shplonk = use_shplonk_as_default || proofs_with_shplonk.contains(&i);
                 verify_halo2_single_proof_no_eval(params, vk, i, !use_shplonk)
             }
-            VerifierKey::HyperPlonk(vk)=>{
-                verify_hyper_plonk_single_proof_no_eval(params, vk, i,&instances[i])
+            VerifierKey::HyperPlonk(vk) => {
+                verify_hyper_plonk_single_proof_no_eval(params, vk, i, &instances[i])
             }
         };
         transcript.common_scalar(t.squeeze_challenge());

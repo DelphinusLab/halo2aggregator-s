@@ -1,5 +1,6 @@
 use crate::api::ast_eval::EvalContext;
 use crate::api::verify_aggregation_proofs;
+use crate::api::VerifierKey;
 use crate::circuits::utils::instance_to_instance_commitment;
 use crate::circuits::utils::AggregatorConfig;
 use crate::circuits::utils::TranscriptHash;
@@ -18,8 +19,6 @@ use halo2_proofs::arithmetic::MultiMillerLoopOnProvePairing;
 use halo2_proofs::pairing::group::prime::PrimeCurveAffine;
 use halo2_proofs::pairing::group::Curve;
 use halo2_proofs::pairing::group::Group;
-use halo2_proofs::plonk::VerifyingKey;
-use crate::api::VerifierKey;
 use halo2_proofs::poly::commitment::ParamsVerifier;
 use halo2_proofs::transcript::Transcript;
 pub use helper::*;
@@ -117,11 +116,10 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
         &config.commitment_check,
         config.target_proof_with_shplonk_as_default,
         &config.target_proof_with_shplonk,
-        &instances
+        &instances,
     );
 
-    let instance_commitments =
-        instance_to_instance_commitment(params, vkey, &instances);
+    let instance_commitments = instance_to_instance_commitment(params, vkey, &instances);
 
     let mut targets = vec![w_x.0, w_g.0];
     for idx in &config.commitment_check {

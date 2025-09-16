@@ -2,6 +2,7 @@ use crate::api::ast_eval::EvalContext;
 use crate::api::ast_eval::EvalOps;
 use crate::api::ast_eval::EvalPos;
 use crate::api::verify_aggregation_proofs;
+use crate::api::VerifierKey;
 use crate::circuits::utils::instance_to_instance_commitment;
 use crate::transcript::sha256::ShaRead;
 use crate::utils::field_to_bn;
@@ -11,7 +12,6 @@ use halo2_proofs::arithmetic::MillerLoopResult;
 use halo2_proofs::arithmetic::MultiMillerLoop;
 use halo2_proofs::pairing::group::Curve;
 use halo2_proofs::pairing::group::Group;
-use crate::api::VerifierKey;
 use halo2_proofs::poly::commitment::ParamsVerifier;
 use halo2_proofs::transcript::Challenge255;
 use halo2_proofs::transcript::EncodedChallenge;
@@ -364,7 +364,7 @@ pub fn gnark_codegen_with_proof<E: MultiMillerLoop, D: Digest + Clone>(
     proofs: Vec<u8>,
     check: bool,
 ) -> String {
-    let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey], &vec![], true, &vec![],&vec![]);
+    let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey], &vec![], true, &vec![], &vec![]);
 
     let instance_commitments =
         instance_to_instance_commitment(params, &[vkey], &vec![vec![instances.clone()]])[0].clone();

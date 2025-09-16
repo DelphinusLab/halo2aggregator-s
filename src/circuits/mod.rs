@@ -11,7 +11,7 @@ fn test_sample_circuit() {
     use std::fs::DirBuilder;
     use std::path::Path;
 
-    let target_circuit_k = 16;
+    let target_circuit_k = 8;
     let path = "./output";
 
     DirBuilder::new().recursive(true).create(path).unwrap();
@@ -59,7 +59,7 @@ fn test_two_sample_circuits() {
         "simple-circuit",
         target_circuit_k,
         vec![circuit.clone(), circuit],
-        vec![false,false],
+        vec![false, false],
         vec![instances.clone(), instances],
         vec![],
         TranscriptHash::Poseidon,

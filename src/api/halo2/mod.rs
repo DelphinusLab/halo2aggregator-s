@@ -1,20 +1,17 @@
 use self::builder::VerifierParamsBuilder;
 use self::verifier::MultiOpenProof;
 use super::arith::AstPointRc;
-use super::transcript::AstTranscript;
 use super::format_circuit_key;
+use super::transcript::AstTranscript;
 use halo2_proofs::arithmetic::MultiMillerLoop;
 use halo2_proofs::plonk::VerifyingKey;
 use halo2_proofs::poly::commitment::ParamsVerifier;
-use std::collections::HashMap;
 use std::rc::Rc;
 
 pub mod builder;
 pub mod protocols;
 pub mod query;
 pub mod verifier;
-
-
 
 pub fn verify_single_proof_no_eval<E: MultiMillerLoop>(
     params: &ParamsVerifier<E>,

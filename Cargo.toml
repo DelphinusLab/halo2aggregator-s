@@ -27,7 +27,7 @@ rand_core = { version = "0.6", default-features = false, features = [
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 itertools = "0.10.5"
-plonkish_backend = { path = "/Users/pony/github/moore/temp/hyperplonk/plonkish_backend"}
+plonkish_backend = { path = "/home/moore/github/moore/hyperplonk/plonkish_backend"}
 
 [features]
 default = []
@@ -36,4 +36,4 @@ cuda = ["halo2_proofs/cuda", "halo2ecc-o/cuda", "dep:zkwasm-prover"]
 on_prove_pairing_affine = []
 
 [patch."https://github.com/DelphinusLab/halo2-gpu-specific.git"]
-halo2_proofs ={path="/Users/pony/github/delphinuslab/temp/halo2-gpu-specific/halo2_proofs"}
+halo2_proofs ={path="/home/moore/github/delphinus/temp/halo2-gpu-specific/halo2_proofs"}

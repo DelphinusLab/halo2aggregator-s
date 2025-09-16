@@ -65,7 +65,7 @@ macro_rules! spow {
 #[macro_export]
 macro_rules! ssquare {
     ($scalar:expr) => {
-        AstScalarRc(Rc::new(AstScalar::Mul($scalar.0.clone(), $scalar.0,false)))
+        AstScalarRc(Rc::new(AstScalar::Mul($scalar.0.clone(), $scalar.0, false)))
     };
 }
 

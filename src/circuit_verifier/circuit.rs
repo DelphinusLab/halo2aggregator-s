@@ -3,6 +3,7 @@ use crate::api::ast_eval::EvalContext;
 use crate::api::ast_eval::EvalOps;
 use crate::api::ast_eval::EvalPos;
 use crate::api::verify_aggregation_proofs;
+use crate::api::VerifierKey;
 use crate::circuit_verifier::transcript::PoseidonChipRead;
 use crate::circuit_verifier::G2AffineBaseHelper;
 use crate::circuits::utils::instance_to_instance_commitment;
@@ -24,7 +25,6 @@ use halo2_proofs::plonk::Column;
 use halo2_proofs::plonk::ConstraintSystem;
 use halo2_proofs::plonk::Error;
 use halo2_proofs::plonk::Instance;
-use crate::api::VerifierKey;
 use halo2_proofs::poly::commitment::ParamsVerifier;
 use halo2ecc_o::assign::*;
 use halo2ecc_o::chips::ecc_chip::EccChipBaseOps;
@@ -340,8 +340,7 @@ pub fn synthesize_aggregate_verify_circuit<
             (assigned_w_xg, ctx)
         });
 
-        let instance_commitments =
-            instance_to_instance_commitment(&params, vkey, &instances);
+        let instance_commitments = instance_to_instance_commitment(&params, vkey, &instances);
 
         let timer = start_timer!(|| "build AST tree");
         // Build AST tree.
@@ -351,7 +350,7 @@ pub fn synthesize_aggregate_verify_circuit<
             &config.commitment_check,
             config.target_proof_with_shplonk_as_default,
             &config.target_proof_with_shplonk,
-            &instances
+            &instances,
         );
         end_timer!(timer);
 

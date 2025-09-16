@@ -1,4 +1,5 @@
 use self::codegen::solidity_codegen_with_proof;
+use crate::api::VerifierKey;
 use crate::circuits::utils::TranscriptHash;
 use crate::utils::field_to_bn;
 use halo2_proofs::arithmetic::BaseExt;
@@ -10,7 +11,6 @@ use num_bigint::BigUint;
 use sha2::Digest;
 use std::path::Path;
 use tera::Tera;
-use crate::api::VerifierKey;
 
 pub mod codegen;
 
@@ -215,7 +215,6 @@ mod tests {
     use sha2::Digest;
     use std::fs::DirBuilder;
     use std::path::Path;
-    use crate::api::VerifierKey;
 
     fn test_solidity_render<D: Digest + Clone>(aggregator_circuit_hasher: TranscriptHash) {
         assert!(
@@ -239,7 +238,7 @@ mod tests {
                 "simple-circuit",
                 target_circuit_k,
                 vec![circuit.clone(), circuit],
-                vec![false,false],
+                vec![false, false],
                 vec![instances.clone(), instances],
                 vec![],
                 TranscriptHash::Poseidon,

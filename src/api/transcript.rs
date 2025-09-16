@@ -81,7 +81,7 @@ impl<C: CurveAffine> AstTranscriptReader<C> for Rc<AstTranscript<C>> {
         AstScalarRc(Rc::new(AstScalar::FromChallenge(self.clone())))
     }
 
-    fn squeeze_n_challenges(&mut self, n:usize) -> Vec<AstScalarRc<C>> {
-        (0..n).map(|_|self.squeeze_challenge()).collect()
+    fn squeeze_n_challenges(&mut self, n: usize) -> Vec<AstScalarRc<C>> {
+        (0..n).map(|_| self.squeeze_challenge()).collect()
     }
 }
