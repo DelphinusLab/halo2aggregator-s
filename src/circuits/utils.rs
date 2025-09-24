@@ -405,7 +405,7 @@ where
 pub fn verify_hyper_proof<E: MultiMillerLoop + std::fmt::Debug, C: Circuit<E::Scalar>>(
     params: &Params<E::G1Affine>,
     proof: &[u8],
-    vp: &plonkish_backend::backend::hyperplonk::HyperPlonkVerifierParam<E::G1Affine>,
+    vp: &HyperPlonkVerifierParam<E::G1Affine>,
     instances: Vec<Vec<E::Scalar>>,
     hash: TranscriptHash,
 ) where
@@ -421,7 +421,6 @@ pub fn verify_hyper_proof<E: MultiMillerLoop + std::fmt::Debug, C: Circuit<E::Sc
     );
     let zero_vp = plonkish_backend::pcs::multilinear::ZeromorphKzgVerifierParam::new(
         kzg_params,
-        params.get_sg2::<E>(),
     );
     let hyper_vs =
         plonkish_backend::backend::hyperplonk::HyperPlonkVerifierSetupParam::<E::Scalar, Pcs<E>> {

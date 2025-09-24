@@ -49,7 +49,7 @@ pub enum VerifierKey<C: CurveAffine> {
 
 impl<C: CurveAffine> VerifierKey<C> {
     pub fn as_halo2(&self) -> Option<&VerifyingKey<C>> {
-        if let VerifierKey::Halo2(ref vk) = self {
+        if let VerifierKey::Halo2(vk) = self {
             Some(vk)
         } else {
             None
@@ -57,7 +57,7 @@ impl<C: CurveAffine> VerifierKey<C> {
     }
 
     pub fn as_hyper_plonk(&self) -> Option<&HyperPlonkVerifierParam<C>> {
-        if let VerifierKey::HyperPlonk(ref vk) = self {
+        if let VerifierKey::HyperPlonk(vk) = self {
             Some(vk)
         } else {
             None
@@ -68,6 +68,13 @@ impl<C: CurveAffine> VerifierKey<C> {
         match self {
             VerifierKey::Halo2(vk) => vk.write(writer),
             VerifierKey::HyperPlonk(vk) => vk.store(writer),
+        }
+    }
+
+    pub fn get_name_advices(&self)->&Vec<(String, u32)>{
+        match self {
+            VerifierKey::Halo2(vk) => &vk.cs.named_advices,
+            VerifierKey::HyperPlonk(vk) => &vk.named_advices,
         }
     }
 }
