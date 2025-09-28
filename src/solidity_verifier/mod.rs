@@ -244,6 +244,7 @@ mod tests {
                 TranscriptHash::Poseidon,
                 vec![[0, 0, 1, 0]],
                 vec![],
+                vec![],
                 vec![vec![1], vec![1]],
                 true,
             )
@@ -259,6 +260,7 @@ mod tests {
             vec![vec![instances.clone()]],
             vec![vec![shadow_instances]],
             aggregator_circuit_hasher,
+            vec![],
             vec![],
             vec![],
             vec![vec![1]],

@@ -26,6 +26,7 @@ use num_bigint::BigUint;
 use sha3::Digest;
 use sha3::Keccak256;
 use std::borrow::Borrow;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 pub mod circuit;
@@ -44,14 +45,19 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop + MultiMillerLoopOnProv
     Vec<E::Scalar>,
     E::Scalar,
 ) {
-    let (agg_circuit_instances, agg_circuit_shadow_instances, agg_circuit_constant_hash, w_xg) =
-        calc_instances(
-            &params,
-            &vkey.iter().map(|x| x.borrow()).collect::<Vec<_>>(),
-            instances.clone(),
-            &proofs,
-            &config,
-        );
+    let (
+        agg_circuit_instances,
+        agg_circuit_shadow_instances,
+        agg_circuit_constant_hash,
+        w_xg,
+        diff_basis_commit_data,
+    ) = calc_instances(
+        &params,
+        &vkey.iter().map(|x| x.borrow()).collect::<Vec<_>>(),
+        instances.clone(),
+        &proofs,
+        &config,
+    );
 
     let circuit = AggregatorCircuit {
         params,
@@ -60,6 +66,7 @@ pub fn build_aggregate_verify_circuit<E: MultiMillerLoop + MultiMillerLoopOnProv
         instances,
         proofs,
         w_xg,
+        diff_basis_commit_data,
     };
 
     (
@@ -109,8 +116,14 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
     instances: Vec<Vec<Vec<E::Scalar>>>,
     proofs: &Vec<Vec<u8>>,
     config: &AggregatorConfig<E::Scalar>,
-) -> (Vec<E::Scalar>, Vec<E::Scalar>, E::Scalar, [E::G1Affine; 2]) {
-    let (w_x, w_g, advices) = verify_aggregation_proofs(
+) -> (
+    Vec<E::Scalar>,
+    Vec<E::Scalar>,
+    E::Scalar,
+    [E::G1Affine; 2],
+    Option<(E::G1Affine, E::G1Affine)>,
+) {
+    let (w_x, w_g, advices, advice_bilinear_terms_commits) = verify_aggregation_proofs(
         params,
         vkey,
         &config.commitment_check,
@@ -119,6 +132,12 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
         &instances,
     );
 
+    let mut advice_bilinear_map = HashMap::new();
+    for (proof_idx, commits) in advice_bilinear_terms_commits.iter().enumerate() {
+        for (advice_idx, commit) in commits.iter() {
+            advice_bilinear_map.insert((proof_idx, *advice_idx), commit.clone());
+        }
+    }
     let instance_commitments = instance_to_instance_commitment(params, vkey, &instances);
 
     let mut targets = vec![w_x.0, w_g.0];
@@ -128,15 +147,29 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
     }
 
     let absorb_start_idx = targets.len();
-
     for abs in &config.absorb {
         targets.push(advices[abs.1[0]][abs.1[1]].0.clone());
     }
 
     let expose_start_idx = targets.len();
-
     for idx in &config.expose {
         targets.push(advices[idx[0]][idx[1]].0.clone());
+    }
+
+    let commit_diff_basis_check_start_idx = targets.len();
+    for idx in &config.commitment_diff_basis_check {
+        targets.push(advices[idx[0]][idx[1]].0.clone());
+        targets.push(advices[idx[2]][idx[3]].0.clone());
+    }
+    let advice_bilinear_terms_start_idx = targets.len();
+    for idx in config.commitment_diff_basis_check.iter() {
+        targets.push(
+            advice_bilinear_map
+                .get(&(idx[2], idx[3]))
+                .unwrap()
+                .0
+                .clone(),
+        );
     }
 
     let c = EvalContext::translate(&targets[..]);
@@ -179,13 +212,35 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
         _ => unreachable!(),
     };
 
+    let mut diff_basis_commit_sum = E::G1::identity();
+    for c in &pl[commit_diff_basis_check_start_idx..advice_bilinear_terms_start_idx] {
+        diff_basis_commit_sum = diff_basis_commit_sum + c;
+    }
+
+    // e(sum_{commit(coeff + lagrange)},xG2)=e(sum_{commit_bilinear_item},G2)
+    let mut advice_bilinear_terms_sum = E::G1::identity();
+    for c in &pl[advice_bilinear_terms_start_idx..] {
+        advice_bilinear_terms_sum = advice_bilinear_terms_sum + c;
+    }
+
     let s_g2_prepared = E::G2Prepared::from(params.s_g2);
     let n_g2_prepared = E::G2Prepared::from(-params.g2);
+    let sum_inv_add_s_l_g2_prepared = E::G2Prepared::from(params.sum_inv_add_s_l_g2);
 
     let success = bool::from(
-        E::multi_miller_loop(&[(&pl[0], &s_g2_prepared), (&pl[1], &n_g2_prepared)])
-            .final_exponentiation()
-            .is_identity(),
+        E::multi_miller_loop(&[
+            (&pl[0], &s_g2_prepared),
+            (
+                &(advice_bilinear_terms_sum + pl[1]).to_affine(),
+                &n_g2_prepared,
+            ),
+            (
+                &diff_basis_commit_sum.to_affine(),
+                &sum_inv_add_s_l_g2_prepared,
+            ),
+        ])
+        .final_exponentiation()
+        .is_identity(),
     );
 
     assert!(success);
@@ -270,12 +325,15 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
         let mut instances = vec![final_hash];
 
         instances.append(
-            &mut vec![&il.concat()[..], &pl[expose_start_idx..pl.len()]]
-                .concat()
-                .iter()
-                .map(|p| encode_point(p))
-                .collect::<Vec<_>>()
-                .concat(),
+            &mut vec![
+                &il.concat()[..],
+                &pl[expose_start_idx..commit_diff_basis_check_start_idx],
+            ]
+            .concat()
+            .iter()
+            .map(|p| encode_point(p))
+            .collect::<Vec<_>>()
+            .concat(),
         );
 
         (instances, vec![])
@@ -324,7 +382,7 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
 
         let mut shadow_instances: Vec<E::Scalar> = vec![final_hash];
         shadow_instances.append(
-            &mut vec![&pl[expose_start_idx..pl.len()]]
+            &mut vec![&pl[expose_start_idx..commit_diff_basis_check_start_idx]]
                 .concat()
                 .iter()
                 .map(|p| encode_point(p))
@@ -352,5 +410,20 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
         (instances, shadow_instances)
     };
 
-    (instances, shadow_instances, constant_hash, [pl[0], pl[1]])
+    let diff_basis_commit_data = if config.commitment_diff_basis_check.is_empty() {
+        None
+    } else {
+        Some((
+            diff_basis_commit_sum.into(),
+            advice_bilinear_terms_sum.into(),
+        ))
+    };
+
+    (
+        instances,
+        shadow_instances,
+        constant_hash,
+        [pl[0], pl[1]],
+        diff_basis_commit_data,
+    )
 }

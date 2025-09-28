@@ -364,7 +364,8 @@ pub fn gnark_codegen_with_proof<E: MultiMillerLoop, D: Digest + Clone>(
     proofs: Vec<u8>,
     check: bool,
 ) -> String {
-    let (w_x, w_g, _) = verify_aggregation_proofs(params, &[vkey], &vec![], true, &vec![], &vec![]);
+    let (w_x, w_g, _, _) =
+        verify_aggregation_proofs(params, &[vkey], &vec![], true, &vec![], &vec![]);
 
     let instance_commitments =
         instance_to_instance_commitment(params, &[vkey], &vec![vec![instances.clone()]])[0].clone();

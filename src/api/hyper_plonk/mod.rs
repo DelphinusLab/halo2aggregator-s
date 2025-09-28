@@ -18,6 +18,7 @@ pub fn verify_single_proof_no_eval<E: MultiMillerLoop>(
 ) -> (
     MultiOpenProof<E::G1Affine>,
     Vec<AstPointRc<E::G1Affine>>,
+    Vec<(usize, AstPointRc<E::G1Affine>)>,
     Rc<AstTranscript<E::G1Affine>>,
 ) {
     let params_builder = VerifierParamsBuilder::<E> {

@@ -36,6 +36,7 @@ fn test_batch_no_rec() {
             TranscriptHash::Poseidon,
             vec![],
             vec![],
+            vec![],
             vec![vec![1], vec![1]],
             true,
         )
@@ -50,6 +51,7 @@ fn test_batch_no_rec() {
         vec![vec![instances]],
         vec![vec![shadow_instances]],
         TranscriptHash::Blake2b,
+        vec![],
         vec![],
         vec![],
         vec![vec![1]],

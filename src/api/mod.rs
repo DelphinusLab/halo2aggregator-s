@@ -71,7 +71,7 @@ impl<C: CurveAffine> VerifierKey<C> {
         }
     }
 
-    pub fn get_name_advices(&self)->&Vec<(String, u32)>{
+    pub fn get_name_advices(&self) -> &Vec<(String, u32)> {
         match self {
             VerifierKey::Halo2(vk) => &vk.cs.named_advices,
             VerifierKey::HyperPlonk(vk) => &vk.named_advices,
@@ -87,14 +87,16 @@ pub fn verify_aggregation_proofs<E: MultiMillerLoop>(
     proofs_with_shplonk: &Vec<usize>,
     instances: &Vec<Vec<Vec<E::Scalar>>>,
 ) -> (
-    AstPointRc<E::G1Affine>,           // w_x
-    AstPointRc<E::G1Affine>,           // w_g
-    Vec<Vec<AstPointRc<E::G1Affine>>>, // advice commitments
+    AstPointRc<E::G1Affine>,                    // w_x
+    AstPointRc<E::G1Affine>,                    // w_g
+    Vec<Vec<AstPointRc<E::G1Affine>>>,          // advice commitments
+    Vec<Vec<(usize, AstPointRc<E::G1Affine>)>>, // advice cross item commitments
 ) {
     let mut transcript = Rc::new(AstTranscript::Init(vks.len()));
 
     let mut pairs = vec![];
     let mut advice_commitments = vec![];
+    let mut advice_bilinear_terms_commitments = vec![];
 
     // replace commitment to reduce msm len
     let mut commitment_map = HashMap::new();
@@ -107,7 +109,7 @@ pub fn verify_aggregation_proofs<E: MultiMillerLoop>(
     }
 
     for (i, vk) in vks.into_iter().enumerate() {
-        let (p, a, mut t) = match vk {
+        let (p, a, bilinear, mut t) = match vk {
             VerifierKey::Halo2(vk) => {
                 let use_shplonk = use_shplonk_as_default || proofs_with_shplonk.contains(&i);
                 verify_halo2_single_proof_no_eval(params, vk, i, !use_shplonk)
@@ -118,6 +120,7 @@ pub fn verify_aggregation_proofs<E: MultiMillerLoop>(
         };
         transcript.common_scalar(t.squeeze_challenge());
         advice_commitments.push(a);
+        advice_bilinear_terms_commitments.push(bilinear);
         pairs.push(p);
     }
 
@@ -152,6 +155,10 @@ pub fn verify_aggregation_proofs<E: MultiMillerLoop>(
 
     let w_x = pcheckpoint!("w_x".to_owned(), pair.w_x.eval(params.g1, 0));
     let w_g = pcheckpoint!("w_g".to_owned(), pair.w_g.eval(-params.g1, 1));
-
-    (w_x, w_g, advice_commitments)
+    (
+        w_x,
+        w_g,
+        advice_commitments,
+        advice_bilinear_terms_commitments,
+    )
 }

@@ -334,6 +334,7 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
     ) -> (
         MultiOpenProof<E::G1Affine>,
         Vec<AstPointRc<E::G1Affine>>,
+        Vec<(usize, AstPointRc<E::G1Affine>)>,
         Rc<AstTranscript<C>>,
     ) {
         // Prepare ast for transcript.
@@ -355,6 +356,12 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
         let instance_dummy = (0..instances.len())
             .map(|_| dummy_point.clone())
             .collect::<Vec<_>>();
+
+        let mut advice_bilinear_terms_commitments = vec![];
+        for (_, idx) in self.vk.named_advices.iter() {
+            let c = transcript.read_point();
+            advice_bilinear_terms_commitments.push((*idx as usize, c))
+        }
 
         let n_advice = self.vk.num_witness_polys;
         let advice_commitments = transcript
@@ -568,6 +575,11 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
             });
         let w_x = commit!(pi);
 
-        (MultiOpenProof { w_x, w_g }, advice_commitments, transcript)
+        (
+            MultiOpenProof { w_x, w_g },
+            advice_commitments,
+            advice_bilinear_terms_commitments,
+            transcript,
+        )
     }
 }

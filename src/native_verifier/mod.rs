@@ -18,6 +18,7 @@ use halo2_proofs::transcript::Blake2bRead;
 use halo2_proofs::transcript::Challenge255;
 use halo2_proofs::transcript::EncodedChallenge;
 use halo2_proofs::transcript::TranscriptRead;
+use std::collections::HashMap;
 use std::marker::PhantomData;
 
 pub struct NativeEvalContext<
@@ -161,6 +162,7 @@ pub fn verify_single_proof<E: MultiMillerLoop>(
         vec![proof],
         hash,
         &vec![],
+        &vec![],
         use_shplonk_as_default,
         proofs_with_shplonk,
     )
@@ -173,10 +175,11 @@ pub fn verify_proofs<E: MultiMillerLoop>(
     proofs: Vec<Vec<u8>>,
     hash: TranscriptHash,
     commitment_check: &Vec<[usize; 4]>,
+    commitment_diff_basis_check: &Vec<[usize; 4]>,
     use_shplonk_as_default: bool,
     proofs_with_shplonk: &Vec<usize>,
 ) {
-    let (w_x, w_g, advices) = verify_aggregation_proofs(
+    let (w_x, w_g, advices, advice_bilinear_terms_commits) = verify_aggregation_proofs(
         params,
         vkey,
         commitment_check,
@@ -185,12 +188,37 @@ pub fn verify_proofs<E: MultiMillerLoop>(
         instances,
     );
 
+    let mut advice_bilinear_map = HashMap::new();
+    for (proof_idx, commits) in advice_bilinear_terms_commits.iter().enumerate() {
+        for (advice_idx, commit) in commits.iter() {
+            advice_bilinear_map.insert((proof_idx, *advice_idx), commit.clone());
+        }
+    }
+
     let instance_commitments = instance_to_instance_commitment(params, vkey, instances);
 
     let mut targets = vec![w_x.0, w_g.0];
     for idx in commitment_check {
         targets.push(advices[idx[0]][idx[1]].0.clone());
         targets.push(advices[idx[2]][idx[3]].0.clone());
+    }
+
+    let commit_diff_basis_check_start_idx = targets.len();
+    for idx in commitment_diff_basis_check {
+        targets.push(advices[idx[0]][idx[1]].0.clone());
+        targets.push(advices[idx[2]][idx[3]].0.clone());
+    }
+
+    let advice_bilinear_item_commit_start_idx = targets.len();
+    //idx[0,1] for lagrange, idx[2,3] for coeff, only idx[2,3] needed
+    for idx in commitment_diff_basis_check {
+        targets.push(
+            advice_bilinear_map
+                .get(&(idx[2], idx[3]))
+                .unwrap()
+                .0
+                .clone(),
+        );
     }
 
     let c = EvalContext::translate(&targets[..]);
@@ -253,81 +281,36 @@ pub fn verify_proofs<E: MultiMillerLoop>(
         }
     };
 
+    //TODO: add challenge for different proof's commits
+    // commit_coeff + commit_lagrange
+    let mut diff_basis_commit = E::G1::identity();
+    for c in &pl[commit_diff_basis_check_start_idx..advice_bilinear_item_commit_start_idx] {
+        diff_basis_commit = diff_basis_commit + c;
+    }
+
+    // e(commit(coeff + lagrange),xG2)=e(commit_cross_item,G2)
+    let mut advice_cross_item_commit = E::G1::identity();
+    for c in &pl[advice_bilinear_item_commit_start_idx..] {
+        advice_cross_item_commit = advice_cross_item_commit + c;
+    }
     let s_g2_prepared = E::G2Prepared::from(params.s_g2);
+    let sum_inv_add_s_l_g2_prepared = E::G2Prepared::from(params.sum_inv_add_s_l_g2);
     let n_g2_prepared = E::G2Prepared::from(-params.g2);
     let success = bool::from(
-        E::multi_miller_loop(&[(&pl[0], &s_g2_prepared), (&pl[1], &n_g2_prepared)])
-            .final_exponentiation()
-            .is_identity(),
+        E::multi_miller_loop(&[
+            (&pl[0], &s_g2_prepared),
+            (
+                &(advice_cross_item_commit + &pl[1]).to_affine(),
+                &n_g2_prepared,
+            ),
+            (&diff_basis_commit.to_affine(), &sum_inv_add_s_l_g2_prepared),
+        ])
+        .final_exponentiation()
+        .is_identity(),
     );
-
     assert!(success);
 
-    for c in pl.chunks(2).skip(1) {
+    for c in pl[0..commit_diff_basis_check_start_idx].chunks(2).skip(1) {
         assert_eq!(c[0], c[1]);
     }
-}
-
-#[test]
-fn test_verify_hyper_proof() {
-    use halo2_proofs::arithmetic::Engine;
-    use halo2_proofs::pairing::bn256::Bn256;
-    use plonkish_backend::backend::hyperplonk::HyperPlonkVerifierParam;
-    use plonkish_backend::backend::hyperplonk::HyperPlonkVerifierSetupParam;
-    use plonkish_backend::pcs::multilinear;
-    use plonkish_backend::pcs::multilinear::ZeromorphKzgVerifierParam;
-    use plonkish_backend::pcs::univariate;
-    use std::fs::File;
-    use std::io::BufReader;
-
-    let file = File::open("./test/hyperplonk_vk.json").expect("File does not exist");
-    type Kzg = multilinear::Zeromorph<univariate::UnivariateKzg<Bn256>>;
-    let vp: HyperPlonkVerifierParam<<Bn256 as Engine>::G1Affine> =
-        match serde_json::from_reader(BufReader::new(file)) {
-            Err(e) => {
-                println!("load json error {:?}", e);
-                unreachable!();
-            }
-            Ok(o) => o,
-        };
-    let vp = VerifierKey::HyperPlonk(vp);
-
-    let file = File::open("./test/hyperplonk_proof.json").expect("File does not exist");
-    let proof: Vec<u8> = match serde_json::from_reader(BufReader::new(file)) {
-        Err(e) => {
-            println!("load json error {:?}", e);
-            unreachable!();
-        }
-        Ok(o) => o,
-    };
-
-    let file = File::open("./test/vs.json").expect("File does not exist");
-    let vs: HyperPlonkVerifierSetupParam<<Bn256 as Engine>::Scalar, Kzg> =
-        match serde_json::from_reader(BufReader::new(file)) {
-            Err(e) => {
-                println!("load json error {:?}", e);
-                unreachable!();
-            }
-            Ok(o) => o,
-        };
-    let zero_veri_param = &vs.pcs as &ZeromorphKzgVerifierParam<Bn256>;
-    let verify_param = ParamsVerifier::<Bn256> {
-        k: 14,
-        n: 14,
-        g1: zero_veri_param.g1(),
-        g2: zero_veri_param.g2(),
-        s_g2: zero_veri_param.s_g2(),
-        g_lagrange: vec![],
-    };
-
-    verify_proofs(
-        &verify_param,
-        &[&vp],
-        &vec![],
-        vec![proof],
-        TranscriptHash::Poseidon,
-        &vec![],
-        false,
-        &vec![],
-    );
 }

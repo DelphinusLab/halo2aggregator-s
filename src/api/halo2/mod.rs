@@ -21,6 +21,7 @@ pub fn verify_single_proof_no_eval<E: MultiMillerLoop>(
 ) -> (
     MultiOpenProof<E::G1Affine>,
     Vec<AstPointRc<E::G1Affine>>,
+    Vec<(usize, AstPointRc<E::G1Affine>)>,
     Rc<AstTranscript<E::G1Affine>>,
 ) {
     let params_builder = VerifierParamsBuilder {
@@ -39,6 +40,7 @@ pub fn verify_single_proof_no_eval<E: MultiMillerLoop>(
             verifier_params.batch_multi_open_proofs_shplonk()
         },
         verifier_params.advice_commitments,
+        vec![],
         transcript,
     )
 }
