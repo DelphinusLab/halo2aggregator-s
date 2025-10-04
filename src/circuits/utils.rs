@@ -40,7 +40,6 @@ use plonkish_backend::backend::hyperplonk::HyperPlonkVerifierParam;
 use plonkish_backend::backend::PlonkishBackend;
 use plonkish_backend::pcs::multilinear::Zeromorph;
 use plonkish_backend::pcs::univariate::UnivariateKzg;
-use plonkish_backend::util::transcript as hyper_transcript;
 use std::hash::Hash;
 use std::io::Read;
 use std::io::Write;
@@ -381,7 +380,7 @@ where
             unimplemented!()
         }
         TranscriptHash::Poseidon => {
-            let mut transcript = hyper_transcript::poseidon::PoseidonWrite::init(vec![]);
+            let mut transcript = PoseidonWrite::init(vec![]);
             Hyper::prove(&ps, &pp, &hyper_circuit, &mut transcript).expect("prove should not fail");
 
             transcript.finalize()
@@ -433,8 +432,7 @@ pub fn verify_hyper_proof<E: MultiMillerLoop + std::fmt::Debug, C: Circuit<E::Sc
             unimplemented!()
         }
         TranscriptHash::Poseidon => {
-            let mut transcript =
-                plonkish_backend::util::transcript::poseidon::PoseidonRead::init(&proof[..]);
+            let mut transcript = PoseidonRead::init(&proof[..]);
             Hyper::verify(&hyper_vs, vp, &instances, &mut transcript).unwrap();
         }
         TranscriptHash::Sha => {

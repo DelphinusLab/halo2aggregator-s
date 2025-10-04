@@ -5,6 +5,13 @@ use halo2_proofs::transcript::EncodedChallenge;
 use halo2_proofs::transcript::Transcript;
 use halo2_proofs::transcript::TranscriptRead;
 use halo2_proofs::transcript::TranscriptWrite;
+use plonkish_backend::util::transcript::FieldTranscript;
+use plonkish_backend::util::transcript::FieldTranscriptRead;
+use plonkish_backend::util::transcript::FieldTranscriptWrite;
+use plonkish_backend::util::transcript::Transcript as PointTranscript;
+use plonkish_backend::util::transcript::TranscriptRead as PointTranscriptRead;
+use plonkish_backend::util::transcript::TranscriptWrite as PointTranscriptWrite;
+use plonkish_backend::Error as HyperError;
 use poseidon::Poseidon;
 use std::io;
 use std::marker::PhantomData;
@@ -80,29 +87,38 @@ impl<R: io::Read, C: CurveAffine> Transcript<C, PoseidonEncodedChallenge<C>>
     }
 }
 
+fn read_curve_point<R: io::Read, C: CurveAffine>(reader: &mut R) -> io::Result<C> {
+    let mut compressed = C::Repr::default();
+    reader.read_exact(compressed.as_mut())?;
+    let point: C = Option::from(C::from_bytes(&compressed))
+        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "invalid point encoding in proof"))?;
+    Ok(point)
+}
+
+fn read_curve_scalar<R: io::Read, C: CurveAffine>(reader: &mut R) -> io::Result<<C>::Scalar> {
+    let mut data = <C::Scalar as PrimeField>::Repr::default();
+    reader.read_exact(data.as_mut())?;
+    let scalar: C::Scalar = Option::from(C::Scalar::from_repr(data)).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            "invalid field element encoding in proof",
+        )
+    })?;
+    Ok(scalar)
+}
+
 impl<R: io::Read, C: CurveAffine> TranscriptRead<C, PoseidonEncodedChallenge<C>>
     for PoseidonRead<R, C, PoseidonEncodedChallenge<C>>
 {
     fn read_point(&mut self) -> io::Result<C> {
-        let mut compressed = C::Repr::default();
-        self.reader.read_exact(compressed.as_mut())?;
-        let point: C = Option::from(C::from_bytes(&compressed)).ok_or_else(|| {
-            io::Error::new(io::ErrorKind::Other, "invalid point encoding in proof")
-        })?;
+        let point = read_curve_point::<R, C>(&mut self.reader)?;
         self.common_point(point)?;
 
         Ok(point)
     }
 
     fn read_scalar(&mut self) -> io::Result<<C>::Scalar> {
-        let mut data = <C::Scalar as PrimeField>::Repr::default();
-        self.reader.read_exact(data.as_mut())?;
-        let scalar: C::Scalar = Option::from(C::Scalar::from_repr(data)).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                "invalid field element encoding in proof",
-            )
-        })?;
+        let scalar = read_curve_scalar::<R, C>(&mut self.reader)?;
         self.common_scalar(scalar)?;
 
         Ok(scalar)
@@ -213,5 +229,102 @@ impl<C: CurveAffine> Transcript<C, PoseidonEncodedChallenge<C>> for PoseidonPure
         self.state.update(&[scalar]);
 
         Ok(())
+    }
+}
+
+impl<R: io::Read, C: CurveAffine> FieldTranscript<C::Scalar>
+    for PoseidonRead<R, C, PoseidonEncodedChallenge<C>>
+{
+    fn squeeze_challenge(&mut self) -> C::Scalar {
+        self.poseidon.squeeze_challenge().get_scalar()
+    }
+
+    fn common_field_element(&mut self, scalar: &C::Scalar) -> Result<(), HyperError> {
+        self.poseidon
+            .common_scalar(*scalar)
+            .map_err(|err| HyperError::Transcript(err.kind(), err.to_string()))
+    }
+}
+
+impl<R: io::Read, C: CurveAffine> FieldTranscriptRead<C::Scalar>
+    for PoseidonRead<R, C, PoseidonEncodedChallenge<C>>
+{
+    fn read_field_element(&mut self) -> Result<<C>::Scalar, HyperError> {
+        let scalar = read_curve_scalar::<R, C>(&mut self.reader)
+            .map_err(|err| HyperError::Transcript(err.kind(), err.to_string()))?;
+        self.common_field_element(&scalar)?;
+
+        Ok(scalar)
+    }
+}
+
+impl<R: io::Read, C: CurveAffine> PointTranscript<C, C::Scalar>
+    for PoseidonRead<R, C, PoseidonEncodedChallenge<C>>
+{
+    fn common_commitment(&mut self, point: &C) -> Result<(), HyperError> {
+        self.poseidon
+            .common_point(*point)
+            .map_err(|err| HyperError::Transcript(err.kind(), err.to_string()))
+    }
+}
+
+impl<R: io::Read, C: CurveAffine> PointTranscriptRead<C, C::Scalar>
+    for PoseidonRead<R, C, PoseidonEncodedChallenge<C>>
+{
+    fn read_commitment(&mut self) -> Result<C, HyperError> {
+        let point = read_curve_point(&mut self.reader)
+            .map_err(|err| HyperError::Transcript(err.kind(), err.to_string()))?;
+        self.common_commitment(&point)?;
+
+        Ok(point)
+    }
+}
+
+impl<W: io::Write, C: CurveAffine> FieldTranscript<C::Scalar>
+    for PoseidonWrite<W, C, PoseidonEncodedChallenge<C>>
+{
+    fn squeeze_challenge(&mut self) -> C::Scalar {
+        self.poseidon.squeeze_challenge().get_scalar()
+    }
+
+    fn common_field_element(&mut self, scalar: &C::Scalar) -> Result<(), HyperError> {
+        self.poseidon
+            .common_scalar(*scalar)
+            .map_err(|err| HyperError::Transcript(err.kind(), err.to_string()))
+    }
+}
+
+impl<W: io::Write, C: CurveAffine> FieldTranscriptWrite<C::Scalar>
+    for PoseidonWrite<W, C, PoseidonEncodedChallenge<C>>
+{
+    fn write_field_element(&mut self, scalar: &<C>::Scalar) -> Result<(), HyperError> {
+        self.common_field_element(scalar)?;
+        let data = scalar.to_repr();
+        self.writer
+            .write_all(data.as_ref())
+            .map_err(|err| HyperError::Transcript(err.kind(), err.to_string()))
+    }
+}
+
+impl<W: io::Write, C: CurveAffine> PointTranscript<C, C::Scalar>
+    for PoseidonWrite<W, C, PoseidonEncodedChallenge<C>>
+{
+    fn common_commitment(&mut self, point: &C) -> Result<(), HyperError> {
+        self.poseidon
+            .common_point(*point)
+            .map_err(|err| HyperError::Transcript(err.kind(), err.to_string()))
+    }
+}
+
+impl<W: io::Write, C: CurveAffine> PointTranscriptWrite<C, C::Scalar>
+    for PoseidonWrite<W, C, PoseidonEncodedChallenge<C>>
+{
+    fn write_commitment(&mut self, point: &C) -> Result<(), HyperError> {
+        //assert!(point != C::identity());
+        self.common_commitment(point)?;
+        let compressed = point.to_bytes();
+        self.writer
+            .write_all(compressed.as_ref())
+            .map_err(|err| HyperError::Transcript(err.kind(), err.to_string()))
     }
 }
