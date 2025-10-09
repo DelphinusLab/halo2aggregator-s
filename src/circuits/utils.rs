@@ -78,53 +78,68 @@ pub fn load_or_build_unsafe_params<E: MultiMillerLoop>(
     params
 }
 
-pub fn load_vkey<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
-    params: &Params<E::G1Affine>,
-    cache_file: &Path,
-    is_hyper_plonk: bool,
-) -> VerifierKey<E::G1Affine> {
-    println!("read vkey from {:?}", cache_file);
-    let mut fd = std::fs::File::open(&cache_file).unwrap();
-    if is_hyper_plonk {
-        VerifierKey::HyperPlonk(HyperPlonkVerifierParam::<E::G1Affine>::fetch(&mut fd).unwrap())
-    } else {
-        VerifierKey::Halo2(VerifyingKey::read::<_, C>(&mut fd, params).unwrap())
-    }
+pub enum ProveSchema {
+    UseHalo2,
+    UseHyperPlonk,
 }
 
-pub fn load_or_build_vkey<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
-    params: &Params<E::G1Affine>,
-    circuit: &C,
-    cache_file_opt: Option<&Path>,
-    is_hyper_plonk: bool,
-) -> VerifierKey<E::G1Affine> {
-    if let Some(cache_file) = &cache_file_opt {
-        if Path::exists(&cache_file) {
-            return load_vkey::<E, C>(params, &cache_file, is_hyper_plonk);
+impl ProveSchema {
+    pub fn load_vkey<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
+        &self,
+        params: &Params<E::G1Affine>,
+        cache_file: &Path,
+    ) -> VerifierKey<E::G1Affine> {
+        println!("read vkey from {:?}", cache_file);
+        let mut fd = std::fs::File::open(&cache_file).unwrap();
+        match self {
+            ProveSchema::UseHalo2 => VerifierKey::HyperPlonk(
+                HyperPlonkVerifierParam::<E::G1Affine>::fetch(&mut fd).unwrap(),
+            ),
+            ProveSchema::UseHyperPlonk => {
+                VerifierKey::Halo2(VerifyingKey::read::<_, C>(&mut fd, params).unwrap())
+            }
         }
     }
 
-    let verify_circuit_vk = build_vk::<E, C>(params, circuit, is_hyper_plonk);
+    pub fn load_or_build_vkey<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
+        &self,
+        params: &Params<E::G1Affine>,
+        circuit: &C,
+        cache_file_opt: Option<&Path>,
+    ) -> VerifierKey<E::G1Affine> {
+        if let Some(cache_file) = &cache_file_opt {
+            if Path::exists(&cache_file) {
+                return self.load_vkey::<E, C>(params, &cache_file);
+            }
+        }
 
-    if let Some(cache_file) = &cache_file_opt {
-        let mut fd = std::fs::File::create(&cache_file).unwrap();
-        verify_circuit_vk.write(&mut fd).unwrap();
-    };
+        let verify_circuit_vk = self.build_vk::<E, C>(params, circuit);
 
-    verify_circuit_vk
-}
+        if let Some(cache_file) = &cache_file_opt {
+            let mut fd = std::fs::File::create(&cache_file).unwrap();
+            verify_circuit_vk.write(&mut fd).unwrap();
+        };
 
-pub fn build_vk<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
-    params: &Params<E::G1Affine>,
-    circuit: &C,
-    is_hyper_plonk: bool,
-) -> VerifierKey<E::G1Affine> {
-    if is_hyper_plonk {
-        let vk = hyper_keygen_vk::<E, C>(params, circuit).expect("hyper keygen_vk should not fail");
-        VerifierKey::HyperPlonk(vk)
-    } else {
-        let verify_circuit_vk = keygen_vk(params, circuit).expect("keygen_vk should not fail");
-        VerifierKey::Halo2(verify_circuit_vk)
+        verify_circuit_vk
+    }
+
+    pub fn build_vk<E: MultiMillerLoop, C: Circuit<E::Scalar>>(
+        &self,
+        params: &Params<E::G1Affine>,
+        circuit: &C,
+    ) -> VerifierKey<E::G1Affine> {
+        match self {
+            ProveSchema::UseHyperPlonk => {
+                let vk = hyper_keygen_vk::<E, C>(params, circuit)
+                    .expect("hyper keygen_vk should not fail");
+                VerifierKey::HyperPlonk(vk)
+            }
+            ProveSchema::UseHalo2 => {
+                let verify_circuit_vk =
+                    keygen_vk(params, circuit).expect("keygen_vk should not fail");
+                VerifierKey::Halo2(verify_circuit_vk)
+            }
+        }
     }
 }
 
@@ -456,8 +471,7 @@ pub fn run_circuit_unsafe_full_pass_no_rec<
     cache_folder: &Path,
     prefix: &str,
     k: u32,
-    circuits: Vec<C>,
-    is_hyper_plonk: Vec<bool>,
+    circuits: Vec<(C, ProveSchema)>,
     instances: Vec<Vec<Vec<E::Scalar>>>,
     shadow_instances: Vec<Vec<Vec<E::Scalar>>>,
     hash: TranscriptHash,
@@ -482,7 +496,6 @@ where
         prefix,
         k,
         circuits,
-        is_hyper_plonk,
         instances,
         shadow_instances,
         force_create_proof,
@@ -618,8 +631,7 @@ pub fn run_circuit_unsafe_full_pass<
     cache_folder: &'a Path,
     prefix: &'a str,
     k: u32,
-    circuits: Vec<C>,
-    is_hyper_plonks: Vec<bool>,
+    circuits: Vec<(C, ProveSchema)>,
     instances: Vec<Vec<Vec<E::Scalar>>>,
     shadow_instances: Vec<Vec<Vec<E::Scalar>>>,
     force_create_proof: bool,
@@ -641,18 +653,13 @@ where
     let params =
         load_or_build_unsafe_params::<E>(k, Some(&cache_folder.join(format!("K{}.params", k))));
 
-    let mut proofs = vec![];
-    for (i, (circuit, is_hyper_plonk)) in circuits
-        .into_iter()
-        .zip(is_hyper_plonks.clone().into_iter())
-        .enumerate()
-    {
+    let mut proofs: Vec<(Vec<_>, ProveSchema)> = vec![];
+    for (i, (circuit, prove_schema)) in circuits.into_iter().enumerate() {
         // 2. setup vkey
-        let vkey = load_or_build_vkey::<E, C>(
+        let vkey = prove_schema.load_or_build_vkey::<E, C>(
             &params,
             &circuit,
             Some(&cache_folder.join(format!("{}.{}.vkey.data", prefix, i))),
-            is_hyper_plonk,
         );
 
         // 3. create proof
@@ -682,7 +689,7 @@ where
                 )
             }
         };
-        proofs.push(proof);
+        proofs.push((proof, prove_schema));
 
         let mut aligned_instances = instances[i].clone();
         // We need to align instance to max according to config
@@ -713,11 +720,10 @@ where
 
     let mut vkeys = vec![];
 
-    for (i, (proof, is_hyper_plonk)) in proofs.iter().zip(is_hyper_plonks.into_iter()).enumerate() {
-        let vkey = load_vkey::<E, C>(
+    for (i, (proof, prove_schema)) in proofs.iter().enumerate() {
+        let vkey = prove_schema.load_vkey::<E, C>(
             &params,
             &cache_folder.join(format!("{}.{}.vkey.data", prefix, i)),
-            is_hyper_plonk,
         );
 
         // origin check
@@ -791,6 +797,7 @@ where
     }
 
     // native multi check
+    let proofs = proofs.iter().map(|(p, _)| p.clone()).collect::<Vec<_>>();
     if true {
         let timer = start_timer!(|| "native verify aggregated proofs");
         verify_proofs::<E>(
@@ -837,8 +844,7 @@ pub fn run_circuit_with_agg_unsafe_full_pass<
     cache_folder: &Path,
     prefix: &str,
     k: u32,
-    circuits: Vec<C>,
-    is_hyper_plonks: Vec<bool>,
+    circuits: Vec<(C, ProveSchema)>,
     mut instances: Vec<Vec<Vec<E::Scalar>>>,
     prev_agg_instance: Vec<E::Scalar>,
     prev_agg_circuit: AggregatorCircuit<E>,
@@ -863,17 +869,12 @@ where
     let mut vkeys = vec![];
     let mut proofs = vec![];
 
-    for (i, (circuit, is_hyper_plonk)) in circuits
-        .into_iter()
-        .zip(is_hyper_plonks.into_iter())
-        .enumerate()
-    {
+    for (i, (circuit, prove_schema)) in circuits.into_iter().enumerate() {
         // 2. setup vkey
-        let vkey = load_or_build_vkey::<E, C>(
+        let vkey = prove_schema.load_or_build_vkey::<E, C>(
             &params,
             &circuit,
             Some(&cache_folder.join(format!("{}.{}.vkey.data", prefix, i))),
-            is_hyper_plonk,
         );
         vkeys.push(vkey.clone());
 
@@ -907,11 +908,10 @@ where
         );
     }
 
-    let prev_agg_vkey = load_or_build_vkey::<E, _>(
+    let prev_agg_vkey = ProveSchema::UseHalo2.load_or_build_vkey::<E, _>(
         &params,
         &prev_agg_circuit,
         Some(&cache_folder.join(format!("{}.agg.{}.vkey.data", prefix, prev_agg_idx))),
-        false,
     );
     vkeys.push(prev_agg_vkey.clone());
 

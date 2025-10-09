@@ -12,6 +12,7 @@ mod utils;
 fn test_batch_no_rec() {
     use circuits::samples::simple::SimpleCircuit;
     use circuits::utils::run_circuit_unsafe_full_pass_no_rec;
+    use circuits::utils::ProveSchema;
     use circuits::utils::TranscriptHash;
     use halo2_proofs::pairing::bn256::Bn256;
     use halo2_proofs::pairing::bn256::Fr;
@@ -29,8 +30,10 @@ fn test_batch_no_rec() {
             path,
             "simple-circuit",
             8,
-            vec![circuit1, circuit2],
-            vec![true, true],
+            vec![
+                (circuit1, ProveSchema::UseHyperPlonk),
+                (circuit2, ProveSchema::UseHyperPlonk),
+            ],
             vec![instance1, instance2],
             vec![],
             TranscriptHash::Poseidon,
@@ -46,8 +49,7 @@ fn test_batch_no_rec() {
         path,
         "verify-circuit",
         22,
-        vec![circuit],
-        vec![false],
+        vec![(circuit, ProveSchema::UseHalo2)],
         vec![vec![instances]],
         vec![vec![shadow_instances]],
         TranscriptHash::Blake2b,
@@ -63,9 +65,9 @@ fn test_batch_no_rec() {
 fn test_single_rec() {
     use crate::circuits::utils::calc_hash;
     use crate::circuits::utils::load_or_build_unsafe_params;
-    use crate::circuits::utils::load_or_build_vkey;
     use crate::circuits::utils::load_proof;
     use crate::circuits::utils::AggregatorConfig;
+    use crate::circuits::utils::ProveSchema;
     use crate::solidity_verifier::codegen::solidity_aux_gen;
     use crate::solidity_verifier::solidity_render;
     use ark_std::end_timer;
@@ -100,8 +102,7 @@ fn test_single_rec() {
             path,
             "simple-circuit",
             k,
-            vec![circuit.clone()],
-            vec![false],
+            vec![(circuit.clone(), ProveSchema::UseHalo2)],
             vec![target_instances.clone()],
             vec![],
             false,
@@ -138,8 +139,7 @@ fn test_single_rec() {
                 path,
                 "simple-circuit",
                 k,
-                vec![circuit.clone()],
-                vec![false],
+                vec![(circuit.clone(), ProveSchema::UseHalo2)],
                 vec![target_instances.clone()],
                 last_agg_instances.clone(),
                 last_agg_circuit,
@@ -169,8 +169,7 @@ fn test_single_rec() {
         path,
         &final_agg_file_prex,
         k,
-        vec![last_agg_circuit.clone()],
-        vec![false],
+        vec![(last_agg_circuit.clone(), ProveSchema::UseHalo2)],
         vec![vec![last_agg_instances.clone()]],
         vec![vec![last_agg_shadow_instances]],
         false,
@@ -181,11 +180,10 @@ fn test_single_rec() {
         load_or_build_unsafe_params::<Bn256>(k, Some(&path.join(format!("K{}.params", k))));
     let params_verifier: ParamsVerifier<Bn256> = params.verifier(1).unwrap();
 
-    let vkey = load_or_build_vkey::<Bn256, _>(
+    let vkey = ProveSchema::UseHalo2.load_or_build_vkey::<Bn256, _>(
         &params,
         &last_agg_circuit,
         Some(&path.join(format!("{}.0.vkey.data", final_agg_file_prex))),
-        false,
     );
 
     let proof = load_proof(&path.join(format!("{}.0.transcript.data", final_agg_file_prex)));

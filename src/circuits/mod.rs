@@ -5,6 +5,7 @@ pub mod utils;
 fn test_sample_circuit() {
     use crate::circuits::samples::simple::SimpleCircuit;
     use crate::circuits::utils::run_circuit_unsafe_full_pass_no_rec;
+    use crate::circuits::utils::ProveSchema;
     use crate::circuits::utils::TranscriptHash;
     use halo2_proofs::pairing::bn256::Bn256;
     use halo2_proofs::pairing::bn256::Fr;
@@ -23,8 +24,7 @@ fn test_sample_circuit() {
         path,
         "simple-circuit",
         target_circuit_k,
-        vec![circuit],
-        vec![true],
+        vec![(circuit, ProveSchema::UseHalo2)],
         vec![instances],
         vec![],
         TranscriptHash::Poseidon,
@@ -41,6 +41,7 @@ fn test_sample_circuit() {
 fn test_two_sample_circuits() {
     use crate::circuits::samples::simple::SimpleCircuit;
     use crate::circuits::utils::run_circuit_unsafe_full_pass_no_rec;
+    use crate::circuits::utils::ProveSchema;
     use crate::circuits::utils::TranscriptHash;
     use halo2_proofs::pairing::bn256::Bn256;
     use halo2_proofs::pairing::bn256::Fr;
@@ -59,8 +60,10 @@ fn test_two_sample_circuits() {
         path,
         "simple-circuit",
         target_circuit_k,
-        vec![circuit.clone(), circuit],
-        vec![false, false],
+        vec![
+            (circuit.clone(), ProveSchema::UseHalo2),
+            (circuit, ProveSchema::UseHalo2),
+        ],
         vec![instances.clone(), instances],
         vec![],
         TranscriptHash::Poseidon,
@@ -77,6 +80,7 @@ fn test_two_sample_circuits() {
 fn test_two_different_pcs_circuits() {
     use crate::circuits::samples::simple::SimpleCircuit;
     use crate::circuits::utils::run_circuit_unsafe_full_pass_no_rec;
+    use crate::circuits::utils::ProveSchema;
     use crate::circuits::utils::TranscriptHash;
     use halo2_proofs::pairing::bn256::Bn256;
     use halo2_proofs::pairing::bn256::Fr;
@@ -95,8 +99,10 @@ fn test_two_different_pcs_circuits() {
         path,
         "simple-circuit",
         target_circuit_k,
-        vec![circuit.clone(), circuit],
-        vec![false, true],
+        vec![
+            (circuit.clone(), ProveSchema::UseHalo2),
+            (circuit, ProveSchema::UseHyperPlonk),
+        ],
         vec![instances.clone(), instances],
         vec![],
         TranscriptHash::Poseidon,

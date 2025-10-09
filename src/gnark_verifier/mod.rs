@@ -201,9 +201,9 @@ mod tests {
     use super::gnark_render;
     use crate::circuits::samples::simple::SimpleCircuit;
     use crate::circuits::utils::load_or_build_unsafe_params;
-    use crate::circuits::utils::load_or_build_vkey;
     use crate::circuits::utils::load_proof;
     use crate::circuits::utils::run_circuit_unsafe_full_pass_no_rec;
+    use crate::circuits::utils::ProveSchema;
     use crate::circuits::utils::TranscriptHash;
     use halo2_proofs::pairing::bn256::Bn256;
     use halo2_proofs::pairing::bn256::Fr;
@@ -229,8 +229,10 @@ mod tests {
                 path,
                 "simple-circuit",
                 target_circuit_k,
-                vec![circuit.clone(), circuit],
-                vec![false, false],
+                vec![
+                    (circuit.clone(), ProveSchema::UseHalo2),
+                    (circuit, ProveSchema::UseHalo2),
+                ],
                 vec![instances.clone(), instances],
                 vec![],
                 TranscriptHash::Poseidon,
@@ -247,8 +249,7 @@ mod tests {
             path,
             "verify-circuit",
             verify_circuit_k,
-            vec![circuit],
-            vec![false],
+            vec![(circuit, ProveSchema::UseHalo2)],
             vec![vec![instances.clone()]],
             vec![vec![shadow_instances]],
             aggregator_circuit_hasher,
@@ -266,11 +267,10 @@ mod tests {
         let verifier_params_verifier: ParamsVerifier<Bn256> =
             params.verifier(3 * n_proofs + 1).unwrap();
 
-        let vkey = load_or_build_vkey::<Bn256, _>(
+        let vkey = ProveSchema::UseHalo2.load_or_build_vkey::<Bn256, _>(
             &params,
             &circuit0,
             Some(&path.join(format!("{}.{}.vkey.data", "verify-circuit", 0))),
-            false,
         );
 
         let proof = load_proof(&path.join(format!("{}.{}.transcript.data", "verify-circuit", 0)));
