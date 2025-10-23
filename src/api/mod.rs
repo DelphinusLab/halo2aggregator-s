@@ -64,6 +64,14 @@ impl<C: CurveAffine> VerifierKey<C> {
         }
     }
 
+    pub fn is_halo2(&self) -> bool {
+        matches!(self, VerifierKey::Halo2(_))
+    }
+
+    pub fn is_hyper_plonk(&self) -> bool {
+        matches!(self, VerifierKey::HyperPlonk(_))
+    }
+
     pub fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
         match self {
             VerifierKey::Halo2(vk) => vk.write(writer),
@@ -96,7 +104,7 @@ pub fn verify_aggregation_proofs<E: MultiMillerLoop>(
 
     let mut pairs = vec![];
     let mut advice_commitments = vec![];
-    let mut advice_bilinear_terms_commitments = vec![];
+    let mut advice_cross_terms_commitments = vec![];
 
     // replace commitment to reduce msm len
     let mut commitment_map = HashMap::new();
@@ -109,7 +117,7 @@ pub fn verify_aggregation_proofs<E: MultiMillerLoop>(
     }
 
     for (i, vk) in vks.into_iter().enumerate() {
-        let (p, a, bilinear, mut t) = match vk {
+        let (p, a, cross_terms, mut t) = match vk {
             VerifierKey::Halo2(vk) => {
                 let use_shplonk = use_shplonk_as_default || proofs_with_shplonk.contains(&i);
                 verify_halo2_single_proof_no_eval(params, vk, i, !use_shplonk)
@@ -120,7 +128,7 @@ pub fn verify_aggregation_proofs<E: MultiMillerLoop>(
         };
         transcript.common_scalar(t.squeeze_challenge());
         advice_commitments.push(a);
-        advice_bilinear_terms_commitments.push(bilinear);
+        advice_cross_terms_commitments.push(cross_terms);
         pairs.push(p);
     }
 
@@ -155,10 +163,5 @@ pub fn verify_aggregation_proofs<E: MultiMillerLoop>(
 
     let w_x = pcheckpoint!("w_x".to_owned(), pair.w_x.eval(params.g1, 0));
     let w_g = pcheckpoint!("w_g".to_owned(), pair.w_g.eval(-params.g1, 1));
-    (
-        w_x,
-        w_g,
-        advice_commitments,
-        advice_bilinear_terms_commitments,
-    )
+    (w_x, w_g, advice_commitments, advice_cross_terms_commitments)
 }

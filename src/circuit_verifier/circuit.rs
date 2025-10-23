@@ -171,7 +171,7 @@ fn assign_g2_from_params<
 >(
     params: &ParamsVerifier<E>,
     ctx: &mut NativeScalarEccContext<'_, E::G1Affine>,
-) -> Result<[AssignedG2Affine<E::G1Affine, E::Scalar>; 3], EccUnsafeError> {
+) -> Result<[AssignedG2Affine<E::G1Affine, E::Scalar>; 2], EccUnsafeError> {
     let s_g2 = params.s_g2.coordinates().unwrap();
     let s_g2_x = *s_g2.x();
     let s_g2_y = *s_g2.y();
@@ -184,12 +184,6 @@ fn assign_g2_from_params<
     let assigned_g2_x = ctx.fq2_assign_constant(E::decode(g2_x))?;
     let assigned_g2_y = ctx.fq2_assign_constant(E::decode(g2_y))?;
 
-    let sum_inv_g2 = (params.sum_inv_add_s_l_g2).coordinates().unwrap();
-    let sum_inv_g2_x = *sum_inv_g2.x();
-    let sum_inv_g2_y = *sum_inv_g2.y();
-    let assigned_sum_inv_g2_x = ctx.fq2_assign_constant(E::decode(sum_inv_g2_x))?;
-    let assigned_sum_inv_g2_y = ctx.fq2_assign_constant(E::decode(sum_inv_g2_y))?;
-
     let z = ctx
         .get_integer_context()
         .plonk_region_context()
@@ -197,11 +191,9 @@ fn assign_g2_from_params<
         .into();
 
     let assigned_s_g2 = AssignedG2Affine::new(assigned_s_g2_x, assigned_s_g2_y, z);
-    let assigned_ng2 = AssignedG2Affine::new(assigned_g2_x, assigned_g2_y, z);
-    let assigned_sum_inv_g2 =
-        AssignedG2Affine::new(assigned_sum_inv_g2_x, assigned_sum_inv_g2_y, z);
+    let assigned_n_g2 = AssignedG2Affine::new(assigned_g2_x, assigned_g2_y, z);
 
-    Ok([assigned_s_g2, assigned_ng2, assigned_sum_inv_g2])
+    Ok([assigned_s_g2, assigned_n_g2])
 }
 
 fn check_pairing_raw<
@@ -210,17 +202,10 @@ fn check_pairing_raw<
     params: &ParamsVerifier<E>,
     ctx: &mut NativeScalarEccContext<'_, E::G1Affine>,
     assigned_w_x: &AssignedPoint<E::G1Affine, E::Scalar>,
-    assigned_wg_bilinear: &AssignedPoint<E::G1Affine, E::Scalar>,
-    assigned_diff_base_commit_sum: &Option<AssignedPoint<E::G1Affine, E::Scalar>>,
+    assigned_w_g: &AssignedPoint<E::G1Affine, E::Scalar>,
 ) -> Result<(), EccUnsafeError> {
-    let [assigned_s_g2, assigned_g2, assigned_sum_inv_g2] = assign_g2_from_params(params, ctx)?;
-    let mut pairs = vec![
-        (assigned_w_x, &assigned_s_g2),
-        (assigned_wg_bilinear, &assigned_g2),
-    ];
-    if let Some(diff) = assigned_diff_base_commit_sum {
-        pairs.push((diff, &assigned_sum_inv_g2));
-    }
+    let [assigned_s_g2, assigned_g2] = assign_g2_from_params(params, ctx)?;
+    let pairs = vec![(assigned_w_x, &assigned_s_g2), (assigned_w_g, &assigned_g2)];
     ctx.check_pairing(&pairs)?;
 
     Ok(())
@@ -232,38 +217,30 @@ fn check_pairing_on_prove_pairing<
     params: &ParamsVerifier<E>,
     ctx: &mut NativeScalarEccContext<'_, E::G1Affine>,
     w_x: E::G1Affine,
-    wg_bilinear_sum: E::G1Affine,
-    diff_basis_commit_sum: Option<E::G1Affine>,
+    w_g: E::G1Affine,
     assigned_w_x: &AssignedPoint<E::G1Affine, E::Scalar>,
-    assigned_w_g_bilinear_sum: &AssignedPoint<E::G1Affine, E::Scalar>,
-    assigned_diff_basis_commit_sum: &Option<AssignedPoint<E::G1Affine, E::Scalar>>,
+    assigned_w_g: &AssignedPoint<E::G1Affine, E::Scalar>,
 ) -> Result<(), EccUnsafeError> {
-    let [assigned_s_g2, assigned_n_g2, assigned_sum_inv_g2] = assign_g2_from_params(params, ctx)?;
+    let [assigned_s_g2, assigned_n_g2] = assign_g2_from_params(params, ctx)?;
 
     #[cfg(not(feature = "on_prove_pairing_affine"))]
     {
         // Verify pairing with c and wi scheme
         let s_g2_prepared = E::G2Prepared::from(params.s_g2);
         let n_g2_prepared = E::G2Prepared::from(-params.g2);
-        let sum_inv_sl_g2_prepared = E::G2Prepared::from(params.sum_inv_add_s_l_g2);
 
-        let mut terms = vec![(&w_x, &s_g2_prepared), (&wg_bilinear_sum, &n_g2_prepared)];
-        if let Some(diff) = diff_basis_commit_sum.as_ref() {
-            terms.push((diff, &sum_inv_sl_g2_prepared))
-        }
+        let terms = vec![(&w_x, &s_g2_prepared), (&w_g, &n_g2_prepared)];
 
         let f = E::multi_miller_loop(&terms);
         let (c, wi) = miller_loop_compute_c_wi::<E>(f);
 
         let c_assigned = ctx.fq12_assign(Some(E::decode_gt(c)))?;
         let wi_assigned = ctx.fq12_assign(Some(E::decode_gt(wi)))?;
-        let mut terms = vec![
+        let terms = vec![
             (assigned_w_x, &assigned_s_g2),
-            (assigned_w_g_bilinear_sum, &assigned_n_g2),
+            (assigned_w_g, &assigned_n_g2),
         ];
-        if let Some(diff) = assigned_diff_basis_commit_sum.as_ref() {
-            terms.push((diff, &assigned_sum_inv_g2));
-        }
+
         ctx.check_pairing_c_wi(&c_assigned, &wi_assigned, &terms)?;
     };
 
@@ -271,11 +248,8 @@ fn check_pairing_on_prove_pairing<
     {
         let s_g2_prepared = E::G2OnProvePrepared::from(params.s_g2);
         let n_g2_prepared = E::G2OnProvePrepared::from(-params.g2);
-        let sum_inv_sl_g2_prepared = E::G2OnProvePrepared::from(params.sum_inv_add_s_l_g2);
-        let mut terms = vec![(&w_x, &s_g2_prepared), (&wg_bilinear_sum, &n_g2_prepared)];
-        if let Some(diff) = diff_basis_commit_sum.as_ref() {
-            terms.push((diff, &sum_inv_sl_g2_prepared))
-        }
+        let terms = vec![(&w_x, &s_g2_prepared), (&w_g, &n_g2_prepared)];
+
         let f = E::multi_miller_loop_on_prove_pairing_prepare(&terms);
         let (c, wi) = miller_loop_compute_c_wi::<E>(f);
         let assigned_c = ctx.fq12_assign(Some(E::decode_gt(c)))?;
@@ -296,26 +270,14 @@ fn check_pairing_on_prove_pairing<
                 ctx.fq2_assign_constant((v.1 .0, v.1 .1))?,
             ]);
         }
-        let mut coeffs_sum_inv_sl_g2: Vec<
-            [AssignedFq2<<E::G1Affine as CurveAffine>::Base, E::Scalar>; 2],
-        > = vec![];
-        for v in E::get_g2_on_prove_prepared_coeffs(&sum_inv_sl_g2_prepared).iter() {
-            coeffs_sum_inv_sl_g2.push([
-                ctx.fq2_assign_constant((v.0 .0, v.0 .1))?,
-                ctx.fq2_assign_constant((v.1 .0, v.1 .1))?,
-            ]);
-        }
+
         let assigned_s_g2_prepared = AssignedG2OnProvePrepared::new(coeffs_s_g2, assigned_s_g2);
         let assigned_n_g2_prepared = AssignedG2OnProvePrepared::new(coeffs_n_g2, assigned_n_g2);
-        let assigned_sum_inv_sl_g2_prepared =
-            AssignedG2OnProvePrepared::new(coeffs_sum_inv_sl_g2, assigned_sum_inv_g2);
-        let mut terms = vec![
+
+        let terms = vec![
             (assigned_w_x, &assigned_s_g2_prepared),
-            (assigned_w_g_bilinear_sum, &assigned_n_g2_prepared),
+            (assigned_w_g, &assigned_n_g2_prepared),
         ];
-        if let Some(diff) = assigned_diff_basis_commit_sum.as_ref() {
-            terms.push((diff, &assigned_sum_inv_sl_g2_prepared));
-        }
         ctx.check_pairing_on_prove_pairing(&assigned_c, &assigned_wi, &terms)?;
     };
 
@@ -337,12 +299,13 @@ fn check_pairing<
     EccUnsafeError,
 > {
     let timer = start_timer!(|| "check pairing");
-    let (diff_base_commit_sum, bilinear_terms_commit_sum) = diff_base_commit_data
+    let (diff_base_commit_sum, cross_terms_commit_sum) = diff_base_commit_data
         .map(|arr| (Some(arr.0), Some(arr.1)))
         .unwrap_or((None, None));
     let [w_x, w_g] = w_xg;
 
-    let wg_bilinear_sum = bilinear_terms_commit_sum.map_or(w_g, |v| (w_g + v).into());
+    let wx_diff_commit_sum = diff_base_commit_sum.map_or(w_x, |v| (w_x + v).into());
+    let wg_cross_sum = cross_terms_commit_sum.map_or(w_g, |v| (w_g + v).into());
     let assigned_w_x = ctx.assign_point(Some(w_x))?;
     let assigned_w_g = ctx.assign_point(Some(w_g))?;
 
@@ -350,40 +313,42 @@ fn check_pairing<
         .as_ref()
         .map(|p| ctx.assign_point(Some(p.clone())))
         .transpose()?;
-    let assigned_bilinear_terms = bilinear_terms_commit_sum
+    let assigned_cross_terms_sum = cross_terms_commit_sum
         .map(|p| ctx.assign_point(Some(p)))
         .transpose()?;
-    let assign_wg_bilinear_sum = assigned_bilinear_terms
+    let assign_wg_cross_sum = assigned_cross_terms_sum
         .as_ref()
         .map(|p| ctx.ecc_add(&assigned_w_g, p))
         .transpose()?
         .unwrap_or(assigned_w_g.clone());
+    let assign_wx_diff_commit_sum = assigned_diff_base_commit_sum
+        .as_ref()
+        .map(|p| ctx.ecc_add(&assigned_w_x, p))
+        .transpose()?
+        .unwrap_or(assigned_w_x.clone());
 
     if E::support_on_prove_pairing() {
         check_pairing_on_prove_pairing(
             params,
             ctx,
-            w_x,
-            wg_bilinear_sum,
-            diff_base_commit_sum,
-            &assigned_w_x,
-            &assign_wg_bilinear_sum,
-            &assigned_diff_base_commit_sum,
+            wx_diff_commit_sum,
+            wg_cross_sum,
+            &assign_wx_diff_commit_sum,
+            &assign_wg_cross_sum,
         )?;
     } else {
         check_pairing_raw(
             params,
             ctx,
-            &assigned_w_x,
-            &assign_wg_bilinear_sum,
-            &assigned_diff_base_commit_sum,
+            &assign_wx_diff_commit_sum,
+            &assign_wg_cross_sum,
         )?;
     }
     end_timer!(timer);
 
     Ok((
         [assigned_w_x, assigned_w_g],
-        [assigned_diff_base_commit_sum, assigned_bilinear_terms],
+        [assigned_diff_base_commit_sum, assigned_cross_terms_sum],
     ))
 }
 
@@ -436,7 +401,7 @@ pub fn synthesize_aggregate_verify_circuit<
 
         let timer = start_timer!(|| "build AST tree");
         // Build AST tree.
-        let (w_x, w_g, advices, advice_bilinear_terms) = verify_aggregation_proofs(
+        let (w_x, w_g, advices, advice_cross_terms) = verify_aggregation_proofs(
             params,
             vkey,
             &config.commitment_check,
@@ -446,10 +411,10 @@ pub fn synthesize_aggregate_verify_circuit<
         );
         end_timer!(timer);
 
-        let mut advice_bilinear_map = HashMap::new();
-        for (proof_idx, commits) in advice_bilinear_terms.iter().enumerate() {
+        let mut cross_terms_map = HashMap::new();
+        for (proof_idx, commits) in advice_cross_terms.iter().enumerate() {
             for (advice_idx, commit) in commits.iter() {
-                advice_bilinear_map.insert((proof_idx, *advice_idx), commit.clone());
+                cross_terms_map.insert((proof_idx, *advice_idx), commit.clone());
             }
         }
 
@@ -474,19 +439,13 @@ pub fn synthesize_aggregate_verify_circuit<
         }
 
         let diff_commit_basis_check_start_idx = targets.len();
-        for idx in &config.commitment_diff_basis_check {
+        for idx in &config.diff_basis_commitment_check {
             targets.push(advices[idx[0]][idx[1]].0.clone());
             targets.push(advices[idx[2]][idx[3]].0.clone());
         }
-        let advice_bilinear_terms_commit_start_idx = targets.len();
-        for idx in config.commitment_diff_basis_check.iter() {
-            targets.push(
-                advice_bilinear_map
-                    .get(&(idx[2], idx[3]))
-                    .unwrap()
-                    .0
-                    .clone(),
-            );
+        let cross_terms_commit_start_idx = targets.len();
+        for idx in config.diff_basis_commitment_check.iter() {
+            targets.push(cross_terms_map.get(&(idx[2], idx[3])).unwrap().0.clone());
         }
 
         let timer = start_timer!(|| "eval context");
@@ -737,8 +696,7 @@ pub fn synthesize_aggregate_verify_circuit<
         end_timer!(timer);
 
         let diff_basis_commit_sum = {
-            let slice =
-                &pl[diff_commit_basis_check_start_idx..advice_bilinear_terms_commit_start_idx];
+            let slice = &pl[diff_commit_basis_check_start_idx..cross_terms_commit_start_idx];
             slice.chunks(2).try_fold(None, |acc, chunk| {
                 let sum = ctx.ecc_add(&chunk[0], &chunk[1])?;
                 Ok::<Option<AssignedPoint<E::G1Affine, E::Scalar>>, EccUnsafeError>(Some(
@@ -750,16 +708,17 @@ pub fn synthesize_aggregate_verify_circuit<
             })?
         };
 
-        let advice_bilinear_commit_sum = pl[advice_bilinear_terms_commit_start_idx..]
-            .iter()
-            .try_fold(None, |acc: Option<_>, v| {
-                Ok::<Option<AssignedPoint<E::G1Affine, E::Scalar>>, EccUnsafeError>(Some(
-                    match acc {
-                        None => v.clone(),
-                        Some(prev) => ctx.ecc_add(&prev, v)?,
-                    },
-                ))
-            })?;
+        let cross_terms_commit_sum =
+            pl[cross_terms_commit_start_idx..]
+                .iter()
+                .try_fold(None, |acc: Option<_>, v| {
+                    Ok::<Option<AssignedPoint<E::G1Affine, E::Scalar>>, EccUnsafeError>(Some(
+                        match acc {
+                            None => v.clone(),
+                            Some(prev) => ctx.ecc_add(&prev, v)?,
+                        },
+                    ))
+                })?;
 
         // merge pairing part
         let timer = start_timer!(|| "wait pairing");
@@ -778,7 +737,7 @@ pub fn synthesize_aggregate_verify_circuit<
                 )?;
                 ctx.ecc_assert_equal(
                     assigned_diff_basis_commit_data[1].as_ref().unwrap(),
-                    &advice_bilinear_commit_sum.unwrap(),
+                    &cross_terms_commit_sum.unwrap(),
                 )?;
             }
         }

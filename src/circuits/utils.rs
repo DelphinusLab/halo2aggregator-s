@@ -92,10 +92,10 @@ impl ProveSchema {
         println!("read vkey from {:?}", cache_file);
         let mut fd = std::fs::File::open(&cache_file).unwrap();
         match self {
-            ProveSchema::UseHalo2 => VerifierKey::HyperPlonk(
+            ProveSchema::UseHyperPlonk => VerifierKey::HyperPlonk(
                 HyperPlonkVerifierParam::<E::G1Affine>::fetch(&mut fd).unwrap(),
             ),
-            ProveSchema::UseHyperPlonk => {
+            ProveSchema::UseHalo2 => {
                 VerifierKey::Halo2(VerifyingKey::read::<_, C>(&mut fd, params).unwrap())
             }
         }
@@ -380,7 +380,6 @@ where
         params.get_g_lagrange(),
         params.get_sg2::<E>(),
         params.get_cross_g(),
-        params.get_sum_inv_add_s_l_g2::<E>(),
     );
 
     let (pp, _vp, ps, _vs) =
@@ -434,7 +433,6 @@ pub fn verify_hyper_proof<E: MultiMillerLoop + std::fmt::Debug, C: Circuit<E::Sc
         params.get_g()[0],
         g2,
         params.get_sg2::<E>(),
-        Some(params.get_sum_inv_add_s_l_g2::<E>()),
     );
     let zero_vp = plonkish_backend::pcs::multilinear::ZeromorphKzgVerifierParam::new(kzg_params);
     let hyper_vs =
@@ -542,8 +540,8 @@ pub fn calc_hash<C: CurveAffine>(
 pub struct AggregatorConfig<F: FieldExt> {
     pub hash: TranscriptHash,
     pub commitment_check: Vec<[usize; 4]>,
-    //two commitment based different basis Coeff and Lagrange
-    pub commitment_diff_basis_check: Vec<[usize; 4]>,
+    //two commitments based different basis of Lagrange and Coeff
+    pub diff_basis_commitment_check: Vec<[usize; 4]>,
     pub expose: Vec<[usize; 2]>,
     pub absorb: Vec<([usize; 3], [usize; 2])>,
     /* (proof_index, instance_col, hash) */
@@ -572,14 +570,14 @@ impl<F: FieldExt> AggregatorConfig<F> {
     pub fn new_for_non_rec(
         hash: TranscriptHash,
         commitment_check: Vec<[usize; 4]>,
-        commitment_diff_basis_check: Vec<[usize; 4]>,
+        diff_basis_commitment_check: Vec<[usize; 4]>,
         expose: Vec<[usize; 2]>,
         target_proof_max_instance: Vec<Vec<usize>>,
     ) -> Self {
         Self {
             hash,
             commitment_check,
-            commitment_diff_basis_check,
+            diff_basis_commitment_check,
             expose,
             absorb: vec![],
             target_aggregator_constant_hash_instance_offset: vec![],
@@ -602,7 +600,7 @@ impl<F: FieldExt> AggregatorConfig<F> {
         Self {
             hash,
             commitment_check: vec![],
-            commitment_diff_basis_check: vec![],
+            diff_basis_commitment_check: vec![],
             expose: vec![],
             absorb: vec![],
             target_aggregator_constant_hash_instance_offset: vec![],
@@ -807,7 +805,7 @@ where
             proofs.clone(),
             config.hash,
             &config.commitment_check,
-            &config.commitment_diff_basis_check,
+            &config.diff_basis_commitment_check,
             hash != TranscriptHash::Poseidon || config.target_proof_with_shplonk_as_default,
             &config.target_proof_with_shplonk,
         );

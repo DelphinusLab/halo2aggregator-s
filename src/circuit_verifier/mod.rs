@@ -123,7 +123,7 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
     [E::G1Affine; 2],
     Option<(E::G1Affine, E::G1Affine)>,
 ) {
-    let (w_x, w_g, advices, advice_bilinear_terms_commits) = verify_aggregation_proofs(
+    let (w_x, w_g, advices, advice_cross_terms_commits) = verify_aggregation_proofs(
         params,
         vkey,
         &config.commitment_check,
@@ -132,10 +132,10 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
         &instances,
     );
 
-    let mut advice_bilinear_map = HashMap::new();
-    for (proof_idx, commits) in advice_bilinear_terms_commits.iter().enumerate() {
+    let mut cross_terms_map = HashMap::new();
+    for (proof_idx, commits) in advice_cross_terms_commits.iter().enumerate() {
         for (advice_idx, commit) in commits.iter() {
-            advice_bilinear_map.insert((proof_idx, *advice_idx), commit.clone());
+            cross_terms_map.insert((proof_idx, *advice_idx), commit.clone());
         }
     }
     let instance_commitments = instance_to_instance_commitment(params, vkey, &instances);
@@ -156,20 +156,31 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
         targets.push(advices[idx[0]][idx[1]].0.clone());
     }
 
-    let commit_diff_basis_check_start_idx = targets.len();
-    for idx in &config.commitment_diff_basis_check {
+    //commitment_diff_basis_check carry (lagrange_basis, coeff_basis)
+    //each basis set by (proof_idx, advice_idx)
+    let diff_basis_commit_check_start_idx = targets.len();
+    for idx in &config.diff_basis_commitment_check {
         targets.push(advices[idx[0]][idx[1]].0.clone());
         targets.push(advices[idx[2]][idx[3]].0.clone());
     }
-    let advice_bilinear_terms_start_idx = targets.len();
-    for idx in config.commitment_diff_basis_check.iter() {
-        targets.push(
-            advice_bilinear_map
-                .get(&(idx[2], idx[3]))
-                .unwrap()
-                .0
-                .clone(),
+
+    //make sure the idx[2,3] are hyper proof with coeff commitment and cross_commit
+    let cross_terms_commit_start_idx = targets.len();
+    for (i, idx) in config.diff_basis_commitment_check.iter().enumerate() {
+        let vk_halo2 = vkey[idx[0]];
+        assert!(
+            vk_halo2.is_halo2(),
+            "the {}-th diff_basis_commit_check's 1st proof is not halo2",
+            i
         );
+        let vk_hyper = vkey[idx[2]];
+        assert!(
+            vk_hyper.is_hyper_plonk(),
+            "the {}-th diff_basis_commit_check's 2nd proof is not hyper",
+            i
+        );
+
+        targets.push(cross_terms_map.get(&(idx[2], idx[3])).unwrap().0.clone());
     }
 
     let c = EvalContext::translate(&targets[..]);
@@ -212,31 +223,30 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
         _ => unreachable!(),
     };
 
+    //all lagrange_commitments+coeff_commitments
     let mut diff_basis_commit_sum = E::G1::identity();
-    for c in &pl[commit_diff_basis_check_start_idx..advice_bilinear_terms_start_idx] {
+    for c in &pl[diff_basis_commit_check_start_idx..cross_terms_commit_start_idx] {
         diff_basis_commit_sum = diff_basis_commit_sum + c;
     }
 
-    // e(sum_{commit(coeff + lagrange)},xG2)=e(sum_{commit_bilinear_item},G2)
-    let mut advice_bilinear_terms_sum = E::G1::identity();
-    for c in &pl[advice_bilinear_terms_start_idx..] {
-        advice_bilinear_terms_sum = advice_bilinear_terms_sum + c;
+    // e(sum(C_coeff_i + C_lagrange_i),sG2) = e(sum(C_cross_term_i),G2)
+    let mut cross_terms_commit_sum = E::G1::identity();
+    for c in &pl[cross_terms_commit_start_idx..] {
+        cross_terms_commit_sum = cross_terms_commit_sum + c;
     }
 
     let s_g2_prepared = E::G2Prepared::from(params.s_g2);
     let n_g2_prepared = E::G2Prepared::from(-params.g2);
-    let sum_inv_add_s_l_g2_prepared = E::G2Prepared::from(params.sum_inv_add_s_l_g2);
 
     let success = bool::from(
         E::multi_miller_loop(&[
-            (&pl[0], &s_g2_prepared),
             (
-                &(advice_bilinear_terms_sum + pl[1]).to_affine(),
-                &n_g2_prepared,
+                &(pl[0] + diff_basis_commit_sum.into()).to_affine(),
+                &s_g2_prepared,
             ),
             (
-                &diff_basis_commit_sum.to_affine(),
-                &sum_inv_add_s_l_g2_prepared,
+                &(pl[1] + cross_terms_commit_sum.into()).to_affine(),
+                &n_g2_prepared,
             ),
         ])
         .final_exponentiation()
@@ -327,7 +337,7 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
         instances.append(
             &mut vec![
                 &il.concat()[..],
-                &pl[expose_start_idx..commit_diff_basis_check_start_idx],
+                &pl[expose_start_idx..diff_basis_commit_check_start_idx],
             ]
             .concat()
             .iter()
@@ -382,7 +392,7 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
 
         let mut shadow_instances: Vec<E::Scalar> = vec![final_hash];
         shadow_instances.append(
-            &mut vec![&pl[expose_start_idx..commit_diff_basis_check_start_idx]]
+            &mut vec![&pl[expose_start_idx..diff_basis_commit_check_start_idx]]
                 .concat()
                 .iter()
                 .map(|p| encode_point(p))
@@ -410,13 +420,10 @@ fn calc_instances<E: MultiMillerLoop + MultiMillerLoopOnProvePairing>(
         (instances, shadow_instances)
     };
 
-    let diff_basis_commit_data = if config.commitment_diff_basis_check.is_empty() {
+    let diff_basis_commit_data = if config.diff_basis_commitment_check.is_empty() {
         None
     } else {
-        Some((
-            diff_basis_commit_sum.into(),
-            advice_bilinear_terms_sum.into(),
-        ))
+        Some((diff_basis_commit_sum.into(), cross_terms_commit_sum.into()))
     };
 
     (

@@ -8,6 +8,7 @@ use crate::circuits::utils::TranscriptHash;
 use crate::transcript::poseidon::PoseidonPure;
 use crate::transcript::poseidon::PoseidonRead;
 use crate::transcript::sha256::ShaRead;
+use ark_std::iterable::Iterable;
 use halo2_proofs::arithmetic::Field;
 use halo2_proofs::arithmetic::MillerLoopResult;
 use halo2_proofs::arithmetic::MultiMillerLoop;
@@ -179,7 +180,7 @@ pub fn verify_proofs<E: MultiMillerLoop>(
     use_shplonk_as_default: bool,
     proofs_with_shplonk: &Vec<usize>,
 ) {
-    let (w_x, w_g, advices, advice_bilinear_terms_commits) = verify_aggregation_proofs(
+    let (w_x, w_g, advices, cross_terms) = verify_aggregation_proofs(
         params,
         vkey,
         commitment_check,
@@ -188,10 +189,10 @@ pub fn verify_proofs<E: MultiMillerLoop>(
         instances,
     );
 
-    let mut advice_bilinear_map = HashMap::new();
-    for (proof_idx, commits) in advice_bilinear_terms_commits.iter().enumerate() {
+    let mut cross_terms_map = HashMap::new();
+    for (proof_idx, commits) in cross_terms.iter().enumerate() {
         for (advice_idx, commit) in commits.iter() {
-            advice_bilinear_map.insert((proof_idx, *advice_idx), commit.clone());
+            cross_terms_map.insert((proof_idx, *advice_idx), commit.clone());
         }
     }
 
@@ -209,16 +210,23 @@ pub fn verify_proofs<E: MultiMillerLoop>(
         targets.push(advices[idx[2]][idx[3]].0.clone());
     }
 
-    let advice_bilinear_item_commit_start_idx = targets.len();
+    let cross_terms_commit_start_idx = targets.len();
     //idx[0,1] for lagrange, idx[2,3] for coeff, only idx[2,3] needed
-    for idx in commitment_diff_basis_check {
-        targets.push(
-            advice_bilinear_map
-                .get(&(idx[2], idx[3]))
-                .unwrap()
-                .0
-                .clone(),
+    for (i, idx) in commitment_diff_basis_check.iter().enumerate() {
+        let vk_halo2 = vkey[idx[0]];
+        assert!(
+            vk_halo2.is_halo2(),
+            "the {}-th diff_basis_commit_check's 1st proof is not halo2",
+            i
         );
+        let vk_hyper = vkey[idx[2]];
+        assert!(
+            vk_hyper.is_hyper_plonk(),
+            "the {}-th diff_basis_commit_check's 2nd proof is not hyper",
+            i
+        );
+
+        targets.push(cross_terms_map.get(&(idx[2], idx[3])).unwrap().0.clone());
     }
 
     let c = EvalContext::translate(&targets[..]);
@@ -283,27 +291,29 @@ pub fn verify_proofs<E: MultiMillerLoop>(
 
     //TODO: add challenge for different proof's commits
     // commit_coeff + commit_lagrange
-    let mut diff_basis_commit = E::G1::identity();
-    for c in &pl[commit_diff_basis_check_start_idx..advice_bilinear_item_commit_start_idx] {
-        diff_basis_commit = diff_basis_commit + c;
+    let mut diff_basis_commit_sum = E::G1::identity();
+    for c in &pl[commit_diff_basis_check_start_idx..cross_terms_commit_start_idx] {
+        diff_basis_commit_sum = diff_basis_commit_sum + c;
     }
 
     // e(commit(coeff + lagrange),xG2)=e(commit_cross_item,G2)
-    let mut advice_cross_item_commit = E::G1::identity();
-    for c in &pl[advice_bilinear_item_commit_start_idx..] {
-        advice_cross_item_commit = advice_cross_item_commit + c;
+    let mut cross_terms_commit_sum = E::G1::identity();
+    for c in &pl[cross_terms_commit_start_idx..] {
+        cross_terms_commit_sum = cross_terms_commit_sum + c;
     }
+
     let s_g2_prepared = E::G2Prepared::from(params.s_g2);
-    let sum_inv_add_s_l_g2_prepared = E::G2Prepared::from(params.sum_inv_add_s_l_g2);
     let n_g2_prepared = E::G2Prepared::from(-params.g2);
     let success = bool::from(
         E::multi_miller_loop(&[
-            (&pl[0], &s_g2_prepared),
             (
-                &(advice_cross_item_commit + &pl[1]).to_affine(),
+                &(diff_basis_commit_sum + &pl[0]).to_affine(),
+                &s_g2_prepared,
+            ),
+            (
+                &(cross_terms_commit_sum + &pl[1]).to_affine(),
                 &n_g2_prepared,
             ),
-            (&diff_basis_commit.to_affine(), &sum_inv_add_s_l_g2_prepared),
         ])
         .final_exponentiation()
         .is_identity(),
