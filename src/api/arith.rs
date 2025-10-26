@@ -63,13 +63,6 @@ macro_rules! spow {
 }
 
 #[macro_export]
-macro_rules! ssquare {
-    ($scalar:expr) => {
-        AstScalarRc(Rc::new(AstScalar::Mul($scalar.0.clone(), $scalar.0, false)))
-    };
-}
-
-#[macro_export]
 macro_rules! pinstance {
     ($proof_idx:expr, $instance_idx:expr) => {
         AstPointRc(Rc::new(AstPoint::FromInstance($proof_idx, $instance_idx)))

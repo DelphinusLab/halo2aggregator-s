@@ -10,7 +10,7 @@ use crate::pcheckpoint;
 use crate::pconst;
 use crate::scalar;
 use crate::sconst;
-use crate::ssquare;
+use crate::spow;
 use ark_std::iterable::Iterable;
 use halo2_proofs::arithmetic::CurveAffine;
 use halo2_proofs::arithmetic::Engine;
@@ -73,8 +73,9 @@ pub fn powers<C: CurveAffine>(scalar: AstScalarRc<C>) -> impl Iterator<Item = As
         Some(scalar.clone() * power)
     })
 }
+
 pub fn squares<C: CurveAffine>(scalar: AstScalarRc<C>) -> impl Iterator<Item = AstScalarRc<C>> {
-    iter::successors(Some(scalar), move |scalar| Some(ssquare!(scalar.clone())))
+    iter::successors(Some(scalar), move |scalar| Some(spow!(scalar.clone(), 2)))
 }
 
 fn eval_and_quotient_scalars<C: CurveAffine>(
