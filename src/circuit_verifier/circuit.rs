@@ -151,6 +151,7 @@ impl<E: MultiMillerLoop + MultiMillerLoopOnProvePairing + GtHelper + G2AffineBas
                     .get_range_region_context()
                     .finalize_compact_cells()?;
                 end_timer!(timer);
+                println!("final total offset {:?}", context.offset());
 
                 Ok(instances)
             },
@@ -393,6 +394,12 @@ pub fn synthesize_aggregate_verify_circuit<
                 check_pairing(params, &mut ctx, w_xg, diff_base_commit_data).unwrap();
             // real data: {plonk_region_offset: 446659,range_region_offset:293864}
             println!("offset after check_pairing {:?}", ctx.offset());
+            assert!(
+                ctx.offset().plonk_region_offset < config.circuit_rows_for_pairing,
+                "config.circuit_rows_for_pairing={} should big than real offset={}",
+                config.circuit_rows_for_pairing,
+                ctx.offset().plonk_region_offset
+            );
 
             (assigned_w_xg, assigned_diff_basis_commit_data, ctx)
         });

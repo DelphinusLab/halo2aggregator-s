@@ -358,10 +358,10 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
             .map(|_| dummy_point.clone())
             .collect::<Vec<_>>();
 
-        let mut advice_bilinear_terms_commitments = vec![];
+        let mut advice_cross_terms_commitments = vec![];
         for (_, idx) in self.vk.named_advices.iter() {
             let c = transcript.read_point();
-            advice_bilinear_terms_commitments.push((*idx as usize, c))
+            advice_cross_terms_commitments.push((*idx as usize, c))
         }
 
         let n_advice = self.vk.num_witness_polys;
@@ -579,7 +579,7 @@ impl<'a, C: CurveAffine, E: MultiMillerLoop<G1Affine = C, Scalar = C::ScalarExt>
         (
             MultiOpenProof { w_x, w_g },
             advice_commitments,
-            advice_bilinear_terms_commitments,
+            advice_cross_terms_commitments,
             transcript,
         )
     }
